@@ -1,0 +1,7 @@
+error[E0599]: no method named `act` found for struct `almanac::agent::Bound<'_, Quarantined, fails::ReadPrompt>` in the current scope
+ --> tests/ui/fail/reader_cannot_act.rs:3:65
+  |
+3 | async fn f(cx: &Cx) { let _: Result<Done, _> = cx.agent(READER).act(ReadPrompt, &true).await; }
+  |                                                                 ^^^ method not found in `almanac::agent::Bound<'_, Quarantined, fails::ReadPrompt>`
+  |
+  = note: the method was found for `almanac::agent::Bound<'_, Worker, T>`

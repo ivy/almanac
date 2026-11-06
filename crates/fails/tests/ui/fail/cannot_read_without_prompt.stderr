@@ -1,0 +1,15 @@
+error[E0061]: this method takes 2 arguments but 1 argument was supplied
+ --> tests/ui/fail/cannot_read_without_prompt.rs:3:76
+  |
+3 | async fn f(cx: &Cx) { let _: Result<Untrusted<Done>, _> = cx.agent(READER).read(&true).await; }
+  |                                                                            ^^^^ ----- argument #1 of type `ReadPrompt` is missing
+  |
+note: method defined here
+ --> $WORKSPACE/crates/almanac/src/agent.rs
+  |
+  |     pub async fn read<I: Record, O: Record>(&self, prompt: T, input: &I) -> Result<Untrusted<O>, Halt> {
+  |                  ^^^^
+help: provide the argument
+  |
+3 | async fn f(cx: &Cx) { let _: Result<Untrusted<Done>, _> = cx.agent(READER).read(/* ReadPrompt */, &true).await; }
+  |                                                                                 +++++++++++++++++

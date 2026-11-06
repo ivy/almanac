@@ -1,0 +1,5 @@
+error[E0063]: missing field `b` in initializer of `P`
+ --> tests/ui/fail/missing_prompt_field.rs:5:21
+  |
+5 | fn main() { let _ = P { a: 1 }; }
+  |                     ^ missing `b`

@@ -1,0 +1,5 @@
+error[E0599]: no variant, associated function, or constant named `Merge` found for enum `EffectKind` in the current scope
+ --> tests/ui/fail/unknown_effect.rs:3:62
+  |
+3 | #[workflow(on = Opened, key = "{repo}", intent = "x", may = [Merge], runs_per_hour = 1, decide = no_effects)]
+  |                                                              ^^^^^ variant, associated function, or constant not found in `EffectKind`

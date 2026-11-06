@@ -1,0 +1,5 @@
+target/
+.env
+*.bak
+private/
+AGENTS.local.md

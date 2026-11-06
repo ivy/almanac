@@ -1,0 +1,5 @@
+error[E0616]: field `inner` of struct `Untrusted` is private
+ --> tests/ui/fail/read_private_field.rs:3:31
+  |
+3 | fn main() { let _ = hostile().inner; }
+  |                               ^^^^^ private field

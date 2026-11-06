@@ -1,0 +1,21 @@
+error[E0277]: the trait bound `String: Clean` is not satisfied
+ --> tests/ui/fail/payload_field_rejects_string.rs:3:43
+  |
+3 | fn f(p: &Payload<'_>) { let _: String = p.field("/title").unwrap(); }
+  |                                           ^^^^^ the trait `Clean` is not implemented for `String`
+  |
+  = help: the following other types implement trait `Clean`:
+            EffectKind
+            Option<T>
+            Sha
+            Slug
+            almanac::effect::ActionSummary
+            bool
+            f64
+            fails::Done
+          and $N others
+note: required by a bound in `fails::Payload::<'a>::field`
+ --> $WORKSPACE/crates/almanac/src/wire.rs
+  |
+  |     pub fn field<T: Clean + DeserializeOwned>(&self, pointer: &str) -> Result<T, String> {
+  |                     ^^^^^ required by this bound in `Payload::<'a>::field`

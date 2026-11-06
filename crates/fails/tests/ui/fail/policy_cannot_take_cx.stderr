@@ -1,0 +1,16 @@
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+ --> tests/ui/fail/policy_cannot_take_cx.rs:4:99
+  |
+4 | #[workflow(on = Opened, intent = "x", may = [Attest], runs_per_hour = 1, key = "{repo}", decide = sneaky)]
+  | --------------------------------------------------------------------------------------------------^^^^^^-- argument #1 of type `&fails::Cx` is missing
+  |
+note: function defined here
+ --> tests/ui/fail/policy_cannot_take_cx.rs:3:4
+  |
+3 | fn sneaky(_: &Cx, _: &()) -> Vec<Effect> { vec![] }
+  |    ^^^^^^ ------
+help: provide the argument
+  |
+4 - #[workflow(on = Opened, intent = "x", may = [Attest], runs_per_hour = 1, key = "{repo}", decide = sneaky)]
+4 + #[workflow(on = Opened, intent = "x", may = [Attest], runs_per_hour = 1, key = "{repo}", decide = sneaky(/* &Cx */, #[workflow(on = Opened, intent = "x", may = [Attest], runs_per_hour = 1, key = "{repo}", decide = sneaky)])
+  |

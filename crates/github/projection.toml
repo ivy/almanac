@@ -1,0 +1,16 @@
+# The fields workflows actually use. Paths are checked against GitHub's published
+# spec when generating. A string is Untrusted unless `as` names a validated type.
+[PullRequestOpened]
+webhook = "pull-request-opened"
+kind = "github.pull_request.opened"
+fields.number = { path = "number" }
+fields.state = { path = "pull_request.state" }
+fields.draft = { path = "pull_request.draft" }
+fields.repo = { path = "repository.full_name", as = "Slug" }
+fields.head_branch = { path = "pull_request.head.ref", as = "Slug" }
+fields.head_sha = { path = "pull_request.head.sha", as = "Sha" }
+fields.author = { path = "pull_request.user.login", as = "Slug" }
+fields.sender = { path = "sender.login", as = "Slug" }
+fields.sender_type = { path = "sender.type", as = "Slug" }
+fields.title = { path = "pull_request.title" }
+fields.body = { path = "pull_request.body" }

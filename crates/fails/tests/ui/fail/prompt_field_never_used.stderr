@@ -1,0 +1,5 @@
+error: prompts/inline never uses `{{ repo }}`
+ --> tests/ui/fail/prompt_field_never_used.rs:4:12
+  |
+4 | struct P { repo: Slug }
+  |            ^^^^^^^^^^

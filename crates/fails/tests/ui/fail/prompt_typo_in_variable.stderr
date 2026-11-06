@@ -1,0 +1,5 @@
+error: prompts/inline uses `{{ rpeo }}`, but `P` has no field `rpeo`
+ --> tests/ui/fail/prompt_typo_in_variable.rs:4:8
+  |
+4 | struct P { repo: Slug }
+  |        ^

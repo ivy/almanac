@@ -1,0 +1,83 @@
+error[E0277]: the trait bound `String: Observed` is not satisfied
+ --> tests/ui/fail/observe_raw_string.rs:3:34
+  |
+3 | async fn f(cx: &Cx) { let _ = cx.observe("x", async { Ok(String::new()) }).await; }
+  |                                  ^^^^^^^ the trait `Observed` is not implemented for `String`
+  |
+help: the trait `Observed` is implemented for `Opened`
+ --> $WORKSPACE/crates/almanac/src/taint.rs
+  |
+  |           impl $crate::taint::Observed for $n {}
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+ ::: src/lib.rs
+  |
+  | / observed! {
+  | |     pub struct Opened {
+  | |         pub repo: Slug,
+  | |         pub title: Untrusted<String>,
+  | |     }
+  | | }
+  | |_- in this macro invocation
+note: required by a bound in `fails::Cx::observe`
+ --> $WORKSPACE/crates/almanac/src/cx.rs
+  |
+  |     pub async fn observe<T: Observed + Record>(
+  |                             ^^^^^^^^ required by this bound in `Cx::observe`
+  = note: this error originates in the macro `observed` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `String: Observed` is not satisfied
+ --> tests/ui/fail/observe_raw_string.rs:3:31
+  |
+3 | async fn f(cx: &Cx) { let _ = cx.observe("x", async { Ok(String::new()) }).await; }
+  |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Observed` is not implemented for `String`
+  |
+help: the trait `Observed` is implemented for `Opened`
+ --> $WORKSPACE/crates/almanac/src/taint.rs
+  |
+  |           impl $crate::taint::Observed for $n {}
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+ ::: src/lib.rs
+  |
+  | / observed! {
+  | |     pub struct Opened {
+  | |         pub repo: Slug,
+  | |         pub title: Untrusted<String>,
+  | |     }
+  | | }
+  | |_- in this macro invocation
+note: required by a bound in `fails::Cx::observe`
+ --> $WORKSPACE/crates/almanac/src/cx.rs
+  |
+  |     pub async fn observe<T: Observed + Record>(
+  |                             ^^^^^^^^ required by this bound in `Cx::observe`
+  = note: this error originates in the macro `observed` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `String: Observed` is not satisfied
+ --> tests/ui/fail/observe_raw_string.rs:3:76
+  |
+3 | async fn f(cx: &Cx) { let _ = cx.observe("x", async { Ok(String::new()) }).await; }
+  |                                                                            ^^^^^ the trait `Observed` is not implemented for `String`
+  |
+help: the trait `Observed` is implemented for `Opened`
+ --> $WORKSPACE/crates/almanac/src/taint.rs
+  |
+  |           impl $crate::taint::Observed for $n {}
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+ ::: src/lib.rs
+  |
+  | / observed! {
+  | |     pub struct Opened {
+  | |         pub repo: Slug,
+  | |         pub title: Untrusted<String>,
+  | |     }
+  | | }
+  | |_- in this macro invocation
+note: required by a bound in `fails::Cx::observe`
+ --> $WORKSPACE/crates/almanac/src/cx.rs
+  |
+  |     pub async fn observe<T: Observed + Record>(
+  |                             ^^^^^^^^ required by this bound in `Cx::observe`
+  = note: this error originates in the macro `observed` (in Nightly builds, run with -Z macro-backtrace for more info)

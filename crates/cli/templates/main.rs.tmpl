@@ -1,0 +1,5 @@
+use @MODULE@::{providers, workflows};
+
+fn main() -> std::process::ExitCode {
+    almanac::main("@NAME@", workflows::all, providers::all)
+}

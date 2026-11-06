@@ -1,0 +1,5 @@
+error: unknown workflow option `retries`
+ --> tests/ui/fail/unknown_option.rs:3:111
+  |
+3 | #[workflow(on = Opened, intent = "x", may = [Attest], runs_per_hour = 1, key = "{repo}", decide = no_effects, retries = 3)]
+  |                                                                                                               ^^^^^^^

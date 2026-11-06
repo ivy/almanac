@@ -1,0 +1,10 @@
+error[E0277]: `Untrusted<String>` doesn't implement `std::fmt::Display`
+ --> tests/ui/fail/format_into_string.rs:3:35
+  |
+3 | fn main() { let _ = format!("{}", hostile()); }
+  |                              --   ^^^^^^^^^ `Untrusted<String>` cannot be formatted with the default formatter
+  |                              |
+  |                              required by this formatting parameter
+  |
+  = help: the trait `std::fmt::Display` is not implemented for `Untrusted<String>`
+  = note: in format strings you may be able to use `{:?}` (or `{:#?}` for pretty-print) instead

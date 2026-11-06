@@ -1,0 +1,29 @@
+error[E0277]: the trait bound `fails::Slug: Finite` is not satisfied
+ --> tests/ui/fail/narrow_to_slug.rs:3:44
+  |
+3 | fn main() { let _: Slug = hostile().narrow(|t| t.parse().unwrap()); }
+  |                                     ------ ^^^^^^^^^^^^^^^^^^^^^^ the trait `Finite` is not implemented for `fails::Slug`
+  |                                     |
+  |                                     required by a bound introduced by this call
+  |
+help: the following other types implement trait `Finite`
+ --> $WORKSPACE/crates/almanac/src/taint.rs
+  |
+  |   impl Finite for bool {}
+  |   ^^^^^^^^^^^^^^^^^^^^ `bool`
+...
+  |           impl $crate::taint::Finite for $n {}
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `EffectKind`
+  |
+ ::: $WORKSPACE/crates/almanac/src/effect.rs
+  |
+  | / crate::clean! {
+  | |     pub enum EffectKind { Attest, Await, File, Ask }
+  | | }
+  | |_- in this macro invocation
+note: required by a bound in `Untrusted::<T>::narrow`
+ --> $WORKSPACE/crates/almanac/src/taint.rs
+  |
+  |     pub fn narrow<N: Finite>(&self, f: fn(&T) -> N) -> N {
+  |                      ^^^^^^ required by this bound in `Untrusted::<T>::narrow`
+  = note: this error originates in the macro `crate::clean` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,3 @@
+# Runtime settings. ALMANAC_* environment variables override these.
+# Limits here can only tighten what the binary declares.
+listen = "127.0.0.1:8787"

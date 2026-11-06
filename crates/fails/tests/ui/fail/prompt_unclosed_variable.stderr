@@ -1,0 +1,7 @@
+error: prompts/inline: line 2: unclosed `{{`
+ --> tests/ui/fail/prompt_unclosed_variable.rs:3:1
+  |
+3 | #[prompt(text = "line one\nReview {{ repo")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `prompt` (in Nightly builds, run with -Z macro-backtrace for more info)

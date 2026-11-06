@@ -1,0 +1,30 @@
+use almanac::prelude::*;
+
+observed! {
+    pub struct Received {
+        pub id: Slug,
+    }
+}
+
+impl Event for Received {
+    const KIND: &'static str = "@KEBAB@.received";
+    fn parse(p: &Payload<'_>) -> Result<Self, String> {
+        Ok(Self { id: p.field("/id")? })
+    }
+}
+
+#[workflow(
+    on = Received,
+    key = "{id}",
+    intent = "Describe what this workflow is for.",
+    may = [Attest],
+    runs_per_hour = 10,
+    decide = policy,
+)]
+pub async fn @FUNCTION@(_cx: &Cx, _event: &Received) -> Result<(), Halt> {
+    Ok(())
+}
+
+fn policy(_: &()) -> Vec<Effect> {
+    vec![Effect::Attest { context: "@KEBAB@", passed: true }]
+}

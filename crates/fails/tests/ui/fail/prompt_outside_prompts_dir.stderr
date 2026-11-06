@@ -1,0 +1,5 @@
+error: a prompt is a path inside `prompts/`
+ --> tests/ui/fail/prompt_outside_prompts_dir.rs:3:10
+  |
+3 | #[prompt("../Cargo.toml")]
+  |          ^^^^^^^^^^^^^^^

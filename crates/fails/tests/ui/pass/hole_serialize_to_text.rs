@@ -1,0 +1,3 @@
+use fails::*;
+
+fn main() { let _ = serde_json::to_string(&hostile()); }

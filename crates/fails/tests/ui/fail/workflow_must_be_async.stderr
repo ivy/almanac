@@ -1,0 +1,5 @@
+error: a workflow must be an `async fn`
+ --> tests/ui/fail/workflow_must_be_async.rs:4:1
+  |
+4 | fn w(_cx: &Cx, _e: &Opened) -> Result<(), Halt> { Ok(()) }
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,7 @@
+# specs/ holds pinned upstream API descriptions, whose examples include sample credentials.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Pinned upstream API specs"
+paths = ['''^specs/''']

@@ -1,0 +1,9 @@
+[package]
+name = "fails"
+version = "0.0.0"
+edition = "2021"
+[dependencies]
+almanac = { path = "../almanac" }
+serde_json = "1"
+[dev-dependencies]
+trybuild = "1"

@@ -1,0 +1,4 @@
+[workspace]
+resolver = "2"
+members = ["crates/almanac", "crates/definitions", "crates/fails", "crates/github", "crates/cli", "crates/macros"]
+exclude = ["examples/renovate-triage"]

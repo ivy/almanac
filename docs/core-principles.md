@@ -1,0 +1,69 @@
+# Core Principles
+
+Decision filters. Each one rules out something that might plausibly be wanted, and a change that violates one needs that principle revisited first.
+
+## 1. Deterministic up to the point of inference
+
+Code does everything code can do. A model is called only for work that needs judgment or repair, after deduplication, correlation, and deterministic checks have run.
+
+**Says no to:** an agent as the first step of a workflow, routing or sequencing decided by a prompt, a model doing arithmetic or date comparison, and using inference to save writing a parser.
+
+## 2. Behaviour is code, and configuration only tightens
+
+Workflows, policy, capabilities, and allowed effects are compiled into the binary. Runtime configuration sets limits and addresses, and can only lower what the binary declares.
+
+**Says no to:** YAML workflow definitions, prompts as the definition of behaviour, a config key that names a capability or an effect, and secrets in the config file.
+
+## 3. Hostile text is a type
+
+Everything observed from outside is `Untrusted`. It leaves taint only by narrowing to a closed set of values, and it never reaches a prompt's instructions. Agent output counts as observed.
+
+**Says no to:** a bare `String` in an event type, string-formatting observed text into a prompt, treating a model's summary as clean because an agent wrote it, and a public accessor on `Untrusted`.
+
+## 4. A model can veto, never approve
+
+A model's answer can stop something. Only deterministic evidence lets it through. A prompt-injected "looks safe" must gain an attacker nothing.
+
+**Says no to:** merging or attesting success on a model's verdict alone, a classifier deciding safety, and skipping a deterministic check because a model was confident.
+
+## 5. Whatever reads hostile text holds the least power
+
+An agent that reads attacker-reachable content gets no secrets and no general network access, and its output is reviewed by deterministic policy before anything acts on it. Capabilities are part of an agent's type and are enforced beneath it by a sandbox.
+
+**Says no to:** an agent pushing directly, a write-capable agent with credentials reading build logs, and treating a capability type as enforcement without a sandbox behind it.
+
+## 6. One thing, one run
+
+Delivery is at-least-once at best, so the guarantee is exactly-once effects. Events are deduplicated by delivery, correlated by key, and limited to one active run per key. Chains and fan-out are bounded by depth and budget.
+
+**Says no to:** a run per event, unbounded retries, an agent started before the budget check, and a retry loop with no attempt cap.
+
+## 7. Record everything a run depends on
+
+Outside reads, model answers, and guard verdicts are recorded. A replay reuses them and re-runs only policy, so a decision can be explained and re-examined without spending again.
+
+**Says no to:** a read or model call outside `Cx`, policy that performs I/O, and a run whose result depends on something unrecorded.
+
+## 8. Almanac reports; the repository decides
+
+Effects are a small closed set, and merging is not one of them. Almanac publishes statuses and proposes changes. Repository rules and Renovate perform the merge.
+
+**Says no to:** a merge effect, bypassing branch protection, and an effect added because one workflow found it convenient without a principle covering it.
+
+## 9. Errors are an interface
+
+A person or an agent should be able to act on an error without reading the source. Every error says what happened, why it matters, and what to do next, with a stable code and a machine-readable form.
+
+**Says no to:** a bare `unwrap` on a path reachable from input, an error that names no next step, and messages that differ between human and machine output in substance.
+
+## 10. Reuse before building, generate before hand-writing
+
+Integrations stay cheap. Types come from published specs where they exist, projected down to the fields a workflow uses, and hand-written declarations are the escape hatch. Dependencies favour maturity over novelty.
+
+**Says no to:** hand-writing what a spec defines, generating a whole API surface nobody uses, a young crate where a mature one does the job, and a framework where a function would do.
+
+## 11. Everything testable without the outside world
+
+Every behaviour runs against fakes and a simulated forge, with no live service, model, or network. Backfill, simulation, and catch-up share the production path.
+
+**Says no to:** a test that needs a real GitHub account, a code path that exists only for tests, and a feature with no dry run.

@@ -38,7 +38,7 @@ docs/                 vision, principles, requirements, roadmap
 - **Change a query or migration:** run `make sqlx-prepare` with `DATABASE_URL` pointing at a migrated database, and commit `crates/almanac/.sqlx`. Builds use that metadata and need no database.
 - **Slower tests:** `make test-db` and `make test-sandbox` need podman, and the second needs the `claude` CLI. Neither calls a model. `make check` runs both.
 - **Accept compile-fail output:** `TRYBUILD=overwrite cargo test -p fails`, then read every changed `.stderr`. A case must fail for its intended reason, not for an unrelated error.
-- **Try an almanac:** `cargo run -- synth` or `cargo run -- ingest KIND FILE` inside `almanacs/renovate`.
+- **Try an almanac:** `cargo run -- synth` or `cargo run -- simulate KIND FILE --dry-run` inside `almanacs/renovate`.
 
 ## Working in the open
 

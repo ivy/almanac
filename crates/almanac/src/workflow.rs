@@ -2,12 +2,14 @@
 use crate::agent::AgentInfo;
 use crate::cx::{Cx, Halt, StepError};
 use crate::effect::{Effect, EffectKind};
-use crate::providers::Requirement;
-use crate::taint::Slug;
-use crate::wire::{Event, Malformed, Payload};
+use crate::providers::{Providers, Requirement};
+use crate::taint::{Sha, Slug};
+use crate::wire::{Event, FromRest, Malformed, Payload};
 use futures::future::BoxFuture;
 use serde_json::{Value, json};
 use std::future::Future;
+use std::marker::PhantomData;
+use std::sync::Arc;
 
 /// A durable link between runs, so a workflow can find what another one learned.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -25,6 +27,76 @@ impl Subject {
     }
 }
 
+/// What a scan can reach. It lists subjects: deciding about them is a run's job.
+pub struct Scanner {
+    providers: Arc<Providers>,
+    repo: Option<Slug>,
+}
+
+impl Scanner {
+    pub(crate) fn new(providers: Arc<Providers>, repo: Option<Slug>) -> Self {
+        Self { providers, repo }
+    }
+
+    pub fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Arc<T>, StepError> {
+        let missing = || StepError(format!("no provider for {}", std::any::type_name::<T>()));
+        self.providers.get::<T>().ok_or_else(missing)
+    }
+
+    /// The one repository to look at, if a backfill named one.
+    pub fn repo(&self) -> Option<&Slug> {
+        self.repo.as_ref()
+    }
+}
+
+/// An event a scan found. It reaches a workflow by the same path as a webhook.
+pub struct Scanned<E> {
+    delivery_id: String,
+    payload: Value,
+    _event: PhantomData<fn() -> E>,
+}
+
+impl<E: Event> Scanned<E> {
+    pub fn id(&self) -> &str {
+        &self.delivery_id
+    }
+
+    /// `delivery_id` must be stable, because that is what makes scanning twice harmless.
+    pub fn new(delivery_id: impl Into<String>, payload: Value) -> Self {
+        Self {
+            delivery_id: delivery_id.into(),
+            payload,
+            _event: PhantomData,
+        }
+    }
+
+    /// Adds something that changes when the subject should be looked at again, such as the state
+    /// of its checks. Without it, a scan of an unchanged commit is dropped as a duplicate, and a
+    /// run that decided to wait would never be reconsidered.
+    pub fn at_state(mut self, state: impl std::fmt::Display) -> Self {
+        self.delivery_id = format!("{}~{state}", self.delivery_id);
+        self
+    }
+}
+
+impl<E: FromRest> Scanned<E> {
+    /// A pull request read from the REST API, identified by repository, number, and head.
+    pub fn pull(repo: &Slug, number: u64, head: &Sha, rest: &Value) -> Self {
+        Self::new(
+            format!("scan:{repo}#{number}@{head}"),
+            E::webhook_payload(rest),
+        )
+    }
+}
+
+/// A scanned event with its type erased, ready for the runtime.
+#[derive(Clone, Debug)]
+pub struct Found {
+    pub delivery_id: String,
+    pub kind: &'static str,
+    pub payload: Value,
+}
+
 /// `gather` is where I/O and inference happen, through `Cx`. `decide` is a plain function
 /// of what was gathered, so policy is table-testable and re-runs on replay.
 pub trait Workflow: Send + Sync + 'static {
@@ -37,6 +109,17 @@ pub trait Workflow: Send + Sync + 'static {
     /// The effects this workflow may produce. Anything else is denied.
     const MAY: &'static [EffectKind];
     const RUNS_PER_HOUR: u32;
+    /// Whether this workflow can list its current subjects.
+    const SCANS: bool = false;
+
+    /// Lists current subjects, for backfill and catch-up. Must produce the same key as the
+    /// webhook for the same subject, or the two will not coalesce.
+    fn scan(
+        &self,
+        _scanner: &Scanner,
+    ) -> impl Future<Output = Result<Vec<Scanned<Self::Event>>, StepError>> + Send {
+        async { Ok(vec![]) }
+    }
 
     /// One active run per key.
     fn key(event: &Self::Event) -> String;
@@ -91,6 +174,7 @@ pub trait Registered: Send + Sync {
         cx: &'a Cx,
         payload: &'a Value,
     ) -> BoxFuture<'a, Result<Decided, Halt>>;
+    fn scan<'a>(&'a self, scanner: &'a Scanner) -> BoxFuture<'a, Result<Vec<Found>, StepError>>;
     /// The reviewable artifact: declared triggers, limits, effects, and capabilities.
     fn manifest(&self) -> Value;
 }
@@ -138,11 +222,23 @@ impl<W: Workflow> Registered for W {
             })
         })
     }
+    fn scan<'a>(&'a self, scanner: &'a Scanner) -> BoxFuture<'a, Result<Vec<Found>, StepError>> {
+        Box::pin(async move {
+            let scanned = Workflow::scan(self, scanner).await?;
+            let erased = scanned.into_iter().map(|s| Found {
+                delivery_id: s.delivery_id,
+                kind: W::Event::KIND,
+                payload: s.payload,
+            });
+            Ok(erased.collect())
+        })
+    }
     fn manifest(&self) -> Value {
         json!({
             "workflow": W::NAME,
             "intent": W::INTENT,
             "on": W::Event::KIND,
+            "scans": W::SCANS,
             "runs_per_hour": W::RUNS_PER_HOUR,
             "may": W::MAY,
             "agents": self.agents(),

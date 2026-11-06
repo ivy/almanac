@@ -212,6 +212,7 @@ struct Args {
     may: Vec<Ident>,
     runs_per_hour: Option<LitInt>,
     decide: Option<ExprPath>,
+    scan: Option<ExprPath>,
     subjects: Vec<ExprCall>,
     links: Vec<ExprCall>,
 }
@@ -266,6 +267,7 @@ fn parse_args(attr: Tokens) -> Result<Args> {
             "key" => args.key = Some(string(value)?),
             "intent" => args.intent = Some(string(value)?),
             "decide" => args.decide = Some(path(value)?),
+            "scan" => args.scan = Some(path(value)?),
             "subjects" => args.subjects = calls(value)?,
             "links" => args.links = calls(value)?,
             "may" => {
@@ -474,6 +476,22 @@ fn expand(attr: Tokens, item: Tokens) -> Result<Tokens> {
     let subjects = subject_exprs(&args.subjects, &event);
     let links = subject_exprs(&args.links, &facts_arg);
 
+    let scan = args.scan.as_ref().map(|scan| {
+        quote! {
+            const SCANS: bool = true;
+
+            async fn scan(
+                &self,
+                scanner: &::almanac::workflow::Scanner,
+            ) -> ::std::result::Result<
+                ::std::vec::Vec<::almanac::workflow::Scanned<#on>>,
+                ::almanac::cx::StepError,
+            > {
+                #scan(scanner).await
+            }
+        }
+    });
+
     let name = &function.sig.ident;
     let visibility = &function.vis;
     let label = name.to_string().replace('_', "-");
@@ -492,6 +510,8 @@ fn expand(attr: Tokens, item: Tokens) -> Result<Tokens> {
             const INTENT: &'static str = #intent;
             const MAY: &'static [::almanac::effect::EffectKind] = &[#(::almanac::effect::EffectKind::#may),*];
             const RUNS_PER_HOUR: u32 = #runs_per_hour;
+
+            #scan
 
             fn key(#event: &#on) -> ::std::string::String {
                 #key

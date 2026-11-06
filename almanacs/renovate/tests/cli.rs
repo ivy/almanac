@@ -68,3 +68,41 @@ fn explain_prints_the_long_form() {
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("## What to do next"), "{text}");
 }
+
+const FIXTURE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/fixtures/renovate-pr-opened.json"
+);
+
+#[test]
+fn simulate_runs_a_fixture_and_records_what_would_apply() {
+    let out = run(
+        None,
+        &[
+            "simulate",
+            "github.pull_request.opened",
+            FIXTURE,
+            "--dry-run",
+        ],
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("simulate: Queued"), "{text}");
+    assert!(text.contains("WouldApply"), "{text}");
+}
+
+#[test]
+fn a_run_is_dry_unless_the_environment_says_live() {
+    let out = run(None, &["simulate", "github.pull_request.opened", FIXTURE]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("WouldApply"), "{text}");
+}
+
+#[test]
+fn backfill_reports_in_json() {
+    let out = run(None, &["--format", "json", "backfill", "--dry-run"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["backfill"]["found"], 0);
+}

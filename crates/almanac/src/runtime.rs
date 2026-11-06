@@ -8,7 +8,7 @@ use crate::store::{
     StoreError, Stored,
 };
 use crate::taint::{Slug, Untrusted};
-use crate::workflow::{Decided, Registered, Subject};
+use crate::workflow::{Decided, Registered, Scanner, Subject};
 use futures::future::{BoxFuture, join_all};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -138,6 +138,17 @@ pub enum Outcome {
         workflow: Option<&'static str>,
         held: usize,
     },
+}
+
+/// What a backfill found.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
+pub struct Backfill {
+    pub found: usize,
+    pub queued: usize,
+    /// Already seen, so nothing has changed since the last scan.
+    pub unchanged: usize,
+    /// Did not parse. These should be looked at: a subject here is being missed.
+    pub rejected: usize,
 }
 
 /// What one attempt to apply an effect did.
@@ -563,6 +574,40 @@ impl Runtime {
     /// What a run recorded, including what a dry run would have done.
     pub async fn effects_of(&self, run_id: &str) -> Stored<Vec<Entry>> {
         self.store.outbox(run_id).await
+    }
+
+    /// Lists every workflow's current subjects and ingests them as scanned events. Scanning
+    /// twice is harmless, because scanned events have stable delivery IDs.
+    pub async fn backfill(&self, repo: Option<&Slug>) -> Result<Backfill, crate::diag::Error> {
+        let scanner = Scanner::new(self.providers.clone(), repo.cloned());
+        let mut report = Backfill::default();
+        for w in &self.workflows {
+            let found = w.scan(&scanner).await.map_err(|StepError(reason)| {
+                crate::diag::Error::ScanFailed {
+                    workflow: w.name().to_string(),
+                    reason,
+                }
+            })?;
+            for event in found {
+                report.found += 1;
+                let ingest = self
+                    .ingest(Envelope {
+                        source: "scan".to_string(),
+                        delivery_id: event.delivery_id,
+                        kind: event.kind.to_string(),
+                        depth: 0,
+                        origin: Origin::Scan,
+                        payload: event.payload,
+                    })
+                    .await?;
+                match ingest {
+                    Ingest::Duplicate => report.unchanged += 1,
+                    Ingest::Rejected => report.rejected += 1,
+                    _ => report.queued += 1,
+                }
+            }
+        }
+        Ok(report)
     }
 
     /// Requeues what a crash left running. Call this once before draining after a start.

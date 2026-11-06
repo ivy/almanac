@@ -1,16 +1,17 @@
 //! What an almanac's `main()` calls. One binary, a few verbs.
 use crate::config::Config;
 use crate::diag::{Error, Format, explain, render};
+use crate::effect::Mode;
 use crate::providers::Providers;
-use crate::runtime::{Envelope, Origin, Runtime};
+use crate::runtime::{Envelope, Origin, Outcome, Runtime};
 use crate::store::PostgresStore;
 use crate::workflow::Registered;
 use serde_json::json;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-const USAGE: &str =
-    "usage: <almanac> [--format json] synth | check | ingest KIND FILE | explain CODE";
+const USAGE: &str = "usage: <almanac> [--format json] synth | check | \
+                     backfill [--repo R] [--dry-run] | simulate KIND FILE [--dry-run] | explain CODE";
 
 type Workflows = fn() -> Vec<Box<dyn Registered>>;
 type Setup = fn(&Config) -> Providers;
@@ -39,6 +40,48 @@ pub fn main(name: &'static str, workflows: Workflows, setup: Setup) -> ExitCode 
     }
 }
 
+/// Takes `flag` out of the arguments, reporting whether it was there.
+fn flag(args: &mut Vec<String>, flag: &str) -> bool {
+    let found = args.iter().position(|a| a == flag);
+    found.map(|at| args.remove(at)).is_some()
+}
+
+/// Takes `flag VALUE` out of the arguments.
+fn option(args: &mut Vec<String>, flag: &str) -> Option<String> {
+    let at = args.iter().position(|a| a == flag)?;
+    let value = args.get(at + 1)?.clone();
+    args.drain(at..at + 2);
+    Some(value)
+}
+
+/// Going live is deliberate: it is set in the environment for the run, and has no config key,
+/// because config only tightens. `--dry-run` always wins.
+fn mode(dry_run: bool) -> Mode {
+    match (dry_run, std::env::var("ALMANAC_MODE").as_deref()) {
+        (false, Ok("live")) => Mode::Live,
+        _ => Mode::DryRun,
+    }
+}
+
+/// Runs what is queued and applies it, reporting what happened.
+async fn settle(runtime: &Runtime) -> Result<Vec<String>, Error> {
+    let outcomes = runtime.drain().await?;
+    runtime.deliver().await?;
+    let mut shown = vec![];
+    for outcome in &outcomes {
+        let line = match outcome {
+            Outcome::Ran { run_id, .. } => {
+                let effects = runtime.effects_of(run_id).await?;
+                let statuses: Vec<_> = effects.iter().map(|e| e.status).collect();
+                format!("{outcome:?} recorded as {statuses:?}")
+            }
+            other => format!("{other:?}"),
+        };
+        shown.push(line);
+    }
+    Ok(shown)
+}
+
 fn print(format: Format, human: String, json: serde_json::Value) {
     match format {
         Format::Human => println!("{human}"),
@@ -48,11 +91,13 @@ fn print(format: Format, human: String, json: serde_json::Value) {
 
 fn run(
     name: &'static str,
-    args: Vec<String>,
+    mut args: Vec<String>,
     format: Format,
     workflows: Workflows,
     setup: Setup,
 ) -> Result<(), Error> {
+    let dry_run = flag(&mut args, "--dry-run");
+    let repo = option(&mut args, "--repo");
     let verb: Vec<&str> = args.iter().map(String::as_str).collect();
     if let ["explain", code] = verb.as_slice() {
         let page = explain(code)?;
@@ -68,7 +113,9 @@ fn run(
         .enable_all()
         .build()
         .map_err(|source| Error::Startup { source })?;
-    let mut runtime = Runtime::new(workflows(), setup(&config)).tightened(config.limits());
+    let mut runtime = Runtime::new(workflows(), setup(&config))
+        .tightened(config.limits())
+        .in_mode(mode(dry_run));
     if let Ok(url) = std::env::var("DATABASE_URL") {
         let store = rt.block_on(PostgresStore::connect(&url, name))?;
         runtime = runtime.with_store(Arc::new(store));
@@ -90,7 +137,26 @@ fn run(
                 json!({"almanac": name, "ok": true, "workflows": workflows}),
             );
         }
-        ["ingest", kind, file] => {
+        ["backfill"] => {
+            let repo = match repo {
+                Some(text) => Some(text.parse().map_err(|_| Error::Usage {
+                    given: text,
+                    usage: USAGE.to_string(),
+                })?),
+                None => None,
+            };
+            let (report, shown) = rt.block_on(async {
+                runtime.recover().await?;
+                let report = runtime.backfill(repo.as_ref()).await?;
+                Ok::<_, Error>((report, settle(&runtime).await?))
+            })?;
+            print(
+                format,
+                format!("backfill: {report:?}\n{}", shown.join("\n")),
+                json!({"backfill": report, "outcomes": shown}),
+            );
+        }
+        ["simulate", kind, file] => {
             let text = std::fs::read_to_string(file).map_err(|source| Error::InputUnreadable {
                 path: (*file).to_string(),
                 source,
@@ -101,25 +167,22 @@ fn run(
                     source,
                 })?;
             let envelope = Envelope {
-                source: "cli".into(),
-                delivery_id: (*file).to_string(),
+                source: "simulate".into(),
+                delivery_id: format!("{file}:{}", text.len()),
                 kind: (*kind).to_string(),
                 depth: 0,
                 origin: Origin::Simulated,
                 payload,
             };
-            let (ingest, outcomes) = rt.block_on(async {
+            let (ingest, shown) = rt.block_on(async {
                 runtime.recover().await?;
                 let ingest = runtime.ingest(envelope).await?;
-                let outcomes = runtime.drain().await?;
-                runtime.deliver().await?;
-                Ok::<_, crate::store::StoreError>((ingest, outcomes))
+                Ok::<_, Error>((ingest, settle(&runtime).await?))
             })?;
-            let shown: Vec<String> = outcomes.iter().map(|o| format!("{o:?}")).collect();
             print(
                 format,
-                format!("ingest: {ingest:?}\n{}", shown.join("\n")),
-                json!({"ingest": format!("{ingest:?}"), "outcomes": shown}),
+                format!("simulate: {ingest:?}\n{}", shown.join("\n")),
+                json!({"simulate": format!("{ingest:?}"), "outcomes": shown}),
             );
         }
         _ => {

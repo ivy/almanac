@@ -1,0 +1,26 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/scan_returns_the_wrong_event.rs:18:1
+   |
+18 | #[workflow(on = Opened, key = "{repo}", intent = "x", may = [Await], runs_per_hour = 1, scan = lists_others, decide = no_effects)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Result<Vec<Scanned<Opened>>, StepError>`, found `Result<Vec<Scanned<Other>>, StepError>`
+   |
+   = note: expected enum `Result<Vec<Scanned<fails::Opened>>, StepError>`
+              found enum `Result<Vec<Scanned<Other>>, StepError>`
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/scan_returns_the_wrong_event.rs:18:1
+   |
+18 | #[workflow(on = Opened, key = "{repo}", intent = "x", may = [Await], runs_per_hour = 1, scan = lists_others, decide = no_effects)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^----------^^
+   | |                                                                                                                     |
+   | |                                                                                                                     arguments to this function are incorrect
+   | expected `&()`, found `&Done`
+   |
+   = note: expected reference `&()`
+              found reference `&fails::Done`
+note: function defined here
+  --> src/lib.rs
+   |
+   | pub fn no_effects(_: &()) -> Vec<Effect> {
+   |        ^^^^^^^^^^
+   = note: this error originates in the attribute macro `workflow` (in Nightly builds, run with -Z macro-backtrace for more info)

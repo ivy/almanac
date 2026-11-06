@@ -27,6 +27,7 @@ pages! {
     "almanac::input::invalid_json" => "almanac.input.invalid_json",
     "almanac::runtime::startup" => "almanac.runtime.startup",
     "almanac::explain::unknown_code" => "almanac.explain.unknown_code",
+    "almanac::scan::failed" => "almanac.scan.failed",
     "almanac::forge::rate_limited" => "almanac.forge.rate_limited",
     "almanac::forge::refused" => "almanac.forge.refused",
     "almanac::forge::unreachable" => "almanac.forge.unreachable",
@@ -167,6 +168,13 @@ pub enum Error {
     )]
     UnknownCode { code: String },
 
+    #[error("the scan for {workflow} failed: {reason}")]
+    #[diagnostic(
+        code(almanac::scan::failed),
+        help("fix what this names and run backfill again; scanning twice is safe")
+    )]
+    ScanFailed { workflow: String, reason: String },
+
     #[error("GitHub's rate limit was reached on {action}, and it resets in {wait_seconds}s")]
     #[diagnostic(
         code(almanac::forge::rate_limited),
@@ -286,6 +294,10 @@ mod tests {
             },
             Error::Startup { source: io() },
             Error::UnknownCode { code: "c".into() },
+            Error::ScanFailed {
+                workflow: "w".into(),
+                reason: "r".into(),
+            },
             Error::RateLimited {
                 action: "a".into(),
                 wait_seconds: 1,
@@ -318,6 +330,7 @@ mod tests {
                 | Error::InputInvalidJson { .. }
                 | Error::Startup { .. }
                 | Error::UnknownCode { .. }
+                | Error::ScanFailed { .. }
                 | Error::RateLimited { .. }
                 | Error::ForgeRefused { .. }
                 | Error::ForgeUnreachable { .. }

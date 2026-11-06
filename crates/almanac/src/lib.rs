@@ -34,7 +34,7 @@ pub mod prelude {
     pub use crate::providers::Providers;
     pub use crate::taint::{Clean, Finite, Invalid, Observed, Sha, Slug, Untrusted};
     pub use crate::wire::{Event, FromRest, Malformed, Payload};
-    pub use crate::workflow::{Registered, Subject, Workflow};
+    pub use crate::workflow::{Registered, Scanned, Scanner, Subject, Workflow};
     pub use crate::{clean, observed, output};
     pub use almanac_macros::{prompt, workflow};
     pub use futures::future::BoxFuture;

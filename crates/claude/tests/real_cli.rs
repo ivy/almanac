@@ -1,6 +1,7 @@
 //! The real CLI and real Podman against a stub model: no credential and no spend.
 //! `make test-sandbox` runs this.
 use almanac::agent::Grant;
+use almanac::patch::{Change, Patch};
 use claude::stub::{StubModel, Turn, tool};
 use claude::{ClaudeConfig, ClaudeHarness};
 use sandbox::{PodmanSandbox, SandboxSpec};
@@ -122,18 +123,43 @@ async fn a_fixer_session_edits_in_the_sandbox_and_returns_a_patch() {
     offered.sort();
     assert_eq!(offered, SANDBOX_TOOLS);
     assert_eq!(out["answer"], json!({"summary": "done"}));
-    let patch = out["patch"].as_str().unwrap();
-    assert!(
-        patch.contains("src/fixed.txt") && patch.contains("+fixed"),
-        "{patch}"
-    );
-    assert!(!patch.contains("escape"), "{patch}");
+    let patch: Patch = serde_json::from_value(out).unwrap();
+    assert_eq!(patch.changes.len(), 1, "{patch:?}");
+    let Change::Write { path, content, .. } = &patch.changes[0] else {
+        panic!("{patch:?}");
+    };
+    assert_eq!(path, "src/fixed.txt");
+    assert_eq!(content, "Zml4ZWQK");
+    assert!(patch.diff.contains("+fixed"), "{}", patch.diff);
 
     let seen = results(&model);
     assert!(seen[0].contains("No such tool"), "{seen:?}");
     assert!(seen[2].contains("Read-only file system"), "{seen:?}");
     assert!(seen[3].contains("unreachable"), "{seen:?}");
     assert!(!std::path::Path::new("/tmp/ran-on-host").exists());
+}
+
+#[tokio::test]
+async fn deletes_renames_and_links_come_back_as_what_they_are() {
+    let setup = "mkdir d && echo keep > d/keep && echo old > d/old && git add -A && \
+                 git -c user.name=a -c user.email=a@b commit -qm base";
+    let change = "git mv d/old d/new && rm d/keep && ln -s /etc/passwd d/link";
+    let model = StubModel::start(vec![
+        tool("mcp__sandbox__exec", json!({"command": setup})),
+        tool("mcp__sandbox__exec", json!({"command": change})),
+        Turn::Text("{}".to_string()),
+    ])
+    .await;
+    let out = harness(&model)
+        .session("Fix.", WRITE, json!({}))
+        .await
+        .unwrap();
+    let patch: Patch = serde_json::from_value(out).unwrap();
+    let shown = format!("{:?}", patch.changes);
+    assert!(shown.contains("Delete { path: \"d/old\" }"), "{shown}");
+    assert!(shown.contains("Delete { path: \"d/keep\" }"), "{shown}");
+    assert!(shown.contains("Write { path: \"d/new\""), "{shown}");
+    assert!(shown.contains("Link { path: \"d/link\" }"), "{shown}");
 }
 
 #[tokio::test]

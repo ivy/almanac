@@ -7,6 +7,7 @@ fn describe(effect: &Effect) -> &'static str {
         Effect::Await { .. } => "wait",
         Effect::File { .. } => "work",
         Effect::Ask { .. } => "question",
+        Effect::Push { .. } => "commit",
     }
 }
 

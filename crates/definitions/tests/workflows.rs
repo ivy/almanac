@@ -855,7 +855,10 @@ async fn hostile_text_stays_tagged_in_the_stored_effect() {
 async fn going_live_requires_a_forge_and_a_tracker() {
     let rt = Runtime::new(vec![Box::new(DependencyUpdates)], Providers::new()).in_mode(Mode::Live);
     let problem = rt.validate().unwrap_err().to_string();
-    assert!(problem.contains("may Attest but no Forge"), "{problem}");
+    assert!(
+        problem.contains("may Attest or Push but no Forge"),
+        "{problem}"
+    );
     assert!(
         problem.contains("may File or Ask but no Tracker"),
         "{problem}"
@@ -914,4 +917,101 @@ async fn a_missing_timestamp_yields_await() {
 async fn an_old_enough_release_yields_no_wait() {
     let old = Published::At(time::OffsetDateTime::now_utc() - time::Duration::days(4));
     assert_eq!(cooldown_effects(old).await, []);
+}
+
+#[prompt(text = "Repair this build.")]
+pub struct RepairPrompt;
+
+const REPAIRER: AgentSpec<Fixer, RepairPrompt> = AgentSpec::fixer("repairer");
+
+pub struct Repaired {
+    pr: PullRequestOpened,
+    patch: Untrusted<Patch>,
+}
+
+#[workflow(on = PullRequestOpened, key = "{repo}", intent = "Repair a broken update.", may = [Push, Ask], runs_per_hour = 9, decide = push_if_safe)]
+async fn repair_build(cx: &Cx, pr: &PullRequestOpened) -> Result<Repaired, Halt> {
+    let old = Published::At(time::OffsetDateTime::now_utc() - time::Duration::days(9));
+    let min_age = std::time::Duration::from_secs(86400);
+    let Some(cooled) = cx.cooled(min_age, async move { Ok(old) }).await? else {
+        return Err(Halt::Stop("not cooled".to_string()));
+    };
+    let patch = cx
+        .agent(REPAIRER)
+        .repair(RepairPrompt, &pr.title, &cooled)
+        .await?;
+    Ok(Repaired {
+        pr: pr.clone(),
+        patch,
+    })
+}
+
+fn push_if_safe(Repaired { pr, patch }: &Repaired) -> Vec<Effect> {
+    match DEFAULT_POLICY.check(patch, &pr.head_sha) {
+        Ok(patch) => vec![Effect::Push {
+            repo: pr.repo.clone(),
+            pull: pr.number,
+            branch: pr.head_branch.clone(),
+            message: "fix: repair the build after this update",
+            patch,
+        }],
+        Err(_) => vec![Effect::Ask {
+            question: "A repair was refused by the patch policy",
+            target: pr.repo.clone(),
+            body: patch.map(|p| p.diff.clone()),
+        }],
+    }
+}
+
+async fn repair_with(changes: Value) -> (Vec<EffectKind>, FakeForge) {
+    let forge = FakeForge::default();
+    let tracker = FakeTracker::default();
+    let forge_provider: Arc<dyn Forge> = Arc::new(forge.clone());
+    let tracker_provider: Arc<dyn Tracker> = Arc::new(tracker);
+    let reply = json!({"changes": changes, "diff": "the diff"});
+    let providers = Providers::new()
+        .provide::<dyn Forge>(forge_provider)
+        .provide::<dyn Tracker>(tracker_provider)
+        .harness(ScriptedHarness::replying(reply));
+    let rt = Runtime::new(vec![Box::new(RepairBuild)], providers)
+        .in_mode(Mode::Live)
+        .with_store(store());
+    rt.ingest(pr("d1", "ivy/thicket", 0)).await.unwrap();
+    let outcomes = rt.drain().await.unwrap();
+    rt.deliver().await.unwrap();
+    (kinds(&outcomes[0]), forge)
+}
+
+fn write_to(path: &str) -> Value {
+    json!({"Write": {"path": path, "content": "eA==", "executable": false}})
+}
+
+#[tokio::test]
+async fn an_injected_agent_editing_ci_is_rejected_and_nothing_is_pushed() {
+    let changes = json!([write_to(".github/workflows/ci.yml")]);
+    let (effects, forge) = repair_with(changes).await;
+    assert_eq!(effects, [EffectKind::Ask]);
+    assert_eq!(forge.pushes.lock().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn a_clean_repair_is_pushed_to_the_pull_requests_own_branch() {
+    let changes = json!([write_to("src/main.rs"), write_to("Cargo.lock")]);
+    let (effects, forge) = repair_with(changes).await;
+    assert_eq!(effects, [EffectKind::Push]);
+    let pushes = forge.pushes.lock().unwrap();
+    let (_, push) = &pushes[0];
+    assert_eq!(push.branch.to_string(), "renovate/ts");
+    assert_eq!(push.repo.to_string(), "ivy/thicket");
+}
+
+#[tokio::test]
+async fn the_manifest_shows_a_fixers_grant() {
+    let manifest = Runtime::new(vec![Box::new(RepairBuild)], Providers::new()).manifest();
+    let grant = &manifest[0]["agents"][0]["grant"];
+    assert_eq!(
+        *grant,
+        json!({"write": true, "egress": false, "secrets": false})
+    );
+    assert_eq!(manifest[0]["agents"][0]["profile"], "fixer");
 }

@@ -1,0 +1,8 @@
+error[E0308]: mismatched types
+ --> tests/ui/fail/untrusted_patch_to_push.rs:9:9
+  |
+9 |         patch,
+  |         ^^^^^ expected `Checked`, found `Untrusted<Patch>`
+  |
+  = note: expected struct `Checked`
+             found struct `fails::Untrusted<fails::Patch>`

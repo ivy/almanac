@@ -17,17 +17,26 @@ help: the following other types implement trait `Finite`
   |           |
   |           `AttestState`
   |           `EffectKind`
+  |           `Rejection`
   |
  ::: $WORKSPACE/crates/almanac/src/effect.rs
   |
   | / crate::clean! {
-  | |     pub enum EffectKind { Attest, Await, File, Ask }
+  | |     pub enum EffectKind { Attest, Await, File, Ask, Push }
   | | }
   | |_- in this macro invocation
   |
   | / crate::clean! {
   | |     /// A status check's state. `Pending` holds a merge as firmly as `Failure`.
   | |     pub enum AttestState { Pending, Success, Failure }
+  | | }
+  | |_- in this macro invocation
+  |
+ ::: $WORKSPACE/crates/almanac/src/patch.rs
+  |
+  | / crate::clean! {
+  | |     /// Why a patch was refused. It names a reason and not a path, because paths are hostile.
+  | |     pub enum Rejection { Empty, UnsafePath, Denied, Link, TooManyFiles, TooLarge }
   | | }
   | |_- in this macro invocation
 note: required by a bound in `Untrusted::<T>::narrow`

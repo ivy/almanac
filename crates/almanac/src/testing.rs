@@ -1,7 +1,7 @@
 //! Fakes, so a workflow's logic is testable with no model, service, or network.
 use crate::agent::{Classifier, Grant, Harness, Pass};
 use crate::cx::StepError;
-use crate::effect::{AttestState, Forge, Tracker};
+use crate::effect::{AttestState, Forge, Push, Tracker};
 use crate::taint::{Sha, Slug, Untrusted};
 use futures::future::BoxFuture;
 use serde_json::Value;
@@ -96,6 +96,7 @@ impl Classifier for FixedClassifier {
 pub struct FakeForge {
     pub calls: Arc<Mutex<Vec<String>>>,
     pub applied: Arc<Mutex<Vec<(String, AttestState)>>>,
+    pub pushes: Arc<Mutex<Vec<(String, Push)>>>,
     /// Failures to return before succeeding.
     pub fail_next: Arc<AtomicUsize>,
 }
@@ -119,6 +120,17 @@ impl Forge for FakeForge {
             let mut applied = self.applied.lock().unwrap();
             applied.retain(|(existing, _)| existing != &status);
             applied.push((status, state));
+            Ok(())
+        })
+    }
+
+    fn push<'a>(&'a self, key: &'a str, push: &'a Push) -> BoxFuture<'a, Result<(), StepError>> {
+        Box::pin(async move {
+            self.calls.lock().unwrap().push(key.to_string());
+            let mut pushes = self.pushes.lock().unwrap();
+            if !pushes.iter().any(|(existing, _)| existing == key) {
+                pushes.push((key.to_string(), push.clone()));
+            }
             Ok(())
         })
     }

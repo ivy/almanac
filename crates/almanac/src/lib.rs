@@ -8,6 +8,7 @@ pub mod cooled;
 pub mod cx;
 pub mod diag;
 pub mod effect;
+pub mod patch;
 pub mod providers;
 pub mod runtime;
 pub mod store;
@@ -27,7 +28,8 @@ pub mod prelude {
     pub use crate::config::Config;
     pub use crate::cooled::{Cooled, Published};
     pub use crate::cx::{Cx, Halt, StepError};
-    pub use crate::effect::{AttestState, Effect, EffectKind, Forge, Mode, Tracker};
+    pub use crate::effect::{AttestState, Effect, EffectKind, Forge, Mode, Push, Tracker};
+    pub use crate::patch::{Change, Checked, DEFAULT_POLICY, Patch, PatchPolicy, Rejection};
     pub use crate::providers::Providers;
     pub use crate::taint::{Clean, Finite, Invalid, Observed, Sha, Slug, Untrusted};
     pub use crate::wire::{Event, Malformed, Payload};

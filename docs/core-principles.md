@@ -46,7 +46,7 @@ Outside reads, model answers, and guard verdicts are recorded. A replay reuses t
 
 ## 8. Almanac reports; the repository decides
 
-Effects are a small closed set, and merging is not one of them. Almanac publishes statuses and proposes changes. Repository rules and Renovate perform the merge.
+Effects are a small closed set, and merging is not one of them. Almanac publishes statuses, proposes changes, and pushes checked patches to a pull request's own branch. Repository rules and Renovate perform the merge.
 
 **Says no to:** a merge effect, bypassing branch protection, and an effect added because one workflow found it convenient without a principle covering it.
 

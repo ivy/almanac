@@ -21,6 +21,11 @@ impl<T> Untrusted<T> {
         f(&self.inner)
     }
 
+    /// For checks inside this crate that decide with code. Never public.
+    pub(crate) fn inner(&self) -> &T {
+        &self.inner
+    }
+
     pub fn map<U>(&self, f: fn(&T) -> U) -> Untrusted<U> {
         Untrusted::new(f(&self.inner))
     }

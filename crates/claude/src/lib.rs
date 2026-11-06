@@ -19,6 +19,8 @@ use tokio::process::{Child, Command};
 /// reaches the model.
 pub const WORKSPACE_FIELD: &str = "$workspace";
 const PATCH_TIMEOUT: Duration = Duration::from_secs(60);
+const LINK_MODE: &str = "120000";
+const EXECUTABLE_MODE: &str = "100755";
 
 #[derive(Clone)]
 pub struct ClaudeConfig {
@@ -120,18 +122,9 @@ impl ClaudeHarness {
         baseline(sandbox.as_ref(), id).await?;
         let tools = mcp::serve(sandbox.clone(), id.clone(), self.config.timeout).await?;
         let answer = self.converse(prompt, input, Some(&tools)).await?;
-        let patch = sandbox
-            .exec(
-                id,
-                "git add -A && git diff --cached --binary",
-                PATCH_TIMEOUT,
-            )
-            .await
-            .map_err(step)?;
-        if patch.exit_code != 0 {
-            return Err(step(format!("could not read the patch: {}", patch.stderr)));
-        }
-        Ok(json!({"answer": answer, "patch": patch.stdout}))
+        let changes = changes(sandbox.as_ref(), id).await?;
+        let diff = captured(sandbox.as_ref(), id, "git diff --cached --binary").await?;
+        Ok(json!({"answer": answer, "changes": changes, "diff": diff}))
     }
 
     fn command(&self, prompt: &str, home: &str, tools: Option<&mcp::Tools>) -> Command {
@@ -202,10 +195,12 @@ impl ClaudeHarness {
     }
 }
 
-/// A commit to diff against, so the patch holds only what the agent changed.
+/// A commit to diff against, so the patch holds only what the agent changed. Scratch space and
+/// the dependency cache are excluded, so they never read as changes.
 async fn baseline(sandbox: &dyn Sandbox, id: &SandboxId) -> Result<(), StepError> {
-    let command = "git init -q . && git -c user.name=almanac -c user.email=almanac@localhost \
-                   add -A && git -c user.name=almanac -c user.email=almanac@localhost \
+    let command = "git init -q . && mkdir -p .git/info && \
+                   printf '.tmp/\\n.cargo/\\n' >> .git/info/exclude && git add -A && \
+                   git -c user.name=almanac -c user.email=almanac@localhost \
                    commit -q --allow-empty -m baseline";
     let out = sandbox
         .exec(id, command, PATCH_TIMEOUT)
@@ -218,6 +213,49 @@ async fn baseline(sandbox: &dyn Sandbox, id: &SandboxId) -> Result<(), StepError
         )));
     }
     Ok(())
+}
+
+async fn captured(
+    sandbox: &dyn Sandbox,
+    id: &SandboxId,
+    command: &str,
+) -> Result<String, StepError> {
+    let out = sandbox
+        .exec(id, command, PATCH_TIMEOUT)
+        .await
+        .map_err(step)?;
+    if out.exit_code != 0 {
+        return Err(step(format!("`{command}` failed: {}", out.stderr)));
+    }
+    Ok(out.stdout)
+}
+
+/// What the agent changed, as file changes. Everything read here is the agent's to shape, and
+/// a false report only changes what the patch policy sees and what gets pushed.
+async fn changes(sandbox: &dyn Sandbox, id: &SandboxId) -> Result<Vec<Value>, StepError> {
+    let raw = "git add -A && git diff --cached --raw --no-renames --abbrev=40 -z";
+    let listing = captured(sandbox, id, raw).await?;
+    let mut fields = listing.split('\0');
+    let mut changes = vec![];
+    while let (Some(meta), Some(path)) = (fields.next(), fields.next()) {
+        let columns: Vec<&str> = meta.trim_start_matches(':').split(' ').collect();
+        let [_, mode, _, blob, status] = columns[..] else {
+            return Err(step("unreadable change list"));
+        };
+        changes.push(if status == "D" {
+            json!({"Delete": {"path": path}})
+        } else if mode == LINK_MODE {
+            json!({"Link": {"path": path}})
+        } else if blob.len() == 40 && blob.chars().all(|c| c.is_ascii_hexdigit()) {
+            let read = format!("git cat-file blob {blob} | base64 | tr -d '\\n'");
+            let content = captured(sandbox, id, &read).await?;
+            let executable = mode == EXECUTABLE_MODE;
+            json!({"Write": {"path": path, "content": content, "executable": executable}})
+        } else {
+            return Err(step("unreadable change list"));
+        });
+    }
+    Ok(changes)
 }
 
 fn tokens(usage: &Value) -> u64 {

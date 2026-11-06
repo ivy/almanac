@@ -1,11 +1,13 @@
-//! The closed set of ways a workflow touches the world. There is no merge or close.
+//! The closed set of ways a workflow touches the world. A patch can be pushed to a pull
+//! request's own branch. Nothing here merges or closes: the repository's rules do that.
 use crate::cx::StepError;
+use crate::patch::{Checked, Patch};
 use crate::taint::{Sha, Slug, Untrusted};
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
 crate::clean! {
-    pub enum EffectKind { Attest, Await, File, Ask }
+    pub enum EffectKind { Attest, Await, File, Ask, Push }
 }
 
 crate::clean! {
@@ -36,6 +38,15 @@ pub enum Effect {
         target: Slug,
         body: Untrusted<String>,
     },
+    /// Commit a checked patch to a pull request's own branch. A forge refuses it unless
+    /// `branch` is that pull request's head and has not moved since `patch` was checked.
+    Push {
+        repo: Slug,
+        pull: u64,
+        branch: Slug,
+        message: &'static str,
+        patch: Checked,
+    },
 }
 
 crate::clean! {
@@ -50,6 +61,7 @@ impl Effect {
             Self::Await { .. } => EffectKind::Await,
             Self::File { .. } => EffectKind::File,
             Self::Ask { .. } => EffectKind::Ask,
+            Self::Push { .. } => EffectKind::Push,
         }
     }
 
@@ -86,6 +98,15 @@ pub enum Planned {
         question: String,
         target: Slug,
         body: Untrusted<String>,
+    },
+    /// The patch stays tagged as tainted when stored. It was checked before it was recorded.
+    Push {
+        repo: Slug,
+        pull: u64,
+        branch: Slug,
+        message: String,
+        base: Sha,
+        patch: Untrusted<Patch>,
     },
 }
 
@@ -124,6 +145,20 @@ impl From<&Effect> for Planned {
                 target,
                 body,
             },
+            Effect::Push {
+                repo,
+                pull,
+                branch,
+                message,
+                patch,
+            } => Self::Push {
+                repo,
+                pull,
+                branch,
+                message: message.to_string(),
+                base: patch.base().clone(),
+                patch: Untrusted::new(patch.patch().clone()),
+            },
         }
     }
 }
@@ -147,6 +182,21 @@ pub trait Forge: Send + Sync {
         context: &'a str,
         state: AttestState,
     ) -> BoxFuture<'a, Result<(), StepError>>;
+
+    /// Commits a patch to `branch`, which must be the head of pull request `pull` in `repo`
+    /// and still at `base`. Anything else is an error and changes nothing.
+    fn push<'a>(&'a self, key: &'a str, push: &'a Push) -> BoxFuture<'a, Result<(), StepError>>;
+}
+
+/// A commit for a forge to make.
+#[derive(Clone, Debug)]
+pub struct Push {
+    pub repo: Slug,
+    pub pull: u64,
+    pub branch: Slug,
+    pub message: String,
+    pub base: Sha,
+    pub patch: Untrusted<Patch>,
 }
 
 /// Where work and questions go. `key` is stable across retries, so a repeat must change nothing.

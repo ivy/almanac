@@ -123,7 +123,7 @@ async fn a_session_with_egress_or_secrets_is_refused() {
 fn fake_with_patch() -> Arc<FakeSandbox> {
     Arc::new(FakeSandbox::answering(|command| ExecOutput {
         exit_code: 0,
-        stdout: if command.contains("git diff") {
+        stdout: if command.contains("--binary") {
             "diff --git a/src b/src\n".to_string()
         } else {
             String::new()
@@ -141,7 +141,7 @@ async fn a_sandboxed_session_returns_the_patch_and_destroys_its_sandbox() {
     let harness =
         ClaudeHarness::new(config).with_sandbox(fake.clone(), SandboxSpec::agent("image"));
     let out = harness.session("Fix.", WRITE, json!({})).await.unwrap();
-    assert_eq!(out["patch"], "diff --git a/src b/src\n");
+    assert_eq!(out["diff"], "diff --git a/src b/src\n");
     assert_eq!(fake.alive(), 0);
 }
 

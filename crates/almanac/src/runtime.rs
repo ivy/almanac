@@ -1,6 +1,6 @@
 //! Routes events, runs workflows, and applies limits. What it must remember is in `store`.
 use crate::cx::{Cx, Halt, StepError};
-use crate::effect::{ActionSummary, Effect, EffectKind, Forge, Mode, Planned, Tracker};
+use crate::effect::{ActionSummary, Effect, EffectKind, Forge, Mode, Planned, Push, Tracker};
 use crate::providers::Providers;
 use crate::store::{
     Admission, Budget, Claim, Entry, EntryStatus, MemoryStore, Pending, Run, Store, StoreError,
@@ -204,8 +204,12 @@ impl Runtime {
 
     fn missing_for_effects(&self, w: &dyn Registered, missing: &mut Vec<String>) {
         let may = w.may();
-        if may.contains(&EffectKind::Attest) && self.providers.get::<dyn Forge>().is_none() {
-            missing.push(format!("{} may Attest but no Forge is provided", w.name()));
+        let forged = may.contains(&EffectKind::Attest) || may.contains(&EffectKind::Push);
+        if forged && self.providers.get::<dyn Forge>().is_none() {
+            missing.push(format!(
+                "{} may Attest or Push but no Forge is provided",
+                w.name()
+            ));
         }
         let tracked = may.contains(&EffectKind::File) || may.contains(&EffectKind::Ask);
         if tracked && self.providers.get::<dyn Tracker>().is_none() {
@@ -408,6 +412,24 @@ impl Runtime {
                 self.provider::<dyn Forge>("Forge")?
                     .attest(key, repo, sha, context, *state)
                     .await
+            }
+            Planned::Push {
+                repo,
+                pull,
+                branch,
+                message,
+                base,
+                patch,
+            } => {
+                let push = Push {
+                    repo: repo.clone(),
+                    pull: *pull,
+                    branch: branch.clone(),
+                    message: message.clone(),
+                    base: base.clone(),
+                    patch: patch.clone(),
+                };
+                self.provider::<dyn Forge>("Forge")?.push(key, &push).await
             }
             Planned::File {
                 title,

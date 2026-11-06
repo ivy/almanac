@@ -6,7 +6,7 @@ use crate::cooled::{Cooled, Published};
 use crate::effect::{AttestState, EffectKind, Forge, Mode};
 use crate::providers::Providers;
 use crate::store::{Store, StoreError};
-use crate::taint::{Invalid, Observed, Sha, Slug, Untrusted};
+use crate::taint::{Clean, Invalid, Observed, Sha, Slug, Untrusted};
 use crate::wire::Malformed;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
@@ -180,6 +180,16 @@ impl Cx {
 
     /// Read from the outside world. The result must be `Observed`, so its text is tainted.
     pub async fn observe<T: Observed + Record>(
+        &self,
+        name: &'static str,
+        read: impl Future<Output = Result<T, StepError>> + Send,
+    ) -> Result<T, StepError> {
+        self.record(name, read).await
+    }
+
+    /// Records a `Clean` value worked out from something tainted, such as a check that says only
+    /// yes or no.
+    pub async fn record_fact<T: Clean + Record>(
         &self,
         name: &'static str,
         read: impl Future<Output = Result<T, StepError>> + Send,

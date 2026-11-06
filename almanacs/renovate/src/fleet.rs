@@ -27,6 +27,8 @@ const CONFIG_FILES: [&str; 4] = [
     ".github/renovate.json",
     ".renovaterc",
 ];
+const VULNERABILITY_SUFFIX: &str = "-vulnerability";
+const UNLABELED: &str = "set vulnerabilityAlerts.labels, so security updates are labelled";
 const MERGEABLE_READS: u32 = 4;
 const MERGEABLE_PAUSE: Duration = Duration::from_secs(2);
 
@@ -72,6 +74,13 @@ pub enum Trust {
     Pending,
     Success,
     Failure,
+}
+
+impl Trust {
+    /// Whether a verdict was reached.
+    pub fn is_final(self) -> bool {
+        self != Self::Pending
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -217,6 +226,11 @@ pub fn checks_of(suites: &Value, statuses: &Value) -> Checks {
     Checks::Green
 }
 
+/// What Almanac last said about this commit, read from its combined status.
+pub fn trust_of_statuses(statuses: &Value) -> Option<Trust> {
+    trust_of(statuses)
+}
+
 /// Whether Almanac is holding this commit.
 pub fn trust_pending(statuses: &Value) -> bool {
     trust_of(statuses) == Some(Trust::Pending)
@@ -307,7 +321,7 @@ async fn observe(
     repo: &str,
     number: u64,
     config: RepoConfig,
-) -> Result<(PullFacts, String), Error> {
+) -> Result<(PullFacts, bool, String), Error> {
     let pull = client
         .pull_settled(repo, number, MERGEABLE_READS, MERGEABLE_PAUSE)
         .await?;
@@ -320,17 +334,18 @@ async fn observe(
         .filter(|m| m.contains(PATCH_TRAILER))
         .count();
     let labels = pull["labels"].as_array().cloned().unwrap_or_default();
+    let labeled = labels.iter().any(|l| l["name"] == json!("security"));
+    let branch_text = pull["head"]["ref"].as_str().unwrap_or_default();
     let facts = PullFacts {
         conflict: conflict_of(&pull),
         checks: checks_of(&suites, &statuses),
         trust: trust_of(&statuses),
-        security: labels.iter().any(|l| l["name"] == json!("security")),
+        security: labeled || branch_text.ends_with(VULNERABILITY_SUFFIX),
         attempts: attempts as u32,
         cooldown: cooldown_of(ages, &pull).await,
         config,
     };
-    let branch = pull["head"]["ref"].as_str().unwrap_or_default().to_string();
-    Ok((facts, branch))
+    Ok((facts, labeled, branch_text.to_string()))
 }
 
 /// Every open Renovate pull request across `owner`'s repositories, by repository.
@@ -356,12 +371,15 @@ pub async fn report(
         let mut reports = vec![];
         for pull in &pulls {
             let number = pull["number"].as_u64().unwrap_or_default();
-            let (facts, branch) = observe(client, ages, repo, number, config).await?;
+            let (facts, labeled, branch) = observe(client, ages, repo, number, config).await?;
             if branch.parse::<Slug>().is_err() {
                 out.unreadable.push(format!("{repo}#{number}"));
                 continue;
             }
-            let verdict = derive(&facts);
+            let mut verdict = derive(&facts);
+            if facts.security && !labeled {
+                verdict.note.get_or_insert(UNLABELED.to_string());
+            }
             *out.totals.entry(verdict.state).or_default() += 1;
             reports.push(PullReport {
                 number,

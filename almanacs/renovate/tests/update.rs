@@ -41,7 +41,15 @@ fn package(datasource: &str, name: &str, version: &str) -> UpdatedPackage {
     UpdatedPackage {
         datasource: datasource.to_string(),
         name: name.to_string(),
+        current: String::new(),
         version: version.to_string(),
+    }
+}
+
+fn from(current: &str, p: UpdatedPackage) -> UpdatedPackage {
+    UpdatedPackage {
+        current: current.to_string(),
+        ..p
     }
 }
 
@@ -49,25 +57,37 @@ fn package(datasource: &str, name: &str, version: &str) -> UpdatedPackage {
 fn an_action_is_read_from_its_type_column() {
     assert_eq!(
         parsed(ACTION),
-        [package("github-tags", "actions/checkout", "v7.0.1")]
+        [from(
+            "v5.1.0",
+            package("github-tags", "actions/checkout", "v7.0.1")
+        )]
     );
 }
 
 #[test]
 fn an_exact_npm_version_comes_from_the_diff_link_not_the_range() {
-    assert_eq!(parsed(NPM), [package("npm", "typescript", "7.0.2")]);
+    assert_eq!(
+        parsed(NPM),
+        [from("5.9.3", package("npm", "typescript", "7.0.2"))]
+    );
 }
 
 #[test]
 fn a_group_lists_every_package() {
     let found = parsed(GO_GROUP);
     assert_eq!(found.len(), 2);
-    assert_eq!(found[1], package("go", "example.com/mod", "v1.104.4"));
+    assert_eq!(
+        found[1],
+        from("v1.102.3", package("go", "example.com/mod", "v1.104.4"))
+    );
 }
 
 #[test]
 fn a_tool_with_no_datasource_keeps_its_version_and_has_no_ecosystem() {
-    assert_eq!(parsed(TOOL), [package("", "pinact", "5.0.2")]);
+    assert_eq!(
+        parsed(TOOL),
+        [from("4.1.1", package("", "pinact", "5.0.2"))]
+    );
 }
 
 #[test]

@@ -1,18 +1,21 @@
 //! Everything this almanac talks to, set up once from the environment. A provider that is not
 //! configured is left out, so `check` names what is missing.
 use crate::update::{Ages, RegistryAges};
+use crate::vetting::{RealVetting, Vetting};
 use crate::workflows::build_failures::ScanTarget;
+use advisory::CveNow;
 use almanac::prelude::*;
 use claude::{Checkouts, ClaudeConfig, ClaudeHarness};
 use github::client::{Auth, GithubClient};
 use github::forge::{CommitAuthor, GithubForge};
 use github::tracker::GithubIssues;
-use registry::{Endpoints, HttpRegistry};
+use registry::{Endpoints, HttpRegistry, PackageRegistry};
 use sandbox::{PodmanSandbox, Sandbox, SandboxSpec};
 use std::env;
 use std::sync::Arc;
 
 const API: &str = "https://api.github.com";
+const CVE_NOW: &str = "https://cve.now";
 const DEFAULT_AUTHOR: &str = "ivy-s-renovate-bot[bot]";
 const SANDBOX_IMAGE: &str = "localhost/almanac-fixer:latest";
 
@@ -72,10 +75,15 @@ fn harness(checkouts: Arc<GithubClient>) -> Option<ClaudeHarness> {
 }
 
 pub fn all(_config: &Config) -> Providers {
-    let ages: Arc<dyn Ages> = Arc::new(RegistryAges(Arc::new(HttpRegistry::new(
-        Endpoints::default(),
-    ))));
-    let mut providers = Providers::new().provide::<dyn Ages>(ages);
+    let registry: Arc<dyn PackageRegistry> = Arc::new(HttpRegistry::new(Endpoints::default()));
+    let ages: Arc<dyn Ages> = Arc::new(RegistryAges(registry.clone()));
+    let vetting: Arc<dyn Vetting> = Arc::new(RealVetting {
+        advisories: Arc::new(CveNow::new(CVE_NOW)),
+        registry,
+    });
+    let mut providers = Providers::new()
+        .provide::<dyn Ages>(ages)
+        .provide::<dyn Vetting>(vetting);
     let bot = env::var("ALMANAC_BOT_LOGIN").unwrap_or_else(|_| CommitAuthor::default().name);
     providers = providers.acting_as(&[&bot]);
     if let Some(target) = env::var("ALMANAC_ALERTS_REPO")

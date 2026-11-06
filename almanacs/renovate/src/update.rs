@@ -16,6 +16,8 @@ pub struct PullText {
 pub struct UpdatedPackage {
     pub datasource: String,
     pub name: String,
+    /// The version being replaced. Empty when it cannot be read.
+    pub current: String,
     pub version: String,
 }
 
@@ -45,15 +47,31 @@ fn from_url(row: &str, marker: &str) -> Option<(String, String)> {
     }
 }
 
+fn bare(version: &str) -> String {
+    version
+        .trim_start_matches(['^', '~', '=', '>', '<'])
+        .to_string()
+}
+
 /// The new version in a `` `old` → `new` `` cell, without a range's operator.
 fn from_change(row: &str) -> Option<String> {
     let after = row.split('→').nth(1)?;
-    let version = between(after, "`", "`")?;
-    Some(
-        version
-            .trim_start_matches(['^', '~', '=', '>', '<'])
-            .to_string(),
-    )
+    Some(bare(between(after, "`", "`")?))
+}
+
+/// The old version, preferring a diff link's exact version to a cell's range.
+fn old_version(row: &str) -> String {
+    let marker = "renovatebot.com/diffs/";
+    if let Some(start) = row.find(marker) {
+        let rest = &row[start + marker.len()..];
+        let end = rest.find([')', ' ']).unwrap_or(rest.len());
+        let parts: Vec<&str> = rest[..end].split('/').collect();
+        if parts.len() >= 4 {
+            return parts[parts.len() - 2].to_string();
+        }
+    }
+    let before = row.split('→').next().unwrap_or_default();
+    bare(before.rsplit('`').nth(1).unwrap_or_default())
 }
 
 fn package_of(row: &str) -> Option<UpdatedPackage> {
@@ -70,6 +88,7 @@ fn package_of(row: &str) -> Option<UpdatedPackage> {
     Some(UpdatedPackage {
         datasource,
         name,
+        current: old_version(row),
         version,
     })
 }
@@ -87,7 +106,7 @@ pub fn update_of(text: &PullText) -> Update {
     }
 }
 
-fn ecosystem(datasource: &str) -> Ecosystem {
+pub fn ecosystem(datasource: &str) -> Ecosystem {
     match datasource {
         "npm" => Ecosystem::Npm,
         "crate" => Ecosystem::Crates,
@@ -111,7 +130,7 @@ pub trait Ages: Send + Sync {
 pub struct RegistryAges(pub Arc<dyn PackageRegistry>);
 
 /// Reads the update at the provider boundary. Its text goes only into validated registry calls.
-fn opened(update: &Untrusted<Update>) -> Result<Update, StepError> {
+pub fn opened(update: &Untrusted<Update>) -> Result<Update, StepError> {
     let tagged = serde_json::to_value(update)?;
     Ok(serde_json::from_value(tagged["$untrusted"].clone())?)
 }

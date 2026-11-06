@@ -80,6 +80,33 @@ impl Event for BuildChanged {
     }
 }
 
+observed! {
+    /// A pull request appearing or gaining a label.
+    pub struct SecurityPull {
+        pub repo: Slug,
+        pub branch: Slug,
+        pub sha: Sha,
+        pub number: u64,
+        pub labeled: bool,
+    }
+}
+
+impl Event for SecurityPull {
+    const KIND: &'static str = "github.pull_request.opened";
+    const ALSO: &'static [&'static str] = &["github.pull_request.labeled"];
+
+    fn parse(p: &Payload<'_>) -> Result<Self, Malformed> {
+        let labels = p.text_list("/pull_request/labels", "/name")?;
+        Ok(Self {
+            repo: p.field("/repository/full_name")?,
+            branch: p.field("/pull_request/head/ref")?,
+            sha: p.field("/pull_request/head/sha")?,
+            number: p.field("/number")?,
+            labeled: labels.narrow(|l| l.iter().any(|name| name == "security")),
+        })
+    }
+}
+
 /// A check suite payload, for a scan: a scanned event takes the same path as a webhook.
 pub fn suite_payload(repo: &Slug, branch: &Slug, sha: &Sha, failed: bool, patched: bool) -> Value {
     let message = if patched { PATCH_TRAILER } else { "" };

@@ -533,3 +533,46 @@ async fn a_status_left_pending_by_a_dead_run_is_cleared_by_the_next_scan() {
     w.settle().await;
     assert_eq!(w.statuses().last().unwrap(), &(sha, "success".to_string()));
 }
+
+#[tokio::test]
+async fn a_persons_branch_named_like_renovates_is_never_repaired() {
+    let sim = SimForge::start().await;
+    sim.add_repo(Repo::public(REPO));
+    let mut pull = Pull::renovate(BRANCH, "A person's change");
+    pull.author = "someone".to_string();
+    let number = sim.add_pull(REPO, pull);
+    let harness = ScriptedHarness::replying(patch_reply("src/main.rs"));
+    let target = ScanTarget {
+        owner: "owner".to_string(),
+        author: RENOVATE.to_string(),
+    };
+    let client = GithubClient::new(sim.base_url(), Auth::Token("t".to_string()));
+    let ages: Arc<dyn Ages> = Arc::new(Aged(hours_old(100)));
+    let providers = Providers::new()
+        .provide::<GithubClient>(Arc::new(client))
+        .provide::<dyn Ages>(ages)
+        .provide(Arc::new(target))
+        .harness(harness.clone());
+    let rt = Runtime::new(vec![Box::new(BuildFailures)], providers);
+    let sha = sim.pull(REPO, number).head_sha;
+    sim.add_suite(REPO, Suite::finished(&sha, BRANCH, "failure", "boom"));
+    let payload = almanac_renovate::events::suite_payload(
+        &REPO.parse().unwrap(),
+        &BRANCH.parse().unwrap(),
+        &sha.parse().unwrap(),
+        true,
+        false,
+    );
+    rt.ingest(Envelope {
+        source: "github".to_string(),
+        delivery_id: "d".to_string(),
+        kind: "github.check_suite.completed".to_string(),
+        depth: 0,
+        origin: Origin::Webhook,
+        payload,
+    })
+    .await
+    .unwrap();
+    rt.drain().await.unwrap();
+    assert_eq!(harness.calls(), 0);
+}

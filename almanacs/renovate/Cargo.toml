@@ -11,6 +11,7 @@ publish = false
 unsafe_code = "forbid"
 
 [dependencies]
+advisory = { path = "../../crates/advisory" }
 almanac = { path = "../../crates/almanac" }
 futures = "0.3"
 claude = { path = "../../crates/claude" }

@@ -87,10 +87,17 @@ pub fn needs_attention(event: &BuildChanged) -> bool {
     renovate && !event.bookkeeping && (event.failed || (event.patched && event.finished))
 }
 
-async fn read_pull(client: &GithubClient, event: &BuildChanged) -> Result<PullView, StepError> {
+async fn read_pull(
+    client: &GithubClient,
+    author: &str,
+    event: &BuildChanged,
+) -> Result<PullView, StepError> {
     let repo = event.repo.to_string();
     let branch = event.branch.to_string();
-    let Some(listed) = client.pull_for_branch(&repo, &branch).await? else {
+    let listed = client.pull_for_branch(&repo, &branch).await?;
+    // A branch name proves nothing: only Renovate's own pull requests are ours to touch.
+    let listed = listed.filter(|pull| pull["user"]["login"] == json!(author));
+    let Some(listed) = listed else {
         return Ok(PullView {
             found: false,
             number: 0,
@@ -234,7 +241,10 @@ pub struct ScanTarget {
 )]
 pub async fn build_failures(cx: &Cx, event: &BuildChanged) -> Result<Facts, Halt> {
     let client = cx.get::<GithubClient>()?;
-    let pull = cx.observe("pull", read_pull(&client, event)).await?;
+    let target = cx.get::<ScanTarget>()?;
+    let pull = cx
+        .observe("pull", read_pull(&client, &target.author, event))
+        .await?;
     if !pull.found || pull.conflicted || pull.running {
         return Ok(Facts::Nothing);
     }

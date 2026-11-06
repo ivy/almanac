@@ -1,16 +1,26 @@
 //! A run's context. Every outside read and model call goes through it, so a replay
 //! returns recorded results instead of doing the work again.
 use crate::agent::{AgentSpec, Bound, Classifier, Harness, Pass};
+use crate::cooled::{Cooled, Published};
 use crate::providers::Providers;
 use crate::store::{Store, StoreError};
 use crate::taint::{Observed, Untrusted};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use time::OffsetDateTime;
 
 pub trait Record: Serialize + DeserializeOwned + Send + Sync + 'static {}
 impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> Record for T {}
+
+#[derive(Serialize, Deserialize)]
+struct CooldownCheck {
+    published: Published,
+    #[serde(with = "time::serde::rfc3339")]
+    checked_at: OffsetDateTime,
+}
 
 #[derive(Debug)]
 pub struct StepError(pub String);
@@ -120,6 +130,27 @@ impl Cx {
         read: impl Future<Output = Result<T, StepError>> + Send,
     ) -> Result<T, StepError> {
         self.record(name, read).await
+    }
+
+    /// Whether a release has aged past `min_age`, from a publish time read now. Both the
+    /// publish time and the moment of the check are recorded, so a replay reaches the same
+    /// answer.
+    pub async fn cooled(
+        &self,
+        min_age: Duration,
+        read: impl Future<Output = Result<Published, StepError>> + Send,
+    ) -> Result<Option<Cooled>, StepError> {
+        let check = async {
+            Ok(CooldownCheck {
+                published: read.await?,
+                checked_at: OffsetDateTime::now_utc(),
+            })
+        };
+        let CooldownCheck {
+            published,
+            checked_at,
+        } = self.record("cooldown", check).await?;
+        Ok(Cooled::check(published, min_age, checked_at))
     }
 
     /// Stop unless a cheap classifier clears `above`. This gates spending and never safety,

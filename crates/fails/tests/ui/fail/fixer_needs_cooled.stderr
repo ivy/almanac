@@ -1,0 +1,15 @@
+error[E0061]: this method takes 3 arguments but 2 arguments were supplied
+ --> tests/ui/fail/fixer_needs_cooled.rs:9:21
+  |
+9 |     cx.agent(FIXER).repair(FixPrompt, input).await
+  |                     ^^^^^^------------------ argument #3 of type `&Cooled` is missing
+  |
+note: method defined here
+ --> $WORKSPACE/crates/almanac/src/agent.rs
+  |
+  |     pub async fn repair<I: Record, O: Record>(
+  |                  ^^^^^^
+help: provide the argument
+  |
+9 |     cx.agent(FIXER).repair(FixPrompt, input, /* &Cooled */).await
+  |                                            +++++++++++++++

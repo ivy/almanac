@@ -4,6 +4,7 @@ extern crate self as almanac;
 pub mod agent;
 pub mod app;
 pub mod config;
+pub mod cooled;
 pub mod cx;
 pub mod effect;
 pub mod providers;
@@ -19,8 +20,11 @@ pub use taint::__private;
 
 /// Everything a workflow author needs.
 pub mod prelude {
-    pub use crate::agent::{AgentSpec, Classifier, Harness, Pass, Quarantined, Template, Worker};
+    pub use crate::agent::{
+        AgentSpec, Classifier, Fixer, Harness, Pass, Quarantined, Template, Worker,
+    };
     pub use crate::config::Config;
+    pub use crate::cooled::{Cooled, Published};
     pub use crate::cx::{Cx, Halt, StepError};
     pub use crate::effect::{AttestState, Effect, EffectKind, Forge, Mode, Tracker};
     pub use crate::providers::Providers;

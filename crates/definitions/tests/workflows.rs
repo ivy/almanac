@@ -861,3 +861,57 @@ async fn going_live_requires_a_forge_and_a_tracker() {
         "{problem}"
     );
 }
+
+clean! {
+    pub struct Aged { pub cooled: bool }
+}
+
+/// A release's age decides whether a workflow reads it, whatever any status says.
+#[workflow(on = PullRequestOpened, key = "{repo}", intent = "x", may = [Await, Ask], runs_per_hour = 9, decide = wait_for_cooldown)]
+async fn cooldown_gate(cx: &Cx, _event: &PullRequestOpened) -> Result<Aged, Halt> {
+    let published = cx.get::<Published>()?;
+    let min_age = std::time::Duration::from_secs(3 * 86400);
+    let read = async move { Ok(*published) };
+    let cooled = cx.cooled(min_age, read).await?;
+    Ok(Aged {
+        cooled: cooled.is_some(),
+    })
+}
+
+fn wait_for_cooldown(aged: &Aged) -> Vec<Effect> {
+    if aged.cooled {
+        vec![]
+    } else {
+        vec![Effect::Await {
+            until: "the release to cool",
+        }]
+    }
+}
+
+async fn cooldown_effects(published: Published) -> Vec<EffectKind> {
+    let providers = Providers::new().provide::<Published>(Arc::new(published));
+    let rt = Runtime::new(vec![Box::new(CooldownGate)], providers).with_store(store());
+    rt.ingest(pr("d1", "ivy/thicket", 0)).await.unwrap();
+    kinds(&rt.drain().await.unwrap()[0])
+}
+
+#[tokio::test]
+async fn a_release_newer_than_the_declared_age_yields_await() {
+    let now = time::OffsetDateTime::now_utc();
+    let young = Published::At(now - time::Duration::days(1));
+    assert_eq!(cooldown_effects(young).await, [EffectKind::Await]);
+}
+
+#[tokio::test]
+async fn a_missing_timestamp_yields_await() {
+    assert_eq!(
+        cooldown_effects(Published::Unknown).await,
+        [EffectKind::Await]
+    );
+}
+
+#[tokio::test]
+async fn an_old_enough_release_yields_no_wait() {
+    let old = Published::At(time::OffsetDateTime::now_utc() - time::Duration::days(4));
+    assert_eq!(cooldown_effects(old).await, []);
+}

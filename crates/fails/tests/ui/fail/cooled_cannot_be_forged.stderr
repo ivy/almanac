@@ -1,0 +1,12 @@
+error[E0423]: cannot initialize a tuple struct which contains private fields
+ --> tests/ui/fail/cooled_cannot_be_forged.rs:3:21
+  |
+3 | fn main() { let _ = Cooled(()); }
+  |                     ^^^^^^
+  |
+  = note: a struct named `Cooled` exists in another namespace
+note: constructor is not visible here due to private fields
+ --> $WORKSPACE/crates/almanac/src/cooled.rs
+  |
+  | pub struct Cooled(());
+  |                   ^^ private field

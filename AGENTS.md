@@ -16,6 +16,7 @@ crates/macros/        #[workflow] and #[prompt]
 crates/cli/           the `almanac` scaffolding binary and its templates
 crates/sandbox/       the Sandbox provider: rootless Podman and a fake
 crates/claude/        a Harness on the Claude Code CLI, its sandbox tools, and a stub model
+crates/registry/      publish times and package diffs, read as data
 crates/github/        event types generated from specs/github by tools/gen_github.py
 crates/simforge/      a local GitHub for tests: HTTP API, scenarios, signed webhooks, failure injection
 crates/definitions/   sample workflows and the behaviour tests

@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+ --> tests/ui/fail/cooled_cannot_be_copied.rs:3:38
+  |
+3 | fn again(proof: &Cooled) -> Cooled { proof.clone() }
+  |                             ------   ^^^^^^^^^^^^^ expected `Cooled`, found `&Cooled`
+  |                             |
+  |                             expected `fails::Cooled` because of return type
+  |
+note: `fails::Cooled` does not implement `Clone`, so `&fails::Cooled` was cloned instead
+ --> tests/ui/fail/cooled_cannot_be_copied.rs:3:38
+  |
+3 | fn again(proof: &Cooled) -> Cooled { proof.clone() }
+  |                                      ^^^^^

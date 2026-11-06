@@ -17,5 +17,6 @@ almanac.workspace = true
 github.workspace = true
 renovate-triage = { path = "../../almanacs/renovate" }
 serde_json.workspace = true
+time.workspace = true
 tokio = { workspace = true, features = ["macros", "time"] }
 testcontainers-modules.workspace = true

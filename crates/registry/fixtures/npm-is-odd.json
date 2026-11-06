@@ -1,0 +1,13 @@
+{
+ "name": "is-odd",
+ "time": {
+  "3.0.1": "2018-05-31T20:04:53.306Z"
+ },
+ "versions": {
+  "3.0.1": {
+   "dist": {
+    "tarball": "https://registry.npmjs.org/is-odd/-/is-odd-3.0.1.tgz"
+   }
+  }
+ }
+}

@@ -1,4 +1,5 @@
 //! Agent handles. The capability profile is part of the type.
+use crate::cooled::Cooled;
 use crate::cx::{Cx, Halt, Record, StepError};
 use crate::taint::{Clean, Untrusted};
 use futures::future::BoxFuture;
@@ -70,6 +71,18 @@ impl Profile for Worker {
     };
 }
 
+/// Repairs from hostile input. It may write inside a sandbox but holds no secrets and has no
+/// network, and what it produces stays tainted.
+pub struct Fixer;
+impl Profile for Fixer {
+    const NAME: &'static str = "fixer";
+    const GRANT: Grant = Grant {
+        write: true,
+        egress: false,
+        secrets: false,
+    };
+}
+
 /// A prompt with its variables as typed fields. Use `#[prompt("file.md")]` on a struct: the
 /// file is embedded in the binary, and a mismatch with the struct is a compile error.
 pub trait Template: Send + Sync + 'static {
@@ -131,6 +144,15 @@ impl<T> AgentSpec<Worker, T> {
     }
 }
 
+impl<T> AgentSpec<Fixer, T> {
+    pub const fn fixer(name: &'static str) -> Self {
+        Self {
+            name,
+            _types: PhantomData,
+        }
+    }
+}
+
 /// An agent bound to a run, from `cx.agent(SPEC)`.
 pub struct Bound<'a, P, T> {
     pub(crate) cx: &'a Cx,
@@ -157,6 +179,18 @@ impl<T: Template> Bound<'_, Quarantined, T> {
         &self,
         prompt: T,
         input: &I,
+    ) -> Result<Untrusted<O>, Halt> {
+        self.invoke(&prompt, input).await.map(Untrusted::new)
+    }
+}
+
+impl<T: Template> Bound<'_, Fixer, T> {
+    /// No agent reads an update until it has cooled, so this takes the proof.
+    pub async fn repair<I: Record, O: Record>(
+        &self,
+        prompt: T,
+        input: &I,
+        _cooled: &Cooled,
     ) -> Result<Untrusted<O>, Halt> {
         self.invoke(&prompt, input).await.map(Untrusted::new)
     }

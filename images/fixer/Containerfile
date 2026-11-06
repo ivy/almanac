@@ -1,0 +1,4 @@
+# What a Fixer builds in. A sandbox has no network, so anything a build needs must be here or in
+# the dependency cache uploaded with the checkout.
+FROM docker.io/library/rust:1-alpine
+RUN apk add --no-cache git

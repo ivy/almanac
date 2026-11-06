@@ -14,11 +14,14 @@
 crates/almanac/       the library: taint, Cx, agents, effects, workflows, runtime, store, config, app
 crates/macros/        #[workflow] and #[prompt]
 crates/cli/           the `almanac` scaffolding binary and its templates
+crates/sandbox/       the Sandbox provider: rootless Podman and a fake
+crates/claude/        a Harness on the Claude Code CLI, its sandbox tools, and a stub model
 crates/github/        event types generated from specs/github by tools/gen_github.py
 crates/simforge/      a local GitHub for tests: HTTP API, scenarios, signed webhooks, failure injection
 crates/definitions/   sample workflows and the behaviour tests
 crates/fails/         trybuild compile-fail cases; these prove the safety rules
 almanacs/              standalone almanacs, each its own Cargo workspace
+images/               sandbox images
 specs/                pinned API specs for sources
 spikes/               throwaway proofs behind decisions in docs/adrs
 tools/                the throwaway generator and the publication check
@@ -31,7 +34,7 @@ docs/                 vision, principles, requirements, roadmap
 - **The gate:** `make check` runs lint, every test, the publication check, and `cargo deny`. A change is not done until it passes.
 - **Regenerate event types:** `make generate`.
 - **Change a query or migration:** run `make sqlx-prepare` with `DATABASE_URL` pointing at a migrated database, and commit `crates/almanac/.sqlx`. Builds use that metadata and need no database.
-- **Database tests:** `make test-db` needs podman. `make check` includes it.
+- **Slower tests:** `make test-db` and `make test-sandbox` need podman, and the second needs the `claude` CLI. Neither calls a model. `make check` runs both.
 - **Accept compile-fail output:** `TRYBUILD=overwrite cargo test -p fails`, then read every changed `.stderr`. A case must fail for its intended reason, not for an unrelated error.
 - **Try an almanac:** `cargo run -- synth` or `cargo run -- ingest KIND FILE` inside `almanacs/renovate`.
 

@@ -59,3 +59,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 - **R-50** covers the report only. A conflict on a patched branch files no question, so a person sees it only by reading the report.
 - **R-41** files issues through GitHub. A real delivery of one has not been exercised, because no App exists yet.
 - **Real webhook shapes** are spec-checked, not captured, for the same reason.
+- **Repair quality** is barely measured. One real session's output was kept, and its repair was correct. Five others were lost to a harness fault, since fixed, and were not rerun, so the rate on type and lint failures is unknown.
+- **Repositories using npm** cannot be repaired: dependency fetching covers Cargo, Go modules, and pnpm only.
+- **The token budget** counts cached tokens, and its default has not been tried against a long real session. It is the only bound on a session unless `max_budget_usd` is set.
+- **The patch policy** accepts binary files.

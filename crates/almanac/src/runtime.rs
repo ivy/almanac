@@ -1,7 +1,9 @@
 //! Routes events, runs workflows, and applies limits. What it must remember is in `store`.
 use crate::clock::{Clock, SystemClock};
 use crate::cx::{Cx, Declared, Halt, StepError, World};
-use crate::effect::{ActionSummary, Effect, EffectKind, Forge, Mode, Planned, Push, Tracker};
+use crate::effect::{
+    ActionSummary, Effect, EffectKind, Forge, Mode, Planned, Push, Sweep, Tracker,
+};
 use crate::providers::Providers;
 use crate::store::{
     Admission, Budget, Claim, ClaimRequest, Entry, EntryStatus, MemoryStore, Pending, Run, Store,
@@ -15,6 +17,7 @@ use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use time::OffsetDateTime;
 
 pub const MAX_CHAIN_DEPTH: u32 = 3;
 /// How long an effect can explain a later event on its key, such as a push and the CI after it.
@@ -23,6 +26,7 @@ pub const LEDGER_WINDOW: Duration = Duration::from_secs(2 * 3600);
 pub const BUDGET_WINDOW: Duration = Duration::from_secs(3600);
 const MAX_CONCURRENT_RUNS: usize = 4;
 const MAX_DELIVERY_ATTEMPTS: u32 = 5;
+const SCAN_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
 /// Runtime limits. `tighten` can only lower them, however often it is called.
 #[derive(Clone, Copy, Debug)]
@@ -32,6 +36,8 @@ pub struct Limits {
     /// Runs all workflows together may start per hour.
     pub overall_cap: Option<u32>,
     pub concurrency: usize,
+    /// How often scheduled scans run. Tightening lengthens it, because scanning costs requests.
+    pub scan_interval: Duration,
 }
 
 impl Default for Limits {
@@ -41,6 +47,7 @@ impl Default for Limits {
             runs_cap: None,
             overall_cap: None,
             concurrency: MAX_CONCURRENT_RUNS,
+            scan_interval: SCAN_INTERVAL,
         }
     }
 }
@@ -56,6 +63,7 @@ impl Limits {
             runs_cap: lower(self.runs_cap, other.runs_cap),
             overall_cap: lower(self.overall_cap, other.overall_cap),
             concurrency: self.concurrency.min(other.concurrency),
+            scan_interval: self.scan_interval.max(other.scan_interval),
         }
     }
 }
@@ -156,6 +164,8 @@ pub struct Backfill {
     pub unchanged: usize,
     /// Did not parse. These should be looked at: a subject here is being missed.
     pub rejected: usize,
+    /// Another scan was already running, so this one did nothing.
+    pub skipped: bool,
 }
 
 /// What one attempt to apply an effect did.
@@ -212,6 +222,9 @@ pub struct Runtime {
     stopped: AtomicBool,
     /// The logins Almanac acts as, so its own echoes can be recognised.
     identity: Vec<String>,
+    /// Held while scanning, so two scans of one workflow cannot overlap.
+    scanning: tokio::sync::Mutex<()>,
+    last_scan: Mutex<Option<OffsetDateTime>>,
 }
 
 impl Runtime {
@@ -229,6 +242,8 @@ impl Runtime {
             alerts,
             stopped: AtomicBool::new(false),
             identity,
+            scanning: tokio::sync::Mutex::new(()),
+            last_scan: Mutex::new(None),
         }
     }
 
@@ -658,8 +673,12 @@ impl Runtime {
     /// Lists every workflow's current subjects and ingests them as scanned events. Scanning
     /// twice is harmless, because scanned events have stable delivery IDs.
     pub async fn backfill(&self, repo: Option<&Slug>) -> Result<Backfill, crate::diag::Error> {
-        let scanner = Scanner::new(self.providers.clone(), repo.cloned());
         let mut report = Backfill::default();
+        let Ok(_scanning) = self.scanning.try_lock() else {
+            report.skipped = true;
+            return Ok(report);
+        };
+        let scanner = Scanner::new(self.providers.clone(), repo.cloned());
         for w in &self.workflows {
             let found = w.scan(&scanner).await.map_err(|StepError(reason)| {
                 crate::diag::Error::ScanFailed {
@@ -687,6 +706,25 @@ impl Runtime {
             }
         }
         Ok(report)
+    }
+
+    /// Runs a scheduled scan and sweep if one is due. Call this often: it does nothing otherwise.
+    pub async fn tick(&self) -> Result<Option<Backfill>, crate::diag::Error> {
+        let now = self.clock.now();
+        {
+            let mut last = self.last_scan.lock().unwrap();
+            let due = last.is_none_or(|at| now - at >= self.limits.scan_interval);
+            if !due {
+                return Ok(None);
+            }
+            *last = Some(now);
+        }
+        if let Some(sweep) = self.providers.get::<dyn Sweep>()
+            && let Err(StepError(error)) = sweep.sweep().await
+        {
+            tracing::warn!(%error, "could not sweep for failed deliveries");
+        }
+        self.backfill(None).await.map(Some)
     }
 
     /// Starts no more runs. Queued work stays queued for the next start.

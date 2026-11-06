@@ -172,6 +172,35 @@ async fn deliveries_can_be_listed_and_redelivered() {
 }
 
 #[tokio::test]
+async fn a_sweep_redelivers_what_failed_and_only_once() {
+    let (sim, number) = scripted().await;
+    let received = std::sync::Arc::new(std::sync::Mutex::new(0));
+    let count = received.clone();
+    let app = axum::Router::new().route(
+        "/",
+        axum::routing::post(move || {
+            let count = count.clone();
+            async move { *count.lock().unwrap() += 1 }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    sim.deliver_to(&url, "s");
+    sim.next_deliveries(&[Fate::Lost]);
+    sim.pull_request(REPO, number, "opened").await;
+    sim.pull_request(REPO, number, "edited").await;
+    let c = client(&sim);
+    assert_eq!(c.redeliver_failures().await.unwrap(), 1);
+    assert_eq!(
+        c.redeliver_failures().await.unwrap(),
+        0,
+        "it succeeded the second time"
+    );
+    assert_eq!(*received.lock().unwrap(), 2);
+}
+
+#[tokio::test]
 async fn a_read_only_client_refuses_every_write() {
     let (sim, number) = scripted().await;
     let c = client(&sim).read_only();

@@ -194,6 +194,12 @@ pub trait Forge: Send + Sync {
     fn push<'a>(&'a self, key: &'a str, push: &'a Push) -> BoxFuture<'a, Result<(), StepError>>;
 }
 
+/// Recovers deliveries the webhook source failed to send, where it can.
+pub trait Sweep: Send + Sync {
+    /// Asks for failed deliveries to be sent again. Returns how many.
+    fn sweep(&self) -> BoxFuture<'_, Result<usize, StepError>>;
+}
+
 /// A commit for a forge to make.
 #[derive(Clone, Debug)]
 pub struct Push {

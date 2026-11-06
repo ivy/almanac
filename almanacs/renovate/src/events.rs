@@ -81,14 +81,15 @@ impl Event for BuildChanged {
 }
 
 /// A check suite payload, for a scan: a scanned event takes the same path as a webhook.
-pub fn suite_payload(repo: &Slug, branch: &Slug, sha: &Sha, patched: bool) -> Value {
+pub fn suite_payload(repo: &Slug, branch: &Slug, sha: &Sha, failed: bool, patched: bool) -> Value {
     let message = if patched { PATCH_TRAILER } else { "" };
+    let conclusion = if failed { "failure" } else { "success" };
     json!({
         "repository": {"full_name": repo},
         "check_suite": {
             "head_sha": sha,
             "head_branch": branch,
-            "conclusion": "failure",
+            "conclusion": conclusion,
             "head_commit": {"message": message},
         },
     })

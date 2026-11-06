@@ -1,6 +1,8 @@
 //! Repairs a Renovate pull request whose CI failed, once the update has cooled.
 use crate::events::{BuildChanged, PATCH_TRAILER, suite_payload};
-use crate::fleet::{ATTEMPT_CAP, Checks, TRUST_CONTEXT, checks_of, trust_pending};
+use crate::fleet::{
+    ATTEMPT_CAP, Checks, Cooldown, TRUST_CONTEXT, checks_of, cooldown_of, trust_pending,
+};
 use crate::update::{Ages, PullText, update_of};
 use almanac::prelude::*;
 use github::client::GithubClient;
@@ -155,6 +157,7 @@ async fn read_logs(
 pub async fn scan(scanner: &Scanner) -> Result<Vec<Scanned<BuildChanged>>, StepError> {
     let client = scanner.get::<GithubClient>()?;
     let target = scanner.get::<ScanTarget>()?;
+    let ages = scanner.get::<dyn Ages>()?;
     let mut found = vec![];
     for repository in client.repositories(&target.owner).await? {
         let name = repository["full_name"].as_str().unwrap_or_default();
@@ -163,7 +166,7 @@ pub async fn scan(scanner: &Scanner) -> Result<Vec<Scanned<BuildChanged>>, StepE
             continue;
         }
         for pull in client.pulls_by(name, &target.author).await? {
-            if let Some(event) = red(&client, &repo, &pull).await? {
+            if let Some(event) = needing_a_run(&client, ages.as_ref(), &repo, &pull).await? {
                 found.push(event);
             }
         }
@@ -171,8 +174,13 @@ pub async fn scan(scanner: &Scanner) -> Result<Vec<Scanned<BuildChanged>>, StepE
     Ok(found)
 }
 
-async fn red(
+/// A pull request that needs a run, if any. The delivery ID carries what a later scan must
+/// notice: a pull request waiting out its cooldown stays a duplicate and costs nothing, and gets
+/// a new ID the moment it cools. A hold with no run behind it does the same, so a status left
+/// `pending` by a run that died is cleared.
+async fn needing_a_run(
     client: &GithubClient,
+    ages: &dyn Ages,
     repo: &Slug,
     pull: &Value,
 ) -> Result<Option<Scanned<BuildChanged>>, StepError> {
@@ -189,17 +197,21 @@ async fn red(
     };
     let suites = client.check_suites(&name, sha_text).await?;
     let statuses = client.combined_status(&name, sha_text).await?;
-    if checks_of(&suites, &statuses) != Checks::Red {
+    let checks = checks_of(&suites, &statuses);
+    let failed = checks == Checks::Red;
+    let held = trust_pending(&statuses) && matches!(checks, Checks::Green | Checks::None);
+    if !failed && !held {
         return Ok(None);
     }
     let number = pull["number"].as_u64().unwrap_or_default();
     let messages = client.pull_commit_messages(&name, number).await?;
-    let patched = messages.iter().any(|m| m.contains(PATCH_TRAILER));
-    let payload = suite_payload(repo, &branch, &sha, patched);
-    Ok(Some(Scanned::new(
-        format!("scan:{repo}#{number}@{sha}"),
-        payload,
-    )))
+    let patched = held || messages.iter().any(|m| m.contains(PATCH_TRAILER));
+    let cooled = cooldown_of(ages, pull).await == Cooldown::Passed;
+    let payload = suite_payload(repo, &branch, &sha, failed, patched);
+    let id = format!("scan:{repo}#{number}@{sha}");
+    Ok(Some(
+        Scanned::new(id, payload).at_state(format!("cooled={cooled},held={held}")),
+    ))
 }
 
 /// Which pull requests a scan looks at.

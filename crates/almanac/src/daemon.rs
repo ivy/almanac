@@ -14,6 +14,8 @@ use tokio::sync::watch;
 
 const FIRST_BACKOFF: Duration = Duration::from_secs(1);
 const LONGEST_BACKOFF: Duration = Duration::from_secs(60);
+/// How often to ask whether a scheduled scan is due.
+const TICK: Duration = Duration::from_secs(30);
 /// How long an in-flight run gets to finish after a stop is asked for. A run abandoned here is
 /// requeued on restart, so it is repeated and not lost.
 pub const GRACE: Duration = Duration::from_secs(30);
@@ -117,6 +119,22 @@ pub async fn run(
                 wait = FIRST_BACKOFF;
             }
         }
+    };
+    // Scanning runs beside the event loop, so a slow scan never delays a live webhook.
+    let scanning = async {
+        let mut wake = stopped.clone();
+        loop {
+            if let Err(error) = runtime.tick().await {
+                tracing::warn!(%error, "a scheduled scan failed");
+            }
+            tokio::select! {
+                () = tokio::time::sleep(TICK) => {}
+                _ = wake.wait_for(|stop| *stop) => return,
+            }
+        }
+    };
+    let work = async {
+        tokio::join!(work, scanning);
     };
     tokio::pin!(work);
     tokio::pin!(stop);

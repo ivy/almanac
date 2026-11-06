@@ -438,3 +438,98 @@ fn a_status_and_a_check_suite_parse_to_the_same_event() {
     let json_of = |e: &BuildChanged| serde_json::to_value(e).unwrap();
     assert_eq!(json_of(&a), json_of(&b));
 }
+
+#[tokio::test]
+async fn a_lost_webhook_is_found_by_the_next_scheduled_scan() {
+    let w = world(hours_old(100), patch_reply("src/main.rs")).await;
+    w.sim.next_deliveries(&[simforge::Fate::Lost]);
+    let sha = w.head();
+    let id = w
+        .sim
+        .add_suite(REPO, Suite::finished(&sha, BRANCH, "failure", "boom"));
+    w.sim.suite_completed(REPO, id).await;
+    assert_eq!(
+        w.received.lock().unwrap().len(),
+        0,
+        "the webhook never arrived"
+    );
+    let scan = w.rt.tick().await.unwrap().unwrap();
+    assert_eq!(scan.queued, 1);
+    w.settle().await;
+    assert_eq!(w.pushes(), 1, "the repair started");
+}
+
+/// How old a release is can change between scans, so the test can age it.
+struct Ageing(Arc<Mutex<Published>>);
+
+impl Ages for Ageing {
+    fn newest<'a>(
+        &'a self,
+        _: &'a Untrusted<Update>,
+    ) -> BoxFuture<'a, Result<Published, StepError>> {
+        Box::pin(async move { Ok(*self.0.lock().unwrap()) })
+    }
+}
+
+#[tokio::test]
+async fn a_cooldown_await_is_reconsidered_by_a_scan_once_it_passes() {
+    let w = world(hours_old(100), patch_reply("src/main.rs")).await;
+    let sha = w.head();
+    w.sim
+        .add_suite(REPO, Suite::finished(&sha, BRANCH, "failure", "boom"));
+    let published = Arc::new(Mutex::new(hours_old(10)));
+    let client = GithubClient::new(w.sim.base_url(), Auth::Token("t".to_string()));
+    let forge = GithubForge::new(
+        GithubClient::new(w.sim.base_url(), Auth::Token("t".to_string())),
+        CommitAuthor::default(),
+    );
+    let forge: Arc<dyn Forge> = Arc::new(forge);
+    let ages: Arc<dyn Ages> = Arc::new(Ageing(published.clone()));
+    let target = ScanTarget {
+        owner: "owner".to_string(),
+        author: RENOVATE.to_string(),
+    };
+    let harness = ScriptedHarness::replying(patch_reply("src/main.rs"));
+    let providers = Providers::new()
+        .provide::<GithubClient>(Arc::new(client))
+        .provide::<dyn Forge>(forge)
+        .provide::<dyn Ages>(ages)
+        .provide(Arc::new(target))
+        .harness(harness.clone());
+    let rt = Runtime::new(vec![Box::new(BuildFailures)], providers).in_mode(Mode::Live);
+
+    assert_eq!(rt.backfill(None).await.unwrap().queued, 1);
+    rt.drain().await.unwrap();
+    assert_eq!(harness.calls(), 0, "still inside its cooldown");
+
+    let again = rt.backfill(None).await.unwrap();
+    assert_eq!(
+        (again.queued, again.unchanged),
+        (0, 1),
+        "nothing changed, so nothing runs"
+    );
+
+    *published.lock().unwrap() = hours_old(100);
+    assert_eq!(rt.backfill(None).await.unwrap().queued, 1, "it cooled");
+    rt.drain().await.unwrap();
+    assert_eq!(harness.calls(), 1, "now it is repaired");
+}
+
+#[tokio::test]
+async fn a_status_left_pending_by_a_dead_run_is_cleared_by_the_next_scan() {
+    let w = world(hours_old(100), patch_reply("src/main.rs")).await;
+    let sha = w.head();
+    w.sim
+        .add_suite(REPO, Suite::finished(&sha, BRANCH, "success", ""));
+    let client = reqwest::Client::new();
+    client
+        .post(format!("{}/repos/{REPO}/statuses/{sha}", w.sim.base_url()))
+        .bearer_auth("t")
+        .json(&json!({"state": "pending", "context": "almanac/trust"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(w.rt.backfill(None).await.unwrap().queued, 1);
+    w.settle().await;
+    assert_eq!(w.statuses().last().unwrap(), &(sha, "success".to_string()));
+}

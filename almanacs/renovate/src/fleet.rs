@@ -284,7 +284,7 @@ pub struct Report {
 }
 
 /// The same test a workflow applies, so a report and a run cannot disagree.
-async fn cooldown_of(ages: &dyn Ages, pull: &Value) -> Cooldown {
+pub async fn cooldown_of(ages: &dyn Ages, pull: &Value) -> Cooldown {
     let text = Untrusted::new(PullText {
         body: pull["body"].as_str().map(str::to_string),
     });

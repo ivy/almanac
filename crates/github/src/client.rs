@@ -11,6 +11,8 @@ use time::OffsetDateTime;
 
 const USER_AGENT: &str = "almanac";
 const PAGE: usize = 100;
+/// A receiver that was down for a while should not be flooded in one sweep.
+const MOST_REDELIVERIES: usize = 20;
 /// GitHub allows an App token at most ten minutes, and clocks drift.
 const JWT_LIFETIME_SECONDS: i64 = 540;
 const JWT_BACKDATE_SECONDS: i64 = 60;
@@ -460,6 +462,36 @@ impl GithubClient {
 
     pub async fn deliveries(&self) -> Result<Vec<Value>, Error> {
         self.get_all("/app/hook/deliveries").await
+    }
+
+    /// Asks GitHub to resend recent deliveries that failed and have not since succeeded. GitHub
+    /// never does this itself. Returns how many were asked for.
+    pub async fn redeliver_failures(&self) -> Result<usize, Error> {
+        let listed = self
+            .get(&format!("/app/hook/deliveries?per_page={PAGE}"))
+            .await?;
+        let attempts = listed.as_array().cloned().unwrap_or_default();
+        let succeeded = |d: &&Value| d["status_code"].as_u64().is_some_and(|c| c < 300);
+        let delivered: Vec<&Value> = attempts
+            .iter()
+            .filter(succeeded)
+            .map(|d| &d["guid"])
+            .collect();
+        let mut asked: Vec<&Value> = vec![];
+        for attempt in &attempts {
+            let guid = &attempt["guid"];
+            if succeeded(&attempt) || delivered.contains(&guid) || asked.contains(&guid) {
+                continue;
+            }
+            if let Some(id) = attempt["id"].as_u64() {
+                self.redeliver(id).await?;
+                asked.push(guid);
+            }
+            if asked.len() >= MOST_REDELIVERIES {
+                break;
+            }
+        }
+        Ok(asked.len())
     }
 
     pub async fn redeliver(&self, id: u64) -> Result<(), Error> {

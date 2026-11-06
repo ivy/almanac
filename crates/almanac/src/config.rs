@@ -5,6 +5,7 @@ use crate::diag::Error;
 use crate::runtime::Limits;
 use miette::NamedSource;
 use serde::Deserialize;
+use std::time::Duration;
 use std::{env, fs, path::Path, str::FromStr};
 
 const SECRET_WORDS: [&str; 5] = ["token", "secret", "password", "credential", "key"];
@@ -17,6 +18,7 @@ pub struct Config {
     pub runs_per_hour_cap: Option<u32>,
     pub overall_runs_per_hour_cap: Option<u32>,
     pub concurrency: Option<usize>,
+    pub scan_interval_minutes: Option<u64>,
 }
 
 fn from_env<T: FromStr>(name: &str, slot: &mut Option<T>) -> Result<(), Error> {
@@ -51,6 +53,10 @@ impl Config {
             &mut c.overall_runs_per_hour_cap,
         )?;
         from_env("ALMANAC_CONCURRENCY", &mut c.concurrency)?;
+        from_env(
+            "ALMANAC_SCAN_INTERVAL_MINUTES",
+            &mut c.scan_interval_minutes,
+        )?;
         Ok(c)
     }
 
@@ -95,6 +101,9 @@ impl Config {
             runs_cap: self.runs_per_hour_cap,
             overall_cap: self.overall_runs_per_hour_cap,
             concurrency: self.concurrency.unwrap_or(d.concurrency),
+            scan_interval: self
+                .scan_interval_minutes
+                .map_or(d.scan_interval, |m| Duration::from_secs(m * 60)),
         }
     }
 }

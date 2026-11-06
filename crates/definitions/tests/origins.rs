@@ -1,4 +1,5 @@
 //! A webhook, a scan, and a simulation must be the same event to a workflow.
+use almanac::clock::FakeClock;
 use almanac::prelude::*;
 use almanac::runtime::{Envelope, Ingest, Origin, Outcome, Runtime};
 use almanac::store::{EntryStatus, MemoryStore, Store};
@@ -239,4 +240,42 @@ fn a_state_in_a_delivery_id_lets_a_scan_reconsider_an_unchanged_commit() {
         Scanned::pull(&repo, 1, &head, &rest).at_state("ready");
     let id = |s: &Scanned<PullRequestOpened>| format!("{:?}", s.id());
     assert_ne!(id(&first), id(&second));
+}
+
+#[tokio::test]
+async fn two_scans_cannot_overlap() {
+    let sim = fleet(1).await;
+    let rt = runtime(&sim, memory());
+    let (first, second) = tokio::join!(rt.backfill(None), rt.backfill(None));
+    let reports = [first.unwrap(), second.unwrap()];
+    let skipped = reports.iter().filter(|r| r.skipped).count();
+    assert_eq!(skipped, 1, "{reports:?}");
+}
+
+#[tokio::test]
+async fn a_scheduled_scan_runs_when_due_and_only_then() {
+    let sim = fleet(1).await;
+    let clock = FakeClock::at(time::macros::datetime!(2026-11-06 12:00 UTC));
+    let rt = runtime(&sim, memory()).with_clock(Arc::new(clock.clone()));
+    assert!(rt.tick().await.unwrap().is_some(), "due at start");
+    assert!(rt.tick().await.unwrap().is_none());
+    clock.advance(rt.limits().scan_interval);
+    assert!(rt.tick().await.unwrap().is_some());
+}
+
+#[tokio::test]
+async fn config_can_lengthen_the_scan_interval_and_never_shorten_it() {
+    let sim = fleet(0).await;
+    let rt = runtime(&sim, memory());
+    let longer = rt.limits().scan_interval * 2;
+    let lengthened = runtime(&sim, memory()).tightened(almanac::runtime::Limits {
+        scan_interval: longer,
+        ..Default::default()
+    });
+    assert_eq!(lengthened.limits().scan_interval, longer);
+    let shorter = lengthened.tightened(almanac::runtime::Limits {
+        scan_interval: std::time::Duration::from_secs(1),
+        ..Default::default()
+    });
+    assert_eq!(shorter.limits().scan_interval, longer);
 }

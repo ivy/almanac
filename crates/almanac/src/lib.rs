@@ -31,7 +31,7 @@ pub mod prelude {
     pub use crate::config::Config;
     pub use crate::cooled::{Cooled, Published};
     pub use crate::cx::{Attempts, Cx, Halt, StepError};
-    pub use crate::effect::{AttestState, Effect, EffectKind, Forge, Mode, Push, Tracker};
+    pub use crate::effect::{AttestState, Effect, EffectKind, Forge, Mode, Push, Sweep, Tracker};
     pub use crate::patch::{Change, Checked, DEFAULT_POLICY, Patch, PatchPolicy, Rejection};
     pub use crate::providers::Providers;
     pub use crate::taint::{Clean, Finite, Invalid, Observed, Sha, Slug, Untrusted};

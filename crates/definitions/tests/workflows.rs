@@ -268,6 +268,7 @@ async fn limits_only_ever_tighten() {
         runs_cap: Some(1000),
         overall_cap: None,
         concurrency: 64,
+        ..Limits::default()
     };
     let rt = runtime(FakeRegistry::default(), reviewer())
         .tightened(Limits {
@@ -275,6 +276,7 @@ async fn limits_only_ever_tighten() {
             runs_cap: Some(5),
             overall_cap: None,
             concurrency: 2,
+            ..Limits::default()
         })
         .tightened(wide);
     let l = rt.limits();

@@ -91,12 +91,14 @@ pub fn all(_config: &Config) -> Providers {
         return providers;
     };
     let reader = Arc::new(reader);
+    let sweep: Arc<dyn Sweep> = reader.clone();
     let forge: Arc<dyn Forge> = Arc::new(GithubForge::new(writer, CommitAuthor::default()));
     let tracker: Arc<dyn Tracker> = Arc::new(GithubIssues::using(tracker));
     providers = providers
         .provide::<GithubClient>(reader.clone())
         .provide::<dyn Forge>(forge)
-        .provide::<dyn Tracker>(tracker);
+        .provide::<dyn Tracker>(tracker)
+        .provide::<dyn Sweep>(sweep);
     match harness(reader) {
         Some(harness) => providers.harness(harness),
         None => providers,

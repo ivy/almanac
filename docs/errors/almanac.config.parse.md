@@ -10,4 +10,4 @@ An almanac refuses to start on a config it cannot understand, because guessing c
 
 ## What to do next
 
-Fix the line the error points at. The keys an almanac accepts are `listen`, `max_chain_depth`, `runs_per_hour_cap`, `overall_runs_per_hour_cap`, and `concurrency`.
+Fix the line the error points at. The keys an almanac accepts are `listen`, `max_chain_depth`, `runs_per_hour_cap`, `overall_runs_per_hour_cap`, `concurrency`, and `scan_interval_minutes`.

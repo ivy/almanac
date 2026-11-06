@@ -180,3 +180,9 @@ impl Forge for GithubForge {
         Box::pin(self.commit(key, push))
     }
 }
+
+impl Sweep for GithubClient {
+    fn sweep(&self) -> BoxFuture<'_, Result<usize, StepError>> {
+        Box::pin(async move { Ok(self.redeliver_failures().await?) })
+    }
+}

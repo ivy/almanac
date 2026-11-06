@@ -164,6 +164,28 @@ async fn a_fixer_that_closes_in_prose_keeps_its_patch_and_its_cost() {
 }
 
 #[tokio::test]
+async fn what_tools_leave_in_their_home_is_not_part_of_the_patch() {
+    let model = StubModel::start(vec![
+        tool(
+            "mcp__sandbox__exec",
+            json!({"command": "mkdir -p ~/.config/tool && echo state > ~/.config/tool/counts"}),
+        ),
+        tool(
+            "mcp__sandbox__write_file",
+            json!({"path": "src/fixed.txt", "content": "fixed\n"}),
+        ),
+        Turn::Text("{}".to_string()),
+    ])
+    .await;
+    let out = harness(&model)
+        .session("Fix.", WRITE, json!({}))
+        .await
+        .unwrap();
+    let patch: Patch = serde_json::from_value(out).unwrap();
+    assert_eq!(patch.changes.len(), 1, "{patch:?}");
+}
+
+#[tokio::test]
 async fn deletes_renames_and_links_come_back_as_what_they_are() {
     let setup = "mkdir d && echo keep > d/keep && echo old > d/old && git add -A && \
                  git -c user.name=a -c user.email=a@b commit -qm base";

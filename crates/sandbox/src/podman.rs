@@ -71,12 +71,14 @@ fn create_args(name: &str, spec: &SandboxSpec) -> Vec<String> {
     if spec.egress == Egress::None {
         args.push("--network=none".to_string());
     }
+    // Home is scratch space: tools write state there, and the checkout must hold only the patch.
     let tmp = format!("TMPDIR={WORKDIR}/.tmp");
+    let home = format!("HOME={WORKDIR}/.tmp");
     for pair in spec
         .env
         .iter()
         .map(|(k, v)| format!("{k}={v}"))
-        .chain([tmp, format!("HOME={WORKDIR}")])
+        .chain([tmp, home])
     {
         args.push("--env".to_string());
         args.push(pair);

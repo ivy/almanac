@@ -1,0 +1,3 @@
+# diag::Error carries a config file's source so it can point at a line. It is built only on the
+# way out of an operation, so its size costs nothing that matters.
+large-error-threshold = 512

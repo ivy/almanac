@@ -1,61 +1,31 @@
 //! `File` and `Ask` as GitHub issues.
+use crate::client::{Auth, GithubClient};
 use almanac::prelude::*;
-use serde::Deserialize;
 use serde_json::json;
 
 const LABEL: &str = "almanac";
-const PAGE: usize = 100;
-const USER_AGENT: &str = "almanac";
 
 /// GitHub offers no idempotency key, so each issue carries its key in a marker and a retry
 /// looks for that marker first.
 pub struct GithubIssues {
-    client: reqwest::Client,
-    base_url: String,
-    token: String,
-}
-
-#[derive(Deserialize)]
-struct Issue {
-    body: Option<String>,
+    client: GithubClient,
 }
 
 impl GithubIssues {
     pub fn new(base_url: impl Into<String>, token: impl Into<String>) -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            base_url: base_url.into().trim_end_matches('/').to_string(),
-            token: token.into(),
-        }
+        Self::using(GithubClient::new(base_url, Auth::Token(token.into())))
     }
 
-    fn request(&self, method: reqwest::Method, url: String) -> reqwest::RequestBuilder {
-        self.client
-            .request(method, url)
-            .bearer_auth(&self.token)
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", USER_AGENT)
+    pub fn using(client: GithubClient) -> Self {
+        Self { client }
     }
 
     async fn already_filed(&self, target: &Slug, marker: &str) -> Result<bool, StepError> {
-        for page in 1.. {
-            let url = format!(
-                "{}/repos/{target}/issues?state=all&labels={LABEL}&per_page={PAGE}&page={page}",
-                self.base_url
-            );
-            let response = self.request(reqwest::Method::GET, url).send().await;
-            let issues: Vec<Issue> = checked(response).await?.json().await.map_err(failed)?;
-            if issues
-                .iter()
-                .any(|i| i.body.as_deref().is_some_and(|b| b.contains(marker)))
-            {
-                return Ok(true);
-            }
-            if issues.len() < PAGE {
-                break;
-            }
-        }
-        Ok(false)
+        let path = format!("/repos/{target}/issues?state=all&labels={LABEL}");
+        let issues = self.client.get_all(&path).await?;
+        let carries =
+            |issue: &serde_json::Value| issue["body"].as_str().is_some_and(|b| b.contains(marker));
+        Ok(issues.iter().any(carries))
     }
 
     async fn open(
@@ -69,34 +39,15 @@ impl GithubIssues {
         if self.already_filed(target, &marker).await? {
             return Ok(());
         }
-        let url = format!("{}/repos/{target}/issues", self.base_url);
         let issue = json!({
             "title": title,
             "body": format!("{}\n\n{marker}\n", quoted(body)?),
             "labels": [LABEL],
         });
-        let response = self
-            .request(reqwest::Method::POST, url)
-            .json(&issue)
-            .send()
-            .await;
-        checked(response).await.map(|_| ())
+        let path = format!("/repos/{target}/issues");
+        self.client.post(&path, &issue).await?;
+        Ok(())
     }
-}
-
-fn failed(e: reqwest::Error) -> StepError {
-    StepError(e.to_string())
-}
-
-async fn checked(
-    response: Result<reqwest::Response, reqwest::Error>,
-) -> Result<reqwest::Response, StepError> {
-    let response = response.map_err(failed)?;
-    let status = response.status();
-    if status.is_success() {
-        return Ok(response);
-    }
-    Err(StepError(format!("GitHub answered {status}")))
 }
 
 /// Shows tainted text as inert code. The fence outruns any backticks in the text, so the text

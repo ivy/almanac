@@ -20,6 +20,12 @@ const MAX_BODY: usize = 16 * 1024 * 1024;
 pub fn router(world: Shared) -> Router {
     Router::new()
         .route("/users/{owner}/repos", get(user_repos))
+        .route("/user/repos", get(own_repos))
+        .route("/installation/repositories", get(installation_repos))
+        .route(
+            "/app/installations/{id}/access_tokens",
+            post(installation_token),
+        )
         .route("/repos/{owner}/{repo}", get(repository))
         .route("/repos/{owner}/{repo}/pulls", get(pulls))
         .route("/repos/{owner}/{repo}/pulls/{number}", get(pull))
@@ -43,6 +49,7 @@ pub fn router(world: Shared) -> Router {
         .route("/repos/{owner}/{repo}/git/blobs", post(create_blob))
         .route("/repos/{owner}/{repo}/git/trees", post(create_tree))
         .route("/repos/{owner}/{repo}/git/commits", post(create_commit))
+        .route("/repos/{owner}/{repo}/git/commits/{sha}", get(commit))
         .route(
             "/repos/{owner}/{repo}/git/refs/heads/{*branch}",
             patch(update_ref),
@@ -172,6 +179,41 @@ async fn user_repos(
     )
 }
 
+async fn own_repos(State(world): State<Shared>, Query(params): Params) -> Response {
+    let world = world.lock().unwrap();
+    let items = world.repos.values().map(|r| world.repo_json(r)).collect();
+    paged(&world, "/user/repos", "page", &params, items)
+}
+
+async fn installation_repos(State(world): State<Shared>) -> Response {
+    let world = world.lock().unwrap();
+    let repos: Vec<Value> = world.repos.values().map(|r| world.repo_json(r)).collect();
+    axum::Json(json!({"total_count": repos.len(), "repositories": repos})).into_response()
+}
+
+async fn installation_token() -> Response {
+    let body = json!({"token": "ghs_simulated", "expires_at": "2099-01-01T00:00:00Z"});
+    (StatusCode::CREATED, axum::Json(body)).into_response()
+}
+
+async fn commit(
+    State(world): State<Shared>,
+    Path((_, _, sha)): Path<(String, String, String)>,
+) -> Response {
+    let world = world.lock().unwrap();
+    let Some(message) = world.commits.get(&sha) else {
+        return missing();
+    };
+    let who = json!({"name": "almanac", "email": "a@b", "date": "2026-11-05T12:00:00Z"});
+    axum::Json(json!({
+        "sha": sha, "node_id": "C_1", "url": format!("/commits/{sha}"),
+        "html_url": format!("/commit/{sha}"), "author": who, "committer": who,
+        "message": message, "parents": [], "tree": {"sha": "t", "url": "/tree"},
+        "verification": {"verified": false, "reason": "unsigned", "signature": null, "payload": null, "verified_at": null},
+    }))
+    .into_response()
+}
+
 async fn repository(
     State(world): State<Shared>,
     Path((owner, repo)): Path<(String, String)>,
@@ -213,15 +255,17 @@ async fn pull(
     State(world): State<Shared>,
     Path((owner, repo, number)): Path<(String, String, u64)>,
 ) -> Response {
-    let world = world.lock().unwrap();
+    let mut world = world.lock().unwrap();
     let name = format!("{owner}/{repo}");
-    match (
+    let found = match (
         world.repos.get(&name),
         world.pulls.get(&(name.clone(), number)),
     ) {
         (Some(r), Some(p)) => axum::Json(world.pull_json(r, p)).into_response(),
         _ => missing(),
-    }
+    };
+    world.unknown_reads = world.unknown_reads.saturating_sub(1);
+    found
 }
 
 async fn check_suites(
@@ -340,7 +384,13 @@ async fn create_commit(
     State(world): State<Shared>,
     axum::Json(request): axum::Json<Value>,
 ) -> Response {
-    let sha = world.lock().unwrap().next_sha();
+    let sha = {
+        let mut world = world.lock().unwrap();
+        let sha = world.next_sha();
+        let message = request["message"].as_str().unwrap_or_default().to_string();
+        world.commits.insert(sha.clone(), message);
+        sha
+    };
     let who =
         json!({"name": "almanac", "email": "almanac@localhost", "date": "2026-11-05T12:00:00Z"});
     let body = json!({

@@ -39,6 +39,12 @@ impl From<Invalid> for StepError {
     }
 }
 
+impl From<crate::diag::Error> for StepError {
+    fn from(e: crate::diag::Error) -> Self {
+        Self(e.to_string())
+    }
+}
+
 impl From<StoreError> for StepError {
     fn from(e: StoreError) -> Self {
         Self(e.to_string())

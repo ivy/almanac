@@ -1,0 +1,399 @@
+//! GitHub's REST API: authentication, pagination, and rate limits, for every provider here.
+use almanac::diag::Error;
+use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use reqwest::{Method, Response, StatusCode};
+use serde::Serialize;
+use serde_json::{Value, json};
+use std::sync::Mutex;
+use std::time::Duration;
+use time::OffsetDateTime;
+
+const USER_AGENT: &str = "almanac";
+const PAGE: usize = 100;
+/// GitHub allows an App token at most ten minutes, and clocks drift.
+const JWT_LIFETIME_SECONDS: i64 = 540;
+const JWT_BACKDATE_SECONDS: i64 = 60;
+/// A token this close to expiry is replaced before use.
+const TOKEN_MARGIN_SECONDS: i64 = 120;
+
+/// How hard to try before reporting a failure.
+#[derive(Clone, Copy, Debug)]
+pub struct Retry {
+    pub attempts: u32,
+    /// The first wait after a server error, doubled each time.
+    pub backoff: Duration,
+    /// A rate limit asking for longer than this is reported, not waited out.
+    pub longest_wait: Duration,
+}
+
+impl Default for Retry {
+    fn default() -> Self {
+        Self {
+            attempts: 5,
+            backoff: Duration::from_millis(500),
+            longest_wait: Duration::from_secs(60),
+        }
+    }
+}
+
+pub enum Auth {
+    /// A personal token, for read-only use.
+    Token(String),
+    App {
+        app_id: String,
+        /// PEM, from the environment.
+        private_key: String,
+        installation_id: u64,
+    },
+}
+
+struct Installation {
+    token: String,
+    expires_at: OffsetDateTime,
+}
+
+pub struct GithubClient {
+    http: reqwest::Client,
+    base_url: String,
+    auth: Auth,
+    read_only: bool,
+    retry: Retry,
+    installation: Mutex<Option<Installation>>,
+}
+
+#[derive(Serialize)]
+struct Claims<'a> {
+    iat: i64,
+    exp: i64,
+    iss: &'a str,
+}
+
+fn seconds(header: Option<&reqwest::header::HeaderValue>) -> Option<u64> {
+    header?.to_str().ok()?.parse().ok()
+}
+
+/// How long a refusal asks us to wait, if it is a rate limit at all.
+fn rate_limit_wait(response: &Response) -> Option<Duration> {
+    let status = response.status();
+    let headers = response.headers();
+    let limited = status == StatusCode::TOO_MANY_REQUESTS
+        || (status == StatusCode::FORBIDDEN
+            && (headers.contains_key("retry-after")
+                || seconds(headers.get("x-ratelimit-remaining")) == Some(0)));
+    if !limited {
+        return None;
+    }
+    if let Some(wait) = seconds(headers.get("retry-after")) {
+        return Some(Duration::from_secs(wait));
+    }
+    let reset = seconds(headers.get("x-ratelimit-reset")).unwrap_or(0) as i64;
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    Some(Duration::from_secs((reset - now).max(1) as u64))
+}
+
+fn next_page(response: &Response, base_url: &str) -> Option<String> {
+    let link = response.headers().get("link")?.to_str().ok()?;
+    let next = link.split(',').find(|part| part.contains("rel=\"next\""))?;
+    let url = next.split(['<', '>']).nth(1)?;
+    url.starts_with(base_url).then(|| url.to_string())
+}
+
+impl GithubClient {
+    pub fn new(base_url: impl Into<String>, auth: Auth) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            base_url: base_url.into().trim_end_matches('/').to_string(),
+            auth,
+            read_only: false,
+            retry: Retry::default(),
+            installation: Mutex::default(),
+        }
+    }
+
+    /// Refuses every write, whatever its caller believes. A dry run against real repositories
+    /// should use this as well as `Mode::DryRun`.
+    pub fn read_only(mut self) -> Self {
+        self.read_only = true;
+        self
+    }
+
+    pub fn retrying(mut self, retry: Retry) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    fn jwt(&self, app_id: &str, private_key: &str) -> Result<String, Error> {
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        let claims = Claims {
+            iat: now - JWT_BACKDATE_SECONDS,
+            exp: now + JWT_LIFETIME_SECONDS,
+            iss: app_id,
+        };
+        let failed = |e: jsonwebtoken::errors::Error| Error::ForgeUnreachable {
+            action: "signing an App token".to_string(),
+            reason: e.to_string(),
+        };
+        let key = EncodingKey::from_rsa_pem(private_key.as_bytes()).map_err(failed)?;
+        jsonwebtoken::encode(&Header::new(Algorithm::RS256), &claims, &key).map_err(failed)
+    }
+
+    fn cached_installation_token(&self) -> Option<String> {
+        let cached = self.installation.lock().unwrap();
+        let installation = cached.as_ref()?;
+        let left = installation.expires_at - OffsetDateTime::now_utc();
+        (left.whole_seconds() > TOKEN_MARGIN_SECONDS).then(|| installation.token.clone())
+    }
+
+    /// `/app` endpoints take the App's own token. Everything else takes an installation's.
+    async fn bearer(&self, path: &str) -> Result<String, Error> {
+        let Auth::App {
+            app_id,
+            private_key,
+            installation_id,
+        } = &self.auth
+        else {
+            let Auth::Token(token) = &self.auth else {
+                unreachable!("only two kinds of auth");
+            };
+            return Ok(token.clone());
+        };
+        let jwt = self.jwt(app_id, private_key)?;
+        if path.starts_with("/app") {
+            return Ok(jwt);
+        }
+        if let Some(token) = self.cached_installation_token() {
+            return Ok(token);
+        }
+        let url = format!(
+            "{}/app/installations/{installation_id}/access_tokens",
+            self.base_url
+        );
+        let action = "getting an installation token";
+        let response = self.send(Method::POST, &url, &jwt, None, action).await?;
+        let body: Value = self.decoded(response, action).await?;
+        let token = body["token"].as_str().unwrap_or_default().to_string();
+        let expires_at = body["expires_at"]
+            .as_str()
+            .and_then(|t| {
+                OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339).ok()
+            })
+            .unwrap_or_else(OffsetDateTime::now_utc);
+        *self.installation.lock().unwrap() = Some(Installation {
+            token: token.clone(),
+            expires_at,
+        });
+        Ok(token)
+    }
+
+    async fn decoded(&self, response: Response, action: &str) -> Result<Value, Error> {
+        response.json().await.map_err(|e| Error::ForgeUnreachable {
+            action: action.to_string(),
+            reason: e.to_string(),
+        })
+    }
+
+    /// Sends with retries. A rate limit waits as asked, and a server error backs off.
+    async fn send(
+        &self,
+        method: Method,
+        url: &str,
+        token: &str,
+        body: Option<&Value>,
+        action: &str,
+    ) -> Result<Response, Error> {
+        let mut backoff = self.retry.backoff;
+        let mut last_failure = String::new();
+        for attempt in 1..=self.retry.attempts {
+            let mut request = self
+                .http
+                .request(method.clone(), url)
+                .bearer_auth(token)
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("User-Agent", USER_AGENT);
+            if let Some(body) = body {
+                request = request.json(body);
+            }
+            let wait = match request.send().await {
+                Err(e) => {
+                    last_failure = e.to_string();
+                    backoff
+                }
+                Ok(response) => {
+                    if let Some(wait) = rate_limit_wait(&response) {
+                        if wait > self.retry.longest_wait || attempt == self.retry.attempts {
+                            return Err(Error::RateLimited {
+                                action: action.to_string(),
+                                wait_seconds: wait.as_secs(),
+                            });
+                        }
+                        wait
+                    } else if response.status().is_server_error() {
+                        last_failure = format!("GitHub answered {}", response.status());
+                        backoff
+                    } else if response.status().is_success() {
+                        return Ok(response);
+                    } else {
+                        return Err(Error::ForgeRefused {
+                            action: action.to_string(),
+                            status: response.status().as_u16(),
+                        });
+                    }
+                }
+            };
+            backoff *= 2;
+            if attempt < self.retry.attempts {
+                tokio::time::sleep(wait).await;
+            }
+        }
+        Err(Error::ForgeUnreachable {
+            action: action.to_string(),
+            reason: last_failure,
+        })
+    }
+
+    async fn request(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<Response, Error> {
+        let action = format!("{method} {path}");
+        if self.read_only && method != Method::GET {
+            return Err(Error::ReadOnly { action });
+        }
+        let token = self.bearer(path).await?;
+        let url = format!("{}{path}", self.base_url);
+        self.send(method, &url, &token, body, &action).await
+    }
+
+    pub async fn get(&self, path: &str) -> Result<Value, Error> {
+        let response = self.request(Method::GET, path, None).await?;
+        self.decoded(response, path).await
+    }
+
+    /// The body as text, for logs.
+    pub async fn get_text(&self, path: &str) -> Result<String, Error> {
+        let response = self.request(Method::GET, path, None).await?;
+        response.text().await.map_err(|e| Error::ForgeUnreachable {
+            action: path.to_string(),
+            reason: e.to_string(),
+        })
+    }
+
+    pub async fn post(&self, path: &str, body: &Value) -> Result<Value, Error> {
+        let response = self.request(Method::POST, path, Some(body)).await?;
+        self.decoded(response, path).await
+    }
+
+    /// For endpoints that answer with no body worth reading.
+    pub async fn post_empty(&self, path: &str, body: &Value) -> Result<(), Error> {
+        self.request(Method::POST, path, Some(body))
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn patch(&self, path: &str, body: &Value) -> Result<Value, Error> {
+        let response = self.request(Method::PATCH, path, Some(body)).await?;
+        self.decoded(response, path).await
+    }
+
+    /// Every item of a list, following `Link` headers. `path` must not have a query of its own
+    /// that sets `per_page`.
+    pub async fn get_all(&self, path: &str) -> Result<Vec<Value>, Error> {
+        let joiner = if path.contains('?') { '&' } else { '?' };
+        let first = format!("{path}{joiner}per_page={PAGE}");
+        let token = self.bearer(path).await?;
+        let mut url = format!("{}{first}", self.base_url);
+        let mut items = vec![];
+        loop {
+            let response = self.send(Method::GET, &url, &token, None, path).await?;
+            let next = next_page(&response, &self.base_url);
+            let page = self.decoded(response, path).await?;
+            items.extend(page.as_array().cloned().unwrap_or_default());
+            match next {
+                Some(next) => url = next,
+                None => return Ok(items),
+            }
+        }
+    }
+
+    /// Repositories with the given owner, leaving out archived ones.
+    pub async fn repositories(&self, owner: &str) -> Result<Vec<Value>, Error> {
+        let all = match self.auth {
+            Auth::Token(_) => self.get_all("/user/repos?affiliation=owner").await?,
+            Auth::App { .. } => {
+                let found = self.get("/installation/repositories").await?;
+                found["repositories"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+            }
+        };
+        let wanted = |repo: &Value| {
+            repo["owner"]["login"] == json!(owner) && repo["archived"] != json!(true)
+        };
+        Ok(all.into_iter().filter(wanted).collect())
+    }
+
+    /// Open pull requests in `repo` by `author`, as REST responses.
+    pub async fn pulls_by(&self, repo: &str, author: &str) -> Result<Vec<Value>, Error> {
+        let path = format!("/repos/{repo}/pulls?state=open");
+        let by_author = |pull: &Value| pull["user"]["login"] == json!(author);
+        let pulls = self.get_all(&path).await?;
+        Ok(pulls.into_iter().filter(by_author).collect())
+    }
+
+    pub async fn pull(&self, repo: &str, number: u64) -> Result<Value, Error> {
+        self.get(&format!("/repos/{repo}/pulls/{number}")).await
+    }
+
+    /// A pull request once GitHub has computed `mergeable`, which it does lazily. After `reads`
+    /// tries it stays null, which a caller should treat as still waiting.
+    pub async fn pull_settled(
+        &self,
+        repo: &str,
+        number: u64,
+        reads: u32,
+        pause: Duration,
+    ) -> Result<Value, Error> {
+        let mut pull = self.pull(repo, number).await?;
+        for _ in 1..reads {
+            if !pull["mergeable"].is_null() {
+                break;
+            }
+            tokio::time::sleep(pause).await;
+            pull = self.pull(repo, number).await?;
+        }
+        Ok(pull)
+    }
+
+    pub async fn check_suites(&self, repo: &str, sha: &str) -> Result<Value, Error> {
+        self.get(&format!("/repos/{repo}/commits/{sha}/check-suites"))
+            .await
+    }
+
+    pub async fn check_runs(&self, repo: &str, sha: &str) -> Result<Value, Error> {
+        self.get(&format!("/repos/{repo}/commits/{sha}/check-runs"))
+            .await
+    }
+
+    pub async fn combined_status(&self, repo: &str, sha: &str) -> Result<Value, Error> {
+        self.get(&format!("/repos/{repo}/commits/{sha}/status"))
+            .await
+    }
+
+    pub async fn job_logs(&self, repo: &str, job: u64) -> Result<String, Error> {
+        self.get_text(&format!("/repos/{repo}/actions/jobs/{job}/logs"))
+            .await
+    }
+
+    pub async fn deliveries(&self) -> Result<Vec<Value>, Error> {
+        self.get_all("/app/hook/deliveries").await
+    }
+
+    pub async fn redeliver(&self, id: u64) -> Result<(), Error> {
+        let path = format!("/app/hook/deliveries/{id}/attempts");
+        self.post_empty(&path, &json!({})).await
+    }
+}

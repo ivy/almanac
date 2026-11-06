@@ -43,6 +43,8 @@ pub struct Pull {
     pub state: String,
     pub draft: bool,
     pub mergeable_state: String,
+    /// Set for a pull request from a fork.
+    pub head_repo: Option<String>,
 }
 
 impl Pull {
@@ -60,6 +62,7 @@ impl Pull {
             state: "open".to_string(),
             draft: false,
             mergeable_state: "clean".to_string(),
+            head_repo: None,
         }
     }
 }
@@ -145,6 +148,10 @@ pub struct World {
     pub held: Vec<Delivery>,
     pub fates: VecDeque<crate::Fate>,
     pub target: Option<(String, String)>,
+    /// Commit messages, by sha.
+    pub commits: BTreeMap<String, String>,
+    /// Reads of a pull request still to answer with `mergeable: null`.
+    pub unknown_reads: u32,
     next: u64,
 }
 
@@ -242,6 +249,14 @@ impl World {
         })
     }
 
+    fn head_json(&self, repo: &Repo, p: &Pull) -> Value {
+        let mut head = self.branch_json(repo, repo.owner(), &p.head_ref, &p.head_sha);
+        if let Some(fork) = &p.head_repo {
+            head["repo"]["full_name"] = json!(fork);
+        }
+        head
+    }
+
     fn label_json(name: &str) -> Value {
         json!({
             "id": 1, "node_id": "L_1", "url": "", "name": name, "description": "",
@@ -258,7 +273,7 @@ impl World {
             "locked": false, "title": p.title, "body": p.body, "draft": p.draft,
             "user": self.user_json(&p.author),
             "labels": labels,
-            "head": self.branch_json(repo, repo.owner(), &p.head_ref, &p.head_sha),
+            "head": self.head_json(repo, p),
             "base": self.branch_json(repo, repo.owner(), &p.base_ref, &"0".repeat(40)),
             "url": self.url(&path),
             "html_url": self.url(&format!("/{}/pull/{}", repo.full_name, p.number)),
@@ -272,7 +287,11 @@ impl World {
     pub fn pull_json(&self, repo: &Repo, p: &Pull) -> Value {
         let mut value = self.pull_simple_json(repo, p);
         let clean = p.mergeable_state != "dirty";
-        value["mergeable"] = json!(clean);
+        value["mergeable"] = if self.unknown_reads > 0 {
+            Value::Null
+        } else {
+            json!(clean)
+        };
         value["mergeable_state"] = json!(p.mergeable_state);
         value["merged"] = json!(false);
         value

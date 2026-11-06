@@ -136,6 +136,11 @@ async fn reads_match_the_spec() {
     let spec = spec();
     let endpoints = [
         ("/users/{username}/repos", "/users/owner/repos".to_string()),
+        ("/user/repos", "/user/repos".to_string()),
+        (
+            "/installation/repositories",
+            "/installation/repositories".to_string(),
+        ),
         ("/repos/{owner}/{repo}", format!("/repos/{REPO}")),
         (
             "/repos/{owner}/{repo}/pulls",

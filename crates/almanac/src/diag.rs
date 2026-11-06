@@ -27,6 +27,11 @@ pages! {
     "almanac::input::invalid_json" => "almanac.input.invalid_json",
     "almanac::runtime::startup" => "almanac.runtime.startup",
     "almanac::explain::unknown_code" => "almanac.explain.unknown_code",
+    "almanac::forge::rate_limited" => "almanac.forge.rate_limited",
+    "almanac::forge::refused" => "almanac.forge.refused",
+    "almanac::forge::unreachable" => "almanac.forge.unreachable",
+    "almanac::forge::read_only" => "almanac.forge.read_only",
+    "almanac::forge::push_refused" => "almanac.forge.push_refused",
 }
 
 /// The long form of a code.
@@ -161,6 +166,41 @@ pub enum Error {
         help("copy the code exactly from the error, such as almanac::config::unknown_key")
     )]
     UnknownCode { code: String },
+
+    #[error("GitHub's rate limit was reached on {action}, and it resets in {wait_seconds}s")]
+    #[diagnostic(
+        code(almanac::forge::rate_limited),
+        help("wait for the reset; effects stay queued and are retried")
+    )]
+    RateLimited { action: String, wait_seconds: u64 },
+
+    #[error("GitHub refused {action}: {status}")]
+    #[diagnostic(
+        code(almanac::forge::refused),
+        help("check the GitHub App's permissions and that it is installed on the repository")
+    )]
+    ForgeRefused { action: String, status: u16 },
+
+    #[error("GitHub could not be reached for {action}: {reason}")]
+    #[diagnostic(
+        code(almanac::forge::unreachable),
+        help("check the network and GitHub's status; effects stay queued and are retried")
+    )]
+    ForgeUnreachable { action: String, reason: String },
+
+    #[error("{action} is a write, and this client is read-only")]
+    #[diagnostic(
+        code(almanac::forge::read_only),
+        help("a dry run should never reach this: if it did, that is a bug")
+    )]
+    ReadOnly { action: String },
+
+    #[error("push to {branch} refused: {reason}")]
+    #[diagnostic(
+        code(almanac::forge::push_refused),
+        help("a later run will read the branch again and decide afresh")
+    )]
+    PushRefused { branch: String, reason: String },
 }
 
 /// How output is written. Agents ask for `Json`.
@@ -246,6 +286,23 @@ mod tests {
             },
             Error::Startup { source: io() },
             Error::UnknownCode { code: "c".into() },
+            Error::RateLimited {
+                action: "a".into(),
+                wait_seconds: 1,
+            },
+            Error::ForgeRefused {
+                action: "a".into(),
+                status: 403,
+            },
+            Error::ForgeUnreachable {
+                action: "a".into(),
+                reason: "r".into(),
+            },
+            Error::ReadOnly { action: "a".into() },
+            Error::PushRefused {
+                branch: "b".into(),
+                reason: "r".into(),
+            },
         ];
         for e in &all {
             match e {
@@ -260,7 +317,12 @@ mod tests {
                 | Error::InputUnreadable { .. }
                 | Error::InputInvalidJson { .. }
                 | Error::Startup { .. }
-                | Error::UnknownCode { .. } => {}
+                | Error::UnknownCode { .. }
+                | Error::RateLimited { .. }
+                | Error::ForgeRefused { .. }
+                | Error::ForgeUnreachable { .. }
+                | Error::ReadOnly { .. }
+                | Error::PushRefused { .. } => {}
             }
         }
         all

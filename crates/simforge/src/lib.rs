@@ -65,6 +65,18 @@ impl SimForge {
         world.pull_mut(repo, number).labels.push(label.to_string());
     }
 
+    /// `mergeable` reads as null for the next `reads` reads, as GitHub computes it lazily.
+    pub fn mergeable_after(&self, reads: u32) {
+        self.world.lock().unwrap().unknown_reads = reads;
+    }
+
+    /// Moves a branch as someone else's push would.
+    pub fn move_branch(&self, repo: &str, number: u64, sha: &str, message: &str) {
+        let mut world = self.world.lock().unwrap();
+        world.commits.insert(sha.to_string(), message.to_string());
+        world.pull_mut(repo, number).head_sha = sha.to_string();
+    }
+
     /// The next requests matching `path_contains` fail, in order.
     pub fn fail_requests(&self, path_contains: &str, failures: &[Failure]) {
         let mut world = self.world.lock().unwrap();

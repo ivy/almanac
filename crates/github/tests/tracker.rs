@@ -1,4 +1,5 @@
 use almanac::prelude::*;
+use github::client::{Auth, GithubClient, Retry};
 use github::tracker::GithubIssues;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -90,7 +91,11 @@ async fn a_refusal_is_an_error_so_the_effect_is_retried() {
         .respond_with(ResponseTemplate::new(503))
         .mount(&server)
         .await;
-    let issues = GithubIssues::new(server.uri(), "token");
+    let client = GithubClient::new(server.uri(), Auth::Token("token".into())).retrying(Retry {
+        attempts: 1,
+        ..Retry::default()
+    });
+    let issues = GithubIssues::using(client);
     let body = Untrusted::new("details".to_string());
     let error = issues
         .file("run-1:0", &target(), "Fix it", &body)

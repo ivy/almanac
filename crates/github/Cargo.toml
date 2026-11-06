@@ -12,10 +12,14 @@ workspace = true
 
 [dependencies]
 almanac.workspace = true
+jsonwebtoken.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+time.workspace = true
+tokio = { workspace = true, features = ["time"] }
 
 [dev-dependencies]
+simforge.workspace = true
 tokio = { workspace = true, features = ["macros"] }
 wiremock.workspace = true

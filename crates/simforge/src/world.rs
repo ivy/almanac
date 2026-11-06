@@ -88,6 +88,9 @@ pub struct Suite {
     pub status: String,
     pub conclusion: Option<String>,
     pub logs: String,
+    /// Check runs behind the suite. A GitHub App with nothing to report leaves a suite `queued`
+    /// forever with none.
+    pub runs: u64,
 }
 
 impl Suite {
@@ -99,6 +102,20 @@ impl Suite {
             status: "completed".to_string(),
             conclusion: Some(conclusion.to_string()),
             logs: logs.to_string(),
+            runs: 1,
+        }
+    }
+
+    /// A suite an installed App created and will never run.
+    pub fn ghost(sha: &str, branch: &str) -> Self {
+        Self {
+            id: 0,
+            sha: sha.to_string(),
+            branch: branch.to_string(),
+            status: "queued".to_string(),
+            conclusion: None,
+            logs: String::new(),
+            runs: 0,
         }
     }
 }
@@ -319,7 +336,7 @@ impl World {
             "before": null, "after": null, "pull_requests": [], "app": null,
             "head_commit": self.commit_summary(&s.sha),
             "created_at": TIME, "updated_at": TIME,
-            "latest_check_runs_count": 1,
+            "latest_check_runs_count": s.runs,
         })
     }
 

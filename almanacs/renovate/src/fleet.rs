@@ -207,6 +207,11 @@ pub fn checks_of(suites: &Value, statuses: &Value) -> Checks {
         .as_array()
         .cloned()
         .unwrap_or_default();
+    // Installed Apps leave a suite `queued` forever when they have nothing to report.
+    let suites: Vec<Value> = suites
+        .into_iter()
+        .filter(|s| s["latest_check_runs_count"] != json!(0))
+        .collect();
     let statuses = statuses["statuses"].as_array().cloned().unwrap_or_default();
     let statuses: Vec<&Value> = statuses
         .iter()

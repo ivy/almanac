@@ -321,17 +321,30 @@ impl GithubClient {
         }
     }
 
+    /// This response is an object, so `get_all` does not apply.
+    async fn installation_repositories(&self) -> Result<Vec<Value>, Error> {
+        let mut all = vec![];
+        for page in 1.. {
+            let path = format!("/installation/repositories?per_page={PAGE}&page={page}");
+            let found = self.get(&path).await?;
+            let repositories = found["repositories"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            let last = repositories.len() < PAGE;
+            all.extend(repositories);
+            if last {
+                break;
+            }
+        }
+        Ok(all)
+    }
+
     /// Repositories with the given owner, leaving out archived ones.
     pub async fn repositories(&self, owner: &str) -> Result<Vec<Value>, Error> {
         let all = match self.auth {
             Auth::Token(_) => self.get_all("/user/repos?affiliation=owner").await?,
-            Auth::App { .. } => {
-                let found = self.get("/installation/repositories").await?;
-                found["repositories"]
-                    .as_array()
-                    .cloned()
-                    .unwrap_or_default()
-            }
+            Auth::App { .. } => self.installation_repositories().await?,
         };
         let wanted = |repo: &Value| {
             repo["owner"]["login"] == json!(owner) && repo["archived"] != json!(true)

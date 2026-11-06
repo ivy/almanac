@@ -281,6 +281,26 @@ async fn a_report_covers_every_pull_request_and_is_stable() {
 }
 
 #[tokio::test]
+async fn a_suite_an_app_will_never_run_is_not_ci_in_progress() {
+    let sim = SimForge::start().await;
+    sim.add_repo(Repo::public("owner/alpha"));
+    let number = sim.add_pull("owner/alpha", Pull::renovate("renovate/x-1.x", "Update"));
+    let sha = sim.pull("owner/alpha", number).head_sha;
+    sim.add_suite("owner/alpha", Suite::ghost(&sha, "renovate/x-1.x"));
+    sim.add_suite(
+        "owner/alpha",
+        Suite::finished(&sha, "renovate/x-1.x", "success", ""),
+    );
+    let found = report(&client(&sim), &NoAges, OWNER, RENOVATE)
+        .await
+        .unwrap();
+    assert_eq!(
+        found.repositories[0].pulls[0].verdict.state,
+        State::Mergeable
+    );
+}
+
+#[tokio::test]
 async fn a_hostile_title_never_reaches_a_report() {
     let sim = SimForge::start().await;
     sim.add_repo(Repo::public("owner/alpha"));
@@ -339,4 +359,12 @@ async fn the_verb_reads_through_the_binary_and_refuses_without_a_token() {
     assert!(!refused.status.success());
     let error: serde_json::Value = serde_json::from_slice(&refused.stderr).unwrap();
     assert_eq!(error["code"], "almanac::config::env_missing");
+}
+
+#[test]
+fn a_real_commits_suites_read_as_green_despite_apps_that_never_ran() {
+    let suites = include_str!("../fixtures/check-suites-with-ghosts.json");
+    let suites: serde_json::Value = serde_json::from_str(suites).unwrap();
+    let statuses = serde_json::json!({"statuses": []});
+    assert_eq!(checks_of(&suites, &statuses), Checks::Green);
 }

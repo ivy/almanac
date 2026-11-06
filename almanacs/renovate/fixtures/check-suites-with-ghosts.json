@@ -1,0 +1,60 @@
+{
+ "total_count": 5,
+ "check_suites": [
+  {
+   "id": 1,
+   "status": "queued",
+   "conclusion": null,
+   "latest_check_runs_count": 0,
+   "head_branch": "renovate/example",
+   "head_sha": "0000000000000000000000000000000000000000",
+   "app": {
+    "slug": "installed-app-0"
+   }
+  },
+  {
+   "id": 2,
+   "status": "queued",
+   "conclusion": null,
+   "latest_check_runs_count": 0,
+   "head_branch": "renovate/example",
+   "head_sha": "0000000000000000000000000000000000000000",
+   "app": {
+    "slug": "installed-app-1"
+   }
+  },
+  {
+   "id": 3,
+   "status": "queued",
+   "conclusion": null,
+   "latest_check_runs_count": 0,
+   "head_branch": "renovate/example",
+   "head_sha": "0000000000000000000000000000000000000000",
+   "app": {
+    "slug": "installed-app-2"
+   }
+  },
+  {
+   "id": 4,
+   "status": "queued",
+   "conclusion": null,
+   "latest_check_runs_count": 0,
+   "head_branch": "renovate/example",
+   "head_sha": "0000000000000000000000000000000000000000",
+   "app": {
+    "slug": "installed-app-3"
+   }
+  },
+  {
+   "id": 5,
+   "status": "completed",
+   "conclusion": "success",
+   "latest_check_runs_count": 3,
+   "head_branch": "renovate/example",
+   "head_sha": "0000000000000000000000000000000000000000",
+   "app": {
+    "slug": "github-actions"
+   }
+  }
+ ]
+}

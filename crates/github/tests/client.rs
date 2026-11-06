@@ -51,6 +51,26 @@ async fn discovery_skips_archived_repositories_and_other_owners() {
 }
 
 #[tokio::test]
+async fn an_app_finds_every_repository_past_the_first_page() {
+    let key = std::process::Command::new("openssl")
+        .args(["genrsa", "2048"])
+        .output()
+        .unwrap()
+        .stdout;
+    let sim = SimForge::start().await;
+    for i in 0..130 {
+        sim.add_repo(Repo::public(&format!("owner/repo-{i}")));
+    }
+    let auth = Auth::App {
+        app_id: "1".to_string(),
+        private_key: String::from_utf8(key).unwrap(),
+        installation_id: 7,
+    };
+    let c = GithubClient::new(sim.base_url(), auth).retrying(quick());
+    assert_eq!(c.repositories("owner").await.unwrap().len(), 130);
+}
+
+#[tokio::test]
 async fn pull_requests_are_listed_by_author_across_pages() {
     let sim = SimForge::start().await;
     sim.add_repo(Repo::public(REPO));

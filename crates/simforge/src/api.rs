@@ -197,10 +197,22 @@ async fn own_repos(State(world): State<Shared>, Query(params): Params) -> Respon
     paged(&world, "/user/repos", "page", &params, items)
 }
 
-async fn installation_repos(State(world): State<Shared>) -> Response {
+async fn installation_repos(State(world): State<Shared>, Query(params): Params) -> Response {
     let world = world.lock().unwrap();
-    let repos: Vec<Value> = world.repos.values().map(|r| world.repo_json(r)).collect();
-    axum::Json(json!({"total_count": repos.len(), "repositories": repos})).into_response()
+    let number = |key: &str, default: usize| {
+        let found = params.get(key).and_then(|v| v.parse().ok());
+        found.unwrap_or(default)
+    };
+    let per_page = number("per_page", DEFAULT_PAGE).max(1);
+    let page = number("page", 1).max(1);
+    let all: Vec<Value> = world.repos.values().map(|r| world.repo_json(r)).collect();
+    let total = all.len();
+    let repos: Vec<Value> = all
+        .into_iter()
+        .skip((page - 1) * per_page)
+        .take(per_page)
+        .collect();
+    axum::Json(json!({"total_count": total, "repositories": repos})).into_response()
 }
 
 async fn installation_token() -> Response {

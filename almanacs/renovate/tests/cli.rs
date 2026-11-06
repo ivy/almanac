@@ -102,3 +102,38 @@ fn backfill_refuses_a_repository_it_cannot_read() {
     let json: Value = serde_json::from_str(&stderr(&out)).unwrap();
     assert_eq!(json["code"], "almanac::usage");
 }
+
+/// A read-only pass over a simulated fleet, through the binary, with a red pull request that
+/// would otherwise reach an agent and post statuses.
+#[tokio::test]
+async fn a_read_only_pass_writes_nothing_and_calls_no_model() {
+    let sim = simforge::SimForge::start().await;
+    sim.add_repo(simforge::Repo::public("owner/repo"));
+    let mut pull = simforge::Pull::renovate("renovate/tar-7.x", "Update tar");
+    pull.body = Some("| Package | Change |\n|---|---|\n".to_string());
+    let number = sim.add_pull("owner/repo", pull);
+    let sha = sim.pull("owner/repo", number).head_sha;
+    let suite = simforge::Suite::finished(&sha, "renovate/tar-7.x", "failure", "boom");
+    sim.add_suite("owner/repo", suite);
+    let out = tokio::process::Command::new(env!("CARGO_BIN_EXE_almanac-renovate"))
+        .args(["--format", "json", "backfill", "--dry-run"])
+        .env_clear()
+        .env("ALMANAC_READ_ONLY", "1")
+        .env("GITHUB_TOKEN", "t")
+        .env("GITHUB_API_URL", sim.base_url())
+        .env("ALMANAC_OWNER", "owner")
+        .env("ALMANAC_RENOVATE_AUTHOR", simforge::RENOVATE)
+        .env("ALMANAC_REGISTRY_URL", sim.base_url())
+        .env("ALMANAC_CONFIG", "/nonexistent/almanac.toml")
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["backfill"]["found"], 1);
+    assert_eq!(sim.writes(), vec![], "nothing reached the forge");
+}

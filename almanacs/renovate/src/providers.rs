@@ -48,9 +48,35 @@ fn auth() -> Option<Auth> {
     env::var("GITHUB_TOKEN").ok().map(Auth::Token)
 }
 
+/// Set for a pass over real repositories. Every client refuses writes and no model is called,
+/// whatever mode a run is in.
+fn read_only() -> bool {
+    env::var("ALMANAC_READ_ONLY").is_ok_and(|v| v == "1")
+}
+
 fn client() -> Option<GithubClient> {
     let api = env::var("GITHUB_API_URL").unwrap_or_else(|_| API.to_string());
-    Some(GithubClient::new(api, auth()?))
+    let client = GithubClient::new(api, auth()?);
+    Some(if read_only() {
+        client.read_only()
+    } else {
+        client
+    })
+}
+
+/// Stands in for an agent when nothing may be spent, so a run records how far it got.
+struct NoAgent;
+
+impl Harness for NoAgent {
+    fn run<'a>(
+        &'a self,
+        _: &'a Pass,
+        _: &'a str,
+        _: almanac::agent::Grant,
+        _: serde_json::Value,
+    ) -> BoxFuture<'a, Result<serde_json::Value, StepError>> {
+        Box::pin(async { Err(StepError("read-only: an agent would run here".to_string())) })
+    }
 }
 
 fn harness(checkouts: Arc<GithubClient>) -> Option<ClaudeHarness> {
@@ -124,6 +150,9 @@ pub fn all(_config: &Config) -> Providers {
         .provide::<dyn Forge>(forge)
         .provide::<dyn Tracker>(tracker)
         .provide::<dyn Sweep>(sweep);
+    if read_only() {
+        return providers.harness(NoAgent);
+    }
     match harness(reader) {
         Some(harness) => providers.harness(harness),
         None => providers,

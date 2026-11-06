@@ -44,6 +44,9 @@ async fn run() -> Result<(), String> {
         .await
         .map_err(|e| format!("cannot listen on {listen}: {e}"))?;
     tracing::info!(%address, "listening");
+    if let Err(error) = sd_notify::notify(&[sd_notify::NotifyState::Ready]) {
+        tracing::warn!(%error, "could not notify the service manager");
+    }
     axum::serve(listener, app)
         .with_graceful_shutdown(terminated())
         .await

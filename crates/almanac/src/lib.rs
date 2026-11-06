@@ -8,6 +8,7 @@ pub mod config;
 pub mod consumer;
 pub mod cooled;
 pub mod cx;
+pub mod daemon;
 pub mod diag;
 pub mod effect;
 pub mod patch;

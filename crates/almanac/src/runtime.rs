@@ -12,6 +12,7 @@ use crate::workflow::{Decided, Registered, Scanner, Subject};
 use futures::future::{BoxFuture, join_all};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -201,6 +202,8 @@ pub struct Runtime {
     clock: Arc<dyn Clock>,
     /// Where a tripped budget asks a person.
     alerts: Option<Slug>,
+    /// Set on shutdown. An in-flight run finishes, and no new one starts.
+    stopped: AtomicBool,
 }
 
 impl Runtime {
@@ -214,6 +217,7 @@ impl Runtime {
             store: Arc::new(MemoryStore::default()),
             clock: Arc::new(SystemClock),
             alerts: None,
+            stopped: AtomicBool::new(false),
         }
     }
 
@@ -355,6 +359,8 @@ impl Runtime {
             run.id.clone(),
             self.store.clone(),
             self.clock.clone(),
+            self.mode,
+            w.may(),
             w.agent_names(),
             self.providers.clone(),
         );
@@ -419,6 +425,9 @@ impl Runtime {
 
     async fn work(&self, budgets: &[Budget], out: &Mutex<Vec<Outcome>>) -> Stored<()> {
         loop {
+            if self.stopped.load(Ordering::SeqCst) {
+                return Ok(());
+            }
             let request = ClaimRequest {
                 budgets,
                 overall: self.limits.overall_cap,
@@ -608,6 +617,16 @@ impl Runtime {
             }
         }
         Ok(report)
+    }
+
+    /// Starts no more runs. Queued work stays queued for the next start.
+    pub fn stop_claiming(&self) {
+        self.stopped.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether the store answers.
+    pub async fn ping(&self) -> Stored<()> {
+        self.store.undelivered().await.map(|_| ())
     }
 
     /// Requeues what a crash left running. Call this once before draining after a start.

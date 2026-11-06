@@ -1,5 +1,7 @@
 //! What an almanac's `main()` calls. One binary, a few verbs.
 use crate::config::Config;
+use crate::consumer::Consumer;
+use crate::daemon::{GRACE, Health, serve_health, with_backoff};
 use crate::diag::{Error, Format, explain, render};
 use crate::effect::Mode;
 use crate::providers::Providers;
@@ -8,11 +10,16 @@ use crate::store::PostgresStore;
 use crate::workflow::Registered;
 use futures::future::BoxFuture;
 use serde_json::json;
+use std::io::IsTerminal;
 use std::process::ExitCode;
 use std::sync::Arc;
+use tokio::signal::unix::{SignalKind, signal};
 
-const USAGE: &str = "usage: <almanac> [--format json] synth | check | \
+const USAGE: &str = "usage: <almanac> [--format json] synth | check | run | \
                      backfill [--repo R] [--dry-run] | simulate KIND FILE [--dry-run] | explain CODE";
+
+/// Where a daemon answers health checks, unless `listen` says otherwise.
+const HEALTH_LISTEN: &str = "127.0.0.1:8788";
 
 type Workflows = fn() -> Vec<Box<dyn Registered>>;
 type Setup = fn(&Config) -> Providers;
@@ -106,6 +113,85 @@ async fn settle(runtime: &Runtime) -> Result<Vec<String>, Error> {
     Ok(shown)
 }
 
+/// Finishes when the service manager asks this process to stop.
+async fn terminated() {
+    let Ok(mut term) = signal(SignalKind::terminate()) else {
+        return;
+    };
+    tokio::select! {
+        _ = term.recv() => {}
+        _ = tokio::signal::ctrl_c() => {}
+    }
+}
+
+fn start_logging() {
+    let json = !std::io::stderr().is_terminal();
+    let logs = tracing_subscriber::fmt().with_writer(std::io::stderr);
+    let installed = if json {
+        logs.json().try_init()
+    } else {
+        logs.try_init()
+    };
+    drop(installed);
+}
+
+fn tell_manager(state: &[sd_notify::NotifyState<'_>]) {
+    if let Err(error) = sd_notify::notify(state) {
+        tracing::warn!(%error, "could not notify the service manager");
+    }
+}
+
+/// `run`: stays up, consuming the broker's log. An outage is waited out, so a supervisor never
+/// sees a crash loop for a database that is restarting.
+async fn daemon(name: &'static str, runtime: Runtime, config: &Config) -> Result<(), Error> {
+    start_logging();
+    let url = std::env::var("DATABASE_URL").map_err(|_| Error::EnvMissing {
+        name: "DATABASE_URL".to_string(),
+        purpose: "the PostgreSQL database shared with the broker".to_string(),
+    })?;
+    let health = Health::default();
+    let address = config.listen.as_deref().unwrap_or(HEALTH_LISTEN);
+    if let Ok(address) = address.parse() {
+        let health = health.clone();
+        tokio::spawn(async move {
+            if let Err(error) = serve_health(address, health).await {
+                tracing::warn!(%error, "no health endpoint");
+            }
+        });
+    }
+    let (stopping, stopped) = tokio::sync::watch::channel(false);
+    let stop = async move {
+        terminated().await;
+        let _ = stopping.send(true);
+    };
+    tokio::pin!(stop);
+    let connecting = async {
+        let store = with_backoff("connecting to the store", stopped.clone(), || {
+            PostgresStore::connect(&url, name)
+        })
+        .await?;
+        let consumer = with_backoff("connecting to the log", stopped.clone(), || {
+            Consumer::connect(&url, name)
+        })
+        .await?;
+        Some((store, consumer))
+    };
+    let connected = tokio::select! {
+        connected = connecting => connected,
+        () = &mut stop => None,
+    };
+    let Some((store, consumer)) = connected else {
+        return Ok(());
+    };
+    let runtime = runtime.with_store(Arc::new(store));
+    let requeued = with_backoff("recovering", stopped.clone(), || runtime.recover()).await;
+    tracing::info!(almanac = name, ?requeued, "running");
+    tell_manager(&[sd_notify::NotifyState::Ready]);
+    let result = crate::daemon::run(&runtime, &consumer, &health, GRACE, stop).await;
+    tell_manager(&[sd_notify::NotifyState::Stopping]);
+    result
+}
+
 fn print(format: Format, human: String, json: serde_json::Value) {
     match format {
         Format::Human => println!("{human}"),
@@ -146,11 +232,15 @@ fn run(
     let mut runtime = Runtime::new(workflows(), setup(&config))
         .tightened(config.limits())
         .in_mode(mode(dry_run));
+    // Before anything connects, so a binary missing a provider fails at once with a diagnostic.
+    runtime.validate()?;
+    if verb.as_slice() == ["run"] {
+        return rt.block_on(daemon(name, runtime, &config));
+    }
     if let Ok(url) = std::env::var("DATABASE_URL") {
         let store = rt.block_on(PostgresStore::connect(&url, name))?;
         runtime = runtime.with_store(Arc::new(store));
     }
-    runtime.validate()?;
 
     match verb.as_slice() {
         ["synth"] => {

@@ -25,6 +25,7 @@ crates/definitions/   sample workflows and the behaviour tests
 crates/fails/         trybuild compile-fail cases; these prove the safety rules
 almanacs/              standalone almanacs, each its own Cargo workspace
 images/               sandbox images
+contrib/              example systemd user units
 specs/                pinned API specs for sources
 spikes/               throwaway proofs behind decisions in docs/adrs
 tools/                the publication check

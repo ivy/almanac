@@ -37,11 +37,13 @@ name = "almanac"
 version = "0.0.0"
 dependencies = [
  "almanac-macros",
+ "axum",
  "deliveries",
  "futures",
  "insta",
  "miette",
  "proptest",
+ "sd-notify",
  "serde",
  "serde_json",
  "sqlx",
@@ -50,6 +52,8 @@ dependencies = [
  "time",
  "tokio",
  "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -435,6 +439,7 @@ dependencies = [
  "hex",
  "hmac 0.12.1",
  "reqwest",
+ "sd-notify",
  "serde_json",
  "sha2 0.10.9",
  "sqlx",
@@ -2798,6 +2803,15 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sd-notify"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e4ef7359e694bfaf1dd27a30f9d760b54c00dfae9f19bd0c05a39bc9128fe76"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "security-framework"

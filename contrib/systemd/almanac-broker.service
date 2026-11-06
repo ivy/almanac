@@ -1,0 +1,18 @@
+# The one webhook ingress. Copy to ~/.config/systemd/user/ and adjust the paths.
+[Unit]
+Description=Almanac webhook broker
+Documentation=https://github.com/ivy/almanac
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=%h/.local/bin/almanac-broker
+# Holds ALMANAC_WEBHOOK_SECRET and DATABASE_URL. Keep it readable by this user only.
+EnvironmentFile=%h/.config/almanac/broker.env
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

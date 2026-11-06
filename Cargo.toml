@@ -33,6 +33,7 @@ quote = "1"
 sandbox = { path = "crates/sandbox" }
 registry = { path = "crates/registry" }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+sd-notify = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

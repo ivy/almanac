@@ -3,9 +3,10 @@
 use crate::agent::{AgentSpec, Bound, Classifier, Harness, Pass};
 use crate::clock::Clock;
 use crate::cooled::{Cooled, Published};
+use crate::effect::{AttestState, EffectKind, Forge, Mode};
 use crate::providers::Providers;
 use crate::store::{Store, StoreError};
-use crate::taint::{Invalid, Observed, Untrusted};
+use crate::taint::{Invalid, Observed, Sha, Slug, Untrusted};
 use crate::wire::Malformed;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
@@ -74,6 +75,8 @@ pub struct Cx {
     run_id: String,
     store: Arc<dyn Store>,
     clock: Arc<dyn Clock>,
+    mode: Mode,
+    may: &'static [EffectKind],
     counts: Mutex<HashMap<&'static str, usize>>,
     agents: Vec<&'static str>,
     providers: Arc<Providers>,
@@ -84,6 +87,8 @@ impl Cx {
         run_id: String,
         store: Arc<dyn Store>,
         clock: Arc<dyn Clock>,
+        mode: Mode,
+        may: &'static [EffectKind],
         agents: Vec<&'static str>,
         providers: Arc<Providers>,
     ) -> Self {
@@ -91,6 +96,8 @@ impl Cx {
             run_id,
             store,
             clock,
+            mode,
+            may,
             counts: Mutex::default(),
             agents,
             providers,
@@ -174,6 +181,34 @@ impl Cx {
             checked_at,
         } = self.record("cooldown", check).await?;
         Ok(Cooled::check(published, min_age, checked_at))
+    }
+
+    /// Posts a `pending` status now, before an agent starts, so nothing can merge while the work
+    /// is under way. Effects apply only when a run ends, which is too late for this. If the run
+    /// dies, its requeued run posts the final status over this one.
+    pub async fn hold(
+        &self,
+        context: &'static str,
+        repo: &Slug,
+        sha: &Sha,
+    ) -> Result<(), StepError> {
+        if !self.may.contains(&EffectKind::Attest) {
+            return Err(StepError(
+                "this workflow may not Attest, so it cannot hold".to_string(),
+            ));
+        }
+        let key = format!("{}:hold:{context}", self.run_id);
+        let post = async {
+            if self.mode == Mode::Live {
+                let forge = self.get::<dyn Forge>()?;
+                forge
+                    .attest(&key, repo, sha, context, AttestState::Pending)
+                    .await?;
+            }
+            Ok(true)
+        };
+        let _: bool = self.record("hold", post).await?;
+        Ok(())
     }
 
     /// Stop unless a cheap classifier clears `above`. This gates spending and never safety,

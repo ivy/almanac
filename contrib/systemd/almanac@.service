@@ -1,0 +1,23 @@
+# An almanac as a daemon. The instance name is the binary's name: almanac@renovate.service runs
+# ~/.local/bin/renovate. It needs a lingering user, so it runs without a login session and can
+# start rootless Podman. NoNewPrivileges is left off because Podman's newuidmap needs setuid.
+[Unit]
+Description=Almanac %i
+Documentation=https://github.com/ivy/almanac
+Wants=almanac-broker.service
+After=almanac-broker.service
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=%h/.local/bin/%i run
+# Holds DATABASE_URL and provider secrets. Keep it readable by this user only.
+EnvironmentFile=%h/.config/almanac/%i.env
+Environment=XDG_RUNTIME_DIR=%t
+Restart=on-failure
+RestartSec=5
+# Longer than the daemon's grace period, so an in-flight run can finish or be abandoned cleanly.
+TimeoutStopSec=60
+
+[Install]
+WantedBy=default.target

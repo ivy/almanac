@@ -9,11 +9,11 @@ export SQLX_OFFLINE := true
 export DOCKER_HOST ?= unix:///run/user/$(shell id -u)/podman/podman.sock
 export TESTCONTAINERS_RYUK_DISABLED ?= true
 
-DB_TESTS := binary(store_postgres) or binary(workflows_on_postgres) or binary(broker_flow)
+DB_TESTS := binary(store_postgres) or binary(workflows_on_postgres) or binary(broker_flow) or binary(daemon)
 SANDBOX_TESTS := binary(podman) or binary(real_cli)
 SLOW_TESTS := $(DB_TESTS) or $(SANDBOX_TESTS)
 
-.PHONY: all build test test-db test-sandbox test-fast lint fmt generate generated sqlx-prepare check-public check clean
+.PHONY: all build test test-db test-sandbox test-fast lint fmt generate generated sqlx-prepare check-public verify-units check clean
 
 all: build
 
@@ -24,7 +24,7 @@ build:
 # Every test. almanacs keep their own Cargo workspaces, so each is tested on its own.
 test:
 	cargo nextest run --workspace --locked --no-tests=pass -E 'not ($(SLOW_TESTS))'
-	cd $(ALMANAC) && cargo nextest run --locked --no-tests=pass
+	cd $(ALMANAC) && cargo nextest run --locked --no-tests=pass -E 'not binary(daemon)'
 
 # Isolation, proved with real Podman and the real CLI against a stub model. No model is called.
 test-sandbox:
@@ -34,6 +34,7 @@ test-sandbox:
 # The conformance suite and every workflow test, against a real PostgreSQL.
 test-db:
 	cargo nextest run --workspace --locked -E '$(DB_TESTS)'
+	cd $(ALMANAC) && cargo nextest run --locked -E 'binary(daemon)'
 
 # The tests quick enough for a commit hook. Compile-fail cases are left to `make test`.
 test-fast:
@@ -59,11 +60,14 @@ sqlx-prepare:
 check-public:
 	tools/check-public.sh
 
+verify-units:
+	tools/verify-units.sh
+
 generated:
 	cargo xtask generate --check
 
 # The gate. A change is not done until this passes.
-check: lint generated test test-db test-sandbox check-public
+check: lint generated test test-db test-sandbox check-public verify-units
 	cargo deny --locked check
 
 clean:

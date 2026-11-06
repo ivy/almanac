@@ -13,12 +13,21 @@ help: the following other types implement trait `Finite`
   |   ^^^^^^^^^^^^^^^^^^^^ `bool`
 ...
   |           impl $crate::taint::Finite for $n {}
-  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `EffectKind`
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |           |
+  |           `AttestState`
+  |           `EffectKind`
   |
  ::: $WORKSPACE/crates/almanac/src/effect.rs
   |
   | / crate::clean! {
   | |     pub enum EffectKind { Attest, Await, File, Ask }
+  | | }
+  | |_- in this macro invocation
+  |
+  | / crate::clean! {
+  | |     /// A status check's state. `Pending` holds a merge as firmly as `Failure`.
+  | |     pub enum AttestState { Pending, Success, Failure }
   | | }
   | |_- in this macro invocation
 note: required by a bound in `Untrusted::<T>::narrow`

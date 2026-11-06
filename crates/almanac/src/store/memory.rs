@@ -1,5 +1,5 @@
 //! The store for tests and one-shot commands. It forgets everything when dropped.
-use super::{Admission, Budget, Claim, Pending, Run, Store, Stored};
+use super::{Admission, Budget, Claim, Entry, EntryStatus, Pending, Run, Store, Stored};
 use crate::runtime::Ingest;
 use crate::workflow::Subject;
 use futures::future::BoxFuture;
@@ -24,6 +24,7 @@ struct State {
     runs: HashMap<String, Run>,
     subjects: HashMap<Subject, Vec<String>>,
     log: HashMap<(String, String, usize), Value>,
+    outbox: Vec<Entry>,
     next_seq: u64,
     next_run: u64,
 }
@@ -166,12 +167,71 @@ impl Store for MemoryStore {
         Box::pin(async move { Ok(self.claim_now(budgets)) })
     }
 
-    fn release<'a>(&'a self, run_id: &'a str, links: &'a [Subject]) -> BoxFuture<'a, Stored<()>> {
+    fn release<'a>(
+        &'a self,
+        run_id: &'a str,
+        links: &'a [Subject],
+        effects: Vec<Value>,
+        status: EntryStatus,
+    ) -> BoxFuture<'a, Stored<()>> {
         Box::pin(async move {
             let mut s = self.state.lock().unwrap();
             s.running.retain(|_, id| id != run_id);
             for subject in links {
                 s.link(subject.clone(), run_id);
+            }
+            for (i, effect) in effects.into_iter().enumerate() {
+                s.outbox.push(Entry {
+                    key: format!("{run_id}:{i}"),
+                    run_id: run_id.to_string(),
+                    effect,
+                    status,
+                    attempts: 0,
+                });
+            }
+            Ok(())
+        })
+    }
+
+    fn undelivered(&self) -> BoxFuture<'_, Stored<Vec<Entry>>> {
+        Box::pin(async move {
+            let s = self.state.lock().unwrap();
+            let waiting = s.outbox.iter().filter(|e| e.status == EntryStatus::Pending);
+            Ok(waiting.cloned().collect())
+        })
+    }
+
+    fn outbox<'a>(&'a self, run_id: &'a str) -> BoxFuture<'a, Stored<Vec<Entry>>> {
+        Box::pin(async move {
+            let s = self.state.lock().unwrap();
+            let entries = s.outbox.iter().filter(|e| e.run_id == run_id);
+            Ok(entries.cloned().collect())
+        })
+    }
+
+    fn delivered<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Stored<()>> {
+        Box::pin(async move {
+            let mut s = self.state.lock().unwrap();
+            if let Some(entry) = s.outbox.iter_mut().find(|e| e.key == key) {
+                entry.status = EntryStatus::Applied;
+            }
+            Ok(())
+        })
+    }
+
+    fn delivery_failed<'a>(
+        &'a self,
+        key: &'a str,
+        _error: &'a str,
+        give_up: u32,
+    ) -> BoxFuture<'a, Stored<()>> {
+        Box::pin(async move {
+            let mut s = self.state.lock().unwrap();
+            if let Some(entry) = s.outbox.iter_mut().find(|e| e.key == key) {
+                entry.attempts += 1;
+                if entry.attempts >= give_up {
+                    entry.status = EntryStatus::Failed;
+                }
             }
             Ok(())
         })

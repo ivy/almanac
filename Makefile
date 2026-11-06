@@ -42,7 +42,7 @@ fmt:
 	cd $(ALMANAC) && cargo fmt
 
 generate:
-	python3 -I tools/gen_github.py specs/github/api.github.com.json crates/github/projection.toml > crates/github/src/lib.rs
+	python3 -I tools/gen_github.py specs/github/api.github.com.json crates/github/projection.toml > crates/github/src/events.rs
 
 # Refreshes .sqlx after a query or migration changes. Needs DATABASE_URL, migrated.
 sqlx-prepare:

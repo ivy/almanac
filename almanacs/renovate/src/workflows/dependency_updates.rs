@@ -21,6 +21,7 @@ observed! {
     /// What the registry and forge told us. Facts are typed; the diff stays tainted.
     pub struct UpdateEvidence {
         pub repo: Slug,
+        pub sha: Sha,
         pub package: Slug,
         pub install_script_added: bool,
         pub publisher_changed: bool,
@@ -79,14 +80,19 @@ pub fn policy(Facts { evidence, review }: &Facts) -> Vec<Effect> {
     let no_concerns = review.narrow(|r| r.verdict) == Verdict::NoConcerns;
     let body = review.map(|r| r.notes.clone());
 
+    let attest = |state| Effect::Attest {
+        context: "almanac/trust",
+        state,
+        repo: evidence.repo.clone(),
+        sha: evidence.sha.clone(),
+    };
+
     if !checks_pass || !no_concerns {
         return vec![
-            Effect::Attest {
-                context: "almanac/trust",
-                passed: false,
-            },
+            attest(AttestState::Failure),
             Effect::Ask {
                 question: "This dependency update failed trust checks",
+                target: evidence.repo.clone(),
                 body,
             },
         ];
@@ -95,15 +101,9 @@ pub fn policy(Facts { evidence, review }: &Facts) -> Vec<Effect> {
         CiState::Pending => vec![Effect::Await {
             until: "CI to finish",
         }],
-        CiState::Green => vec![Effect::Attest {
-            context: "almanac/trust",
-            passed: true,
-        }],
+        CiState::Green => vec![attest(AttestState::Success)],
         CiState::Red => vec![
-            Effect::Attest {
-                context: "almanac/trust",
-                passed: true,
-            },
+            attest(AttestState::Success),
             Effect::File {
                 title: "Fix the build on this dependency update",
                 target: evidence.repo.clone(),

@@ -6,13 +6,13 @@ error[E0277]: the trait bound `String: almanac::__private::Field` is not satisfi
   |
   = help: the following other types implement trait `Clean`:
             ActionSummary
+            AttestState
             EffectKind
             Option<T>
             Sha
             Slug
             bool
             f64
-            fails::Done
           and $N others
   = note: required for `String` to implement `almanac::__private::Field`
 note: required by a bound in `check`

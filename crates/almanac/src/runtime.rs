@@ -1,9 +1,10 @@
 //! Routes events, runs workflows, and applies limits. What it must remember is in `store`.
 use crate::cx::{Cx, Halt, StepError};
-use crate::effect::{ActionSummary, Effect};
+use crate::effect::{ActionSummary, Effect, EffectKind, Forge, Mode, Planned, Tracker};
 use crate::providers::Providers;
 use crate::store::{
-    Admission, Budget, Claim, MemoryStore, Pending, Run, Store, StoreError, Stored,
+    Admission, Budget, Claim, Entry, EntryStatus, MemoryStore, Pending, Run, Store, StoreError,
+    Stored,
 };
 use crate::workflow::{Decided, Registered, Subject};
 use futures::future::{BoxFuture, join_all};
@@ -12,6 +13,7 @@ use std::sync::{Arc, Mutex};
 
 pub const MAX_CHAIN_DEPTH: u32 = 3;
 const MAX_CONCURRENT_RUNS: usize = 4;
+const MAX_DELIVERY_ATTEMPTS: u32 = 5;
 
 /// Runtime limits. `tighten` can only lower them, however often it is called.
 #[derive(Clone, Copy, Debug)]
@@ -89,6 +91,24 @@ pub enum Outcome {
     },
 }
 
+/// What one attempt to apply an effect did.
+#[derive(Debug, PartialEq)]
+pub struct Delivery {
+    pub key: String,
+    pub result: Result<(), String>,
+}
+
+fn planned(outcome: &Outcome) -> Stored<Vec<Value>> {
+    let Outcome::Ran { effects, .. } = outcome else {
+        return Ok(vec![]);
+    };
+    effects
+        .iter()
+        .map(|effect| serde_json::to_value(Planned::from(effect)))
+        .collect::<Result<_, _>>()
+        .map_err(|e| StoreError(e.to_string()))
+}
+
 /// Reviews a run's actions knowing only the workflow's intent and text-free summaries.
 /// Its signature is the defense: hostile content cannot reach it.
 pub trait Guard: Send + Sync {
@@ -115,6 +135,7 @@ pub struct Runtime {
     providers: Arc<Providers>,
     guard: Box<dyn Guard>,
     limits: Limits,
+    mode: Mode,
     store: Arc<dyn Store>,
 }
 
@@ -125,12 +146,19 @@ impl Runtime {
             providers: Arc::new(providers),
             guard: Box::new(AllowDeclared),
             limits: Limits::default(),
+            mode: Mode::default(),
             store: Arc::new(MemoryStore::default()),
         }
     }
 
     pub fn with_store(mut self, store: Arc<dyn Store>) -> Self {
         self.store = store;
+        self
+    }
+
+    /// Effects are dry-run unless this says otherwise.
+    pub fn in_mode(mut self, mode: Mode) -> Self {
+        self.mode = mode;
         self
     }
 
@@ -162,11 +190,28 @@ impl Runtime {
                     missing.push(format!("{} needs a harness for agent `{agent}`", w.name()));
                 }
             }
+            if self.mode == Mode::Live {
+                self.missing_for_effects(w.as_ref(), &mut missing);
+            }
         }
         if missing.is_empty() {
             Ok(())
         } else {
             Err(missing.join("; "))
+        }
+    }
+
+    fn missing_for_effects(&self, w: &dyn Registered, missing: &mut Vec<String>) {
+        let may = w.may();
+        if may.contains(&EffectKind::Attest) && self.providers.get::<dyn Forge>().is_none() {
+            missing.push(format!("{} may Attest but no Forge is provided", w.name()));
+        }
+        let tracked = may.contains(&EffectKind::File) || may.contains(&EffectKind::Ask);
+        if tracked && self.providers.get::<dyn Tracker>().is_none() {
+            missing.push(format!(
+                "{} may File or Ask but no Tracker is provided",
+                w.name()
+            ));
         }
     }
 
@@ -301,7 +346,12 @@ impl Runtime {
                 Claim::Run(run) => {
                     let w = self.workflow(&run.workflow)?;
                     let (outcome, links) = self.execute(w, &run).await;
-                    self.store.release(&run.id, &links).await?;
+                    let status = match self.mode {
+                        Mode::Live => EntryStatus::Pending,
+                        Mode::DryRun => EntryStatus::WouldApply,
+                    };
+                    let planned = planned(&outcome)?;
+                    self.store.release(&run.id, &links, planned, status).await?;
                     out.lock().unwrap().push(outcome);
                 }
             }
@@ -317,6 +367,78 @@ impl Runtime {
             finished?;
         }
         Ok(out.into_inner().unwrap())
+    }
+
+    /// Applies recorded effects, oldest first. A failure leaves an effect to be retried by a
+    /// later call, up to a limit. Providers receive a stable key, so a crash between applying
+    /// and marking it delivered changes nothing when it is applied again.
+    pub async fn deliver(&self) -> Stored<Vec<Delivery>> {
+        let mut report = vec![];
+        for entry in self.store.undelivered().await? {
+            let result = self.apply(&entry).await;
+            match &result {
+                Ok(()) => self.store.delivered(&entry.key).await?,
+                Err(error) => {
+                    self.store
+                        .delivery_failed(&entry.key, error, MAX_DELIVERY_ATTEMPTS)
+                        .await?
+                }
+            }
+            report.push(Delivery {
+                key: entry.key,
+                result,
+            });
+        }
+        Ok(report)
+    }
+
+    async fn apply(&self, entry: &Entry) -> Result<(), String> {
+        let planned: Planned = serde_json::from_value(entry.effect.clone())
+            .map_err(|e| format!("{}: unreadable effect: {e}", entry.key))?;
+        let key = entry.key.as_str();
+        let outcome = match &planned {
+            Planned::Await { .. } => Ok(()),
+            Planned::Attest {
+                context,
+                state,
+                repo,
+                sha,
+            } => {
+                self.provider::<dyn Forge>("Forge")?
+                    .attest(key, repo, sha, context, *state)
+                    .await
+            }
+            Planned::File {
+                title,
+                target,
+                body,
+            } => {
+                self.provider::<dyn Tracker>("Tracker")?
+                    .file(key, target, title, body)
+                    .await
+            }
+            Planned::Ask {
+                question,
+                target,
+                body,
+            } => {
+                self.provider::<dyn Tracker>("Tracker")?
+                    .ask(key, target, question, body)
+                    .await
+            }
+        };
+        outcome.map_err(|StepError(error)| error)
+    }
+
+    fn provider<T: ?Sized + Send + Sync + 'static>(&self, name: &str) -> Result<Arc<T>, String> {
+        self.providers
+            .get::<T>()
+            .ok_or_else(|| format!("no {name} is provided"))
+    }
+
+    /// What a run recorded, including what a dry run would have done.
+    pub async fn effects_of(&self, run_id: &str) -> Stored<Vec<Entry>> {
+        self.store.outbox(run_id).await
     }
 
     /// Requeues what a crash left running. Call this once before draining after a start.

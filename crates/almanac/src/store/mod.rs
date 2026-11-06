@@ -67,6 +67,48 @@ pub enum Claim {
     Idle,
 }
 
+/// An effect recorded by a finished run.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Entry {
+    /// `run-id:index`, stable across retries.
+    pub key: String,
+    pub run_id: String,
+    pub effect: Value,
+    pub status: EntryStatus,
+    pub attempts: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EntryStatus {
+    Pending,
+    Applied,
+    /// Recorded by a dry run, and never delivered.
+    WouldApply,
+    /// Gave up after repeated failures.
+    Failed,
+}
+
+impl EntryStatus {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Applied => "applied",
+            Self::WouldApply => "would-apply",
+            Self::Failed => "failed",
+        }
+    }
+
+    pub(crate) fn parse(text: &str) -> Stored<Self> {
+        match text {
+            "pending" => Ok(Self::Pending),
+            "applied" => Ok(Self::Applied),
+            "would-apply" => Ok(Self::WouldApply),
+            "failed" => Ok(Self::Failed),
+            other => Err(StoreError(format!("unknown outbox status `{other}`"))),
+        }
+    }
+}
+
 pub trait Store: Send + Sync {
     /// Marks a delivery seen and queues its work as one atomic step, so a failure leaves
     /// nothing behind and a redelivery is accepted.
@@ -80,8 +122,31 @@ pub trait Store: Send + Sync {
     /// Starts the oldest claimable event. Only workflows in `budgets` are considered.
     fn claim<'a>(&'a self, budgets: &'a [Budget]) -> BoxFuture<'a, Stored<Claim>>;
 
-    /// Ends a run and links what it learned. A pending event for its key becomes claimable.
-    fn release<'a>(&'a self, run_id: &'a str, links: &'a [Subject]) -> BoxFuture<'a, Stored<()>>;
+    /// Ends a run, links what it learned, and records its effects, as one atomic step.
+    /// A pending event for its key becomes claimable.
+    fn release<'a>(
+        &'a self,
+        run_id: &'a str,
+        links: &'a [Subject],
+        effects: Vec<Value>,
+        status: EntryStatus,
+    ) -> BoxFuture<'a, Stored<()>>;
+
+    /// Effects waiting to be applied, oldest first.
+    fn undelivered(&self) -> BoxFuture<'_, Stored<Vec<Entry>>>;
+
+    /// A run's recorded effects, in order.
+    fn outbox<'a>(&'a self, run_id: &'a str) -> BoxFuture<'a, Stored<Vec<Entry>>>;
+
+    fn delivered<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Stored<()>>;
+
+    /// Counts a failed attempt. At `give_up` attempts the entry stops being retried.
+    fn delivery_failed<'a>(
+        &'a self,
+        key: &'a str,
+        error: &'a str,
+        give_up: u32,
+    ) -> BoxFuture<'a, Stored<()>>;
 
     /// Requeues runs a crash left running. Returns how many.
     fn recover(&self) -> BoxFuture<'_, Stored<usize>>;

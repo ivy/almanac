@@ -1,8 +1,14 @@
 error[E0597]: `t` does not live long enough
- --> tests/ui/fail/hostile_effect_title.rs:3:74
-  |
-3 | fn main() { let t = String::from("x"); let _ = Effect::Attest { context: &t, passed: true }; }
-  |                 -                                                        ^^                  - `t` dropped here while still borrowed
-  |                 |                                                        |
-  |                 |                                                        borrowed value does not live long enough
-  |                 binding `t` declared here                                this usage requires that `t` is borrowed for `'static`
+  --> tests/ui/fail/hostile_effect_title.rs:6:18
+   |
+ 4 |     let t = String::from("x");
+   |         - binding `t` declared here
+ 5 |     let _ = Effect::Attest {
+ 6 |         context: &t,
+   |                  ^^
+   |                  |
+   |                  borrowed value does not live long enough
+   |                  this usage requires that `t` is borrowed for `'static`
+...
+11 | }
+   | - `t` dropped here while still borrowed

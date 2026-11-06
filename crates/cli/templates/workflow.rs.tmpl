@@ -17,7 +17,7 @@ impl Event for Received {
     on = Received,
     key = "{id}",
     intent = "Describe what this workflow is for.",
-    may = [Attest],
+    may = [Await],
     runs_per_hour = 10,
     decide = policy,
 )]
@@ -26,5 +26,5 @@ pub async fn @FUNCTION@(_cx: &Cx, _event: &Received) -> Result<(), Halt> {
 }
 
 fn policy(_: &()) -> Vec<Effect> {
-    vec![Effect::Attest { context: "@KEBAB@", passed: true }]
+    vec![Effect::Await { until: "a real policy" }]
 }

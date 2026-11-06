@@ -2,8 +2,8 @@ use almanac::agent::Grant;
 use almanac::effect::ActionSummary;
 use almanac::prelude::*;
 use almanac::runtime::{Envelope, Guard, Ingest, Limits, Outcome, Runtime};
-use almanac::store::{MemoryStore, PostgresStore, Store};
-use almanac::testing::{FixedClassifier, ScriptedHarness};
+use almanac::store::{EntryStatus, MemoryStore, PostgresStore, Store};
+use almanac::testing::{FakeForge, FakeTracker, FixedClassifier, ScriptedHarness};
 use definitions::error_triage::{ErrorTriage, INVESTIGATOR};
 use futures_free::*;
 use github::PullRequestOpenedState;
@@ -47,6 +47,7 @@ impl Registry for FakeRegistry {
             *self.calls.lock().unwrap() += 1;
             Ok(UpdateEvidence {
                 repo: pr.repo.clone(),
+                sha: pr.head_sha.clone(),
                 package: "lodash".parse().unwrap(),
                 install_script_added: self.checks_fail,
                 publisher_changed: false,
@@ -386,7 +387,13 @@ async fn an_injected_all_clear_cannot_pass_failed_checks() {
     let Outcome::Ran { effects, .. } = &outcomes[0] else {
         panic!()
     };
-    assert!(matches!(effects[0], Effect::Attest { passed: false, .. }));
+    assert!(matches!(
+        effects[0],
+        Effect::Attest {
+            state: AttestState::Failure,
+            ..
+        }
+    ));
 }
 
 #[tokio::test]
@@ -739,4 +746,118 @@ async fn replay_after_a_restart_reuses_the_recorded_model_call() {
     let replayed = after.replay(run_id).await.unwrap();
     assert!(matches!(replayed, Outcome::Ran { .. }), "{replayed:?}");
     assert_eq!(h.calls(), 1, "a replay must not call the model again");
+}
+
+struct Applying {
+    forge: FakeForge,
+    tracker: FakeTracker,
+}
+
+impl Applying {
+    fn new() -> Self {
+        Self {
+            forge: FakeForge::default(),
+            tracker: FakeTracker::default(),
+        }
+    }
+
+    /// A runtime whose only run fails trust checks, so it produces `Attest` and `Ask`.
+    fn runtime(&self, mode: Mode, store: Arc<dyn Store>) -> Runtime {
+        let registry = FakeRegistry {
+            checks_fail: true,
+            ..FakeRegistry::default()
+        };
+        let forge: Arc<dyn Forge> = Arc::new(self.forge.clone());
+        let tracker: Arc<dyn Tracker> = Arc::new(self.tracker.clone());
+        let providers = Providers::new()
+            .provide::<dyn Registry>(Arc::new(registry))
+            .provide::<dyn Forge>(forge)
+            .provide::<dyn Tracker>(tracker)
+            .harness(reviewer());
+        Runtime::new(vec![Box::new(DependencyUpdates)], providers)
+            .in_mode(mode)
+            .with_store(store)
+    }
+
+    fn calls(&self) -> usize {
+        self.forge.calls.lock().unwrap().len() + self.tracker.calls.lock().unwrap().len()
+    }
+}
+
+#[tokio::test]
+async fn a_dry_run_records_what_would_apply_and_calls_no_provider() {
+    let a = Applying::new();
+    let rt = a.runtime(Mode::DryRun, store());
+    rt.ingest(pr("d1", "ivy/thicket", 0)).await.unwrap();
+    let outcomes = rt.drain().await.unwrap();
+    let Outcome::Ran { run_id, .. } = &outcomes[0] else {
+        panic!("{outcomes:?}");
+    };
+    assert_eq!(rt.deliver().await.unwrap(), vec![]);
+    assert_eq!(a.calls(), 0);
+    let recorded = rt.effects_of(run_id).await.unwrap();
+    assert_eq!(recorded.len(), 2);
+    assert!(recorded.iter().all(|e| e.status == EntryStatus::WouldApply));
+}
+
+#[tokio::test]
+async fn a_crash_before_applying_delivers_each_effect_once_after_restart() {
+    let a = Applying::new();
+    let shared = store();
+    let before = a.runtime(Mode::Live, shared.clone());
+    before.ingest(pr("d1", "ivy/thicket", 0)).await.unwrap();
+    before.drain().await.unwrap();
+    assert_eq!(a.calls(), 0, "recording applies nothing");
+    drop(before);
+
+    let after = a.runtime(Mode::Live, shared);
+    assert_eq!(after.deliver().await.unwrap().len(), 2);
+    assert_eq!(after.deliver().await.unwrap(), vec![]);
+    assert_eq!(a.calls(), 2);
+    assert_eq!(a.forge.applied.lock().unwrap().len(), 1);
+    assert_eq!(a.tracker.filed.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_failed_delivery_is_retried_with_the_same_key() {
+    let a = Applying::new();
+    a.forge.fail_next.store(1, Ordering::SeqCst);
+    let rt = a.runtime(Mode::Live, store());
+    rt.ingest(pr("d1", "ivy/thicket", 0)).await.unwrap();
+    rt.drain().await.unwrap();
+    let first = rt.deliver().await.unwrap();
+    assert!(first[0].result.is_err(), "{first:?}");
+    let second = rt.deliver().await.unwrap();
+    assert_eq!(second.len(), 1);
+    assert!(second[0].result.is_ok(), "{second:?}");
+    let calls = a.forge.calls.lock().unwrap();
+    assert_eq!(calls[0], calls[1]);
+}
+
+#[tokio::test]
+async fn hostile_text_stays_tagged_in_the_stored_effect() {
+    let a = Applying::new();
+    let rt = a.runtime(Mode::DryRun, store());
+    rt.ingest(pr("d1", "ivy/thicket", 0)).await.unwrap();
+    let outcomes = rt.drain().await.unwrap();
+    let Outcome::Ran { run_id, .. } = &outcomes[0] else {
+        panic!("{outcomes:?}");
+    };
+    let recorded = rt.effects_of(run_id).await.unwrap();
+    assert!(
+        recorded[1].effect["Ask"]["body"]
+            .get("$untrusted")
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn going_live_requires_a_forge_and_a_tracker() {
+    let rt = Runtime::new(vec![Box::new(DependencyUpdates)], Providers::new()).in_mode(Mode::Live);
+    let problem = rt.validate().unwrap_err();
+    assert!(problem.contains("may Attest but no Forge"), "{problem}");
+    assert!(
+        problem.contains("may File or Ask but no Tracker"),
+        "{problem}"
+    );
 }

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE outbox SET status = 'applied', applied_at = now()\n                 WHERE key = $1 AND almanac = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9eff8be3e026dec5ff08f27147bbe52592a1ce1f9b2670caf706c77507d14394"
+}

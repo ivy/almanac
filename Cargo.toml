@@ -18,6 +18,7 @@ github = { path = "crates/github" }
 futures = "0.3"
 proc-macro2 = "1"
 quote = "1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sqlx = { version = "0.9", default-features = false, features = ["json", "macros", "migrate", "postgres", "runtime-tokio", "tls-rustls-ring-webpki"] }
@@ -26,6 +27,7 @@ syn = { version = "2", features = ["full", "visit"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync"] }
 toml = "0.8"
 trybuild = "1"
+wiremock = "0.6"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

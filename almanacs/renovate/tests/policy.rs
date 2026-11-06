@@ -5,6 +5,7 @@ use renovate_triage::workflows::dependency_updates::{CiState::*, *};
 fn effects(checks_pass: bool, verdict: Verdict, ci: CiState) -> Vec<EffectKind> {
     let evidence = UpdateEvidence {
         repo: "ivy/thicket".parse().unwrap(),
+        sha: "0".repeat(40).parse().unwrap(),
         package: "lodash".parse().unwrap(),
         install_script_added: !checks_pass,
         publisher_changed: false,

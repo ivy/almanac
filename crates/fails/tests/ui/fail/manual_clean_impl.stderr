@@ -10,6 +10,7 @@ help: the trait `almanac::taint::__private::Sealed` is not implemented for `Snea
 3 | struct Sneaky(String);
   | ^^^^^^^^^^^^^
   = help: the following other types implement trait `almanac::taint::__private::Sealed`:
+            AttestState
             EffectKind
             Option<T>
             Sha
@@ -17,7 +18,6 @@ help: the trait `almanac::taint::__private::Sealed` is not implemented for `Snea
             almanac::effect::ActionSummary
             bool
             f64
-            fails::Done
           and $N others
 note: required by a bound in `fails::Clean`
  --> $WORKSPACE/crates/almanac/src/taint.rs
@@ -28,10 +28,10 @@ note: required by a bound in `fails::Clean`
   = help: the following types implement the trait:
             fails::Done
             fails::EffectKind
+            fails::AttestState
             almanac::effect::ActionSummary
             bool
             u32
             u64
             f64
-            fails::Slug
           and $N others

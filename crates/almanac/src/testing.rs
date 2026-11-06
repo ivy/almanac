@@ -1,6 +1,8 @@
 //! Fakes, so a workflow's logic is testable with no model, service, or network.
 use crate::agent::{Classifier, Grant, Harness, Pass};
 use crate::cx::StepError;
+use crate::effect::{AttestState, Forge, Tracker};
+use crate::taint::{Sha, Slug, Untrusted};
 use futures::future::BoxFuture;
 use serde_json::Value;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -89,11 +91,90 @@ impl Classifier for FixedClassifier {
     }
 }
 
+/// Records statuses, and applies a key only once, as a real forge's status API does.
+#[derive(Clone, Default)]
+pub struct FakeForge {
+    pub calls: Arc<Mutex<Vec<String>>>,
+    pub applied: Arc<Mutex<Vec<(String, AttestState)>>>,
+    /// Failures to return before succeeding.
+    pub fail_next: Arc<AtomicUsize>,
+}
+
+impl Forge for FakeForge {
+    fn attest<'a>(
+        &'a self,
+        key: &'a str,
+        repo: &'a Slug,
+        sha: &'a Sha,
+        context: &'a str,
+        state: AttestState,
+    ) -> BoxFuture<'a, Result<(), StepError>> {
+        Box::pin(async move {
+            self.calls.lock().unwrap().push(key.to_string());
+            if self.fail_next.load(Ordering::SeqCst) > 0 {
+                self.fail_next.fetch_sub(1, Ordering::SeqCst);
+                return Err(StepError("forge is down".to_string()));
+            }
+            let status = format!("{repo}@{sha}:{context}");
+            let mut applied = self.applied.lock().unwrap();
+            applied.retain(|(existing, _)| existing != &status);
+            applied.push((status, state));
+            Ok(())
+        })
+    }
+}
+
+/// Records filed work, and applies a key only once.
+#[derive(Clone, Default)]
+pub struct FakeTracker {
+    pub calls: Arc<Mutex<Vec<String>>>,
+    /// `(key, target, title or question)`, with bodies left out because they stay tainted.
+    pub filed: Arc<Mutex<Vec<(String, String, String)>>>,
+}
+
+impl FakeTracker {
+    fn record(&self, key: &str, target: &Slug, title: &str) {
+        self.calls.lock().unwrap().push(key.to_string());
+        let mut filed = self.filed.lock().unwrap();
+        if !filed.iter().any(|(existing, ..)| existing == key) {
+            filed.push((key.to_string(), target.to_string(), title.to_string()));
+        }
+    }
+}
+
+impl Tracker for FakeTracker {
+    fn file<'a>(
+        &'a self,
+        key: &'a str,
+        target: &'a Slug,
+        title: &'a str,
+        _body: &'a Untrusted<String>,
+    ) -> BoxFuture<'a, Result<(), StepError>> {
+        Box::pin(async move {
+            self.record(key, target, title);
+            Ok(())
+        })
+    }
+
+    fn ask<'a>(
+        &'a self,
+        key: &'a str,
+        target: &'a Slug,
+        question: &'a str,
+        _body: &'a Untrusted<String>,
+    ) -> BoxFuture<'a, Result<(), StepError>> {
+        Box::pin(async move {
+            self.record(key, target, question);
+            Ok(())
+        })
+    }
+}
+
 /// What every `Store` must do. Run with `conformance::all`, giving it a function that opens a
 /// new handle on a scope's state: calling it twice models a restart, or a second process.
 pub mod conformance {
     use crate::runtime::Ingest;
-    use crate::store::{Admission, Budget, Claim, Pending, Store};
+    use crate::store::{Admission, Budget, Claim, EntryStatus, Pending, Store};
     use crate::taint::Slug;
     use crate::workflow::Subject;
     use serde_json::{Value, json};
@@ -153,6 +234,9 @@ pub mod conformance {
         recovery_keeps_a_newer_pending_event(&open("newer")).await;
         subjects_link_runs_in_order_without_repeats(&open("subjects")).await;
         almanacs_do_not_see_each_other(&open("one"), &open("two")).await;
+        effects_wait_in_order_until_delivered(&open("outbox"), &open("outbox")).await;
+        dry_run_effects_are_never_delivered(&open("dry")).await;
+        repeated_failures_stop_being_retried(&open("failing")).await;
     }
 
     async fn duplicates_survive_a_restart(before: &Arc<dyn Store>, after: &Arc<dyn Store>) {
@@ -181,10 +265,14 @@ pub mod conformance {
         assert_eq!(admit(s, "d2", "k", json!(2)).await, Ingest::MarkedDirty);
         assert_eq!(admit(s, "d3", "k", json!(3)).await, Ingest::MarkedDirty);
         assert_eq!(s.claim(BUDGETS).await.unwrap(), Claim::Idle);
-        s.release(&run.id, &[]).await.unwrap();
+        s.release(&run.id, &[], vec![], EntryStatus::Pending)
+            .await
+            .unwrap();
         let rerun = started(s).await;
         assert_eq!(rerun.payload, json!(3));
-        s.release(&rerun.id, &[]).await.unwrap();
+        s.release(&rerun.id, &[], vec![], EntryStatus::Pending)
+            .await
+            .unwrap();
         assert_eq!(s.claim(BUDGETS).await.unwrap(), Claim::Idle);
     }
 
@@ -270,11 +358,64 @@ pub mod conformance {
     async fn subjects_link_runs_in_order_without_repeats(s: &Arc<dyn Store>) {
         admit(s, "d1", "a", json!(1)).await;
         let first = started(s).await;
-        s.release(&first.id, &[subject()]).await.unwrap();
+        s.release(&first.id, &[subject()], vec![], EntryStatus::Pending)
+            .await
+            .unwrap();
         admit(s, "d2", "b", json!(1)).await;
         let second = started(s).await;
         let runs = s.runs_for(&subject()).await.unwrap();
         assert_eq!(runs, vec![first.id, second.id]);
+    }
+
+    async fn effects_wait_in_order_until_delivered(
+        before: &Arc<dyn Store>,
+        after: &Arc<dyn Store>,
+    ) {
+        admit(before, "d1", "k", json!(1)).await;
+        let run = started(before).await;
+        let effects = vec![json!("first"), json!("second")];
+        before
+            .release(&run.id, &[], effects, EntryStatus::Pending)
+            .await
+            .unwrap();
+        let waiting = after.undelivered().await.unwrap();
+        let keys: Vec<_> = waiting.iter().map(|e| e.key.clone()).collect();
+        assert_eq!(keys, [format!("{}:0", run.id), format!("{}:1", run.id)]);
+        assert_eq!(waiting[1].effect, json!("second"));
+        after.delivered(&keys[0]).await.unwrap();
+        after.delivered(&keys[0]).await.unwrap();
+        let left = after.undelivered().await.unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].key, keys[1]);
+        let recorded = after.outbox(&run.id).await.unwrap();
+        assert_eq!(recorded[0].status, EntryStatus::Applied);
+        assert_eq!(recorded[1].status, EntryStatus::Pending);
+    }
+
+    async fn dry_run_effects_are_never_delivered(s: &Arc<dyn Store>) {
+        admit(s, "d1", "k", json!(1)).await;
+        let run = started(s).await;
+        s.release(&run.id, &[], vec![json!("x")], EntryStatus::WouldApply)
+            .await
+            .unwrap();
+        assert_eq!(s.undelivered().await.unwrap(), vec![]);
+        let recorded = s.outbox(&run.id).await.unwrap();
+        assert_eq!(recorded[0].status, EntryStatus::WouldApply);
+    }
+
+    async fn repeated_failures_stop_being_retried(s: &Arc<dyn Store>) {
+        admit(s, "d1", "k", json!(1)).await;
+        let run = started(s).await;
+        s.release(&run.id, &[], vec![json!("x")], EntryStatus::Pending)
+            .await
+            .unwrap();
+        let key = format!("{}:0", run.id);
+        s.delivery_failed(&key, "down", 2).await.unwrap();
+        assert_eq!(s.undelivered().await.unwrap()[0].attempts, 1);
+        s.delivery_failed(&key, "down", 2).await.unwrap();
+        assert_eq!(s.undelivered().await.unwrap(), vec![]);
+        let recorded = s.outbox(&run.id).await.unwrap();
+        assert_eq!(recorded[0].status, EntryStatus::Failed);
     }
 
     async fn almanacs_do_not_see_each_other(one: &Arc<dyn Store>, two: &Arc<dyn Store>) {

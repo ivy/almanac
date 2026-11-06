@@ -1,5 +1,5 @@
 //! Durable state, shared by the almanacs of one deployment and separated by `almanac`.
-use super::{Admission, Budget, Claim, Run, Store, StoreError, Stored};
+use super::{Admission, Budget, Claim, Entry, EntryStatus, Run, Store, StoreError, Stored};
 use crate::runtime::Ingest;
 use crate::workflow::Subject;
 use futures::future::BoxFuture;
@@ -204,7 +204,13 @@ impl PostgresStore {
         }))
     }
 
-    async fn release_tx(&self, run_id: &str, links: &[Subject]) -> Stored<()> {
+    async fn release_tx(
+        &self,
+        run_id: &str,
+        links: &[Subject],
+        effects: Vec<Value>,
+        status: EntryStatus,
+    ) -> Stored<()> {
         let mut tx = self.pool.begin().await?;
         sqlx::query!(
             "UPDATE runs SET status = 'finished', finished_at = now()
@@ -215,6 +221,20 @@ impl PostgresStore {
         .await?;
         let links: Vec<String> = links.iter().map(texted).collect();
         link(&mut tx, run_id, &links).await?;
+        for (i, effect) in effects.into_iter().enumerate() {
+            sqlx::query!(
+                "INSERT INTO outbox (key, almanac, run_id, seq, effect, status)
+                 VALUES ($1, $2, $3, $4, $5, $6)",
+                format!("{run_id}:{i}"),
+                self.almanac,
+                run_id,
+                i as i32,
+                without_nul(effect),
+                status.as_str(),
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
         tx.commit().await?;
         Ok(())
     }
@@ -265,6 +285,16 @@ fn without_nul(value: Value) -> Value {
     }
 }
 
+fn entry(key: String, run_id: String, effect: Value, status: &str, attempts: i32) -> Stored<Entry> {
+    Ok(Entry {
+        key,
+        run_id,
+        effect,
+        status: EntryStatus::parse(status)?,
+        attempts: attempts as u32,
+    })
+}
+
 fn options() -> PgPoolOptions {
     PgPoolOptions::new().max_connections(MAX_CONNECTIONS)
 }
@@ -304,8 +334,85 @@ impl Store for PostgresStore {
         Box::pin(self.claim_tx(budgets))
     }
 
-    fn release<'a>(&'a self, run_id: &'a str, links: &'a [Subject]) -> BoxFuture<'a, Stored<()>> {
-        Box::pin(self.release_tx(run_id, links))
+    fn release<'a>(
+        &'a self,
+        run_id: &'a str,
+        links: &'a [Subject],
+        effects: Vec<Value>,
+        status: EntryStatus,
+    ) -> BoxFuture<'a, Stored<()>> {
+        Box::pin(self.release_tx(run_id, links, effects, status))
+    }
+
+    fn undelivered(&self) -> BoxFuture<'_, Stored<Vec<Entry>>> {
+        Box::pin(async move {
+            let rows = sqlx::query!(
+                "SELECT key, run_id, effect, status, attempts FROM outbox
+                 WHERE almanac = $1 AND status = 'pending'
+                 ORDER BY created_at, run_id, seq",
+                self.almanac,
+            )
+            .fetch_all(&self.pool)
+            .await?;
+            rows.into_iter()
+                .map(|r| entry(r.key, r.run_id, r.effect, &r.status, r.attempts))
+                .collect()
+        })
+    }
+
+    fn outbox<'a>(&'a self, run_id: &'a str) -> BoxFuture<'a, Stored<Vec<Entry>>> {
+        Box::pin(async move {
+            let rows = sqlx::query!(
+                "SELECT key, run_id, effect, status, attempts FROM outbox
+                 WHERE almanac = $1 AND run_id = $2
+                 ORDER BY seq",
+                self.almanac,
+                run_id,
+            )
+            .fetch_all(&self.pool)
+            .await?;
+            rows.into_iter()
+                .map(|r| entry(r.key, r.run_id, r.effect, &r.status, r.attempts))
+                .collect()
+        })
+    }
+
+    fn delivered<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Stored<()>> {
+        Box::pin(async move {
+            sqlx::query!(
+                "UPDATE outbox SET status = 'applied', applied_at = now()
+                 WHERE key = $1 AND almanac = $2",
+                key,
+                self.almanac,
+            )
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        })
+    }
+
+    fn delivery_failed<'a>(
+        &'a self,
+        key: &'a str,
+        error: &'a str,
+        give_up: u32,
+    ) -> BoxFuture<'a, Stored<()>> {
+        Box::pin(async move {
+            sqlx::query!(
+                "UPDATE outbox
+                 SET attempts = attempts + 1,
+                     last_error = $3,
+                     status = CASE WHEN attempts + 1 >= $4 THEN 'failed' ELSE status END
+                 WHERE key = $1 AND almanac = $2",
+                key,
+                self.almanac,
+                error.replace('\0', "\u{fffd}"),
+                give_up as i32,
+            )
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        })
     }
 
     fn recover(&self) -> BoxFuture<'_, Stored<usize>> {

@@ -22,7 +22,7 @@ pub mod prelude {
     pub use crate::agent::{AgentSpec, Classifier, Harness, Pass, Quarantined, Template, Worker};
     pub use crate::config::Config;
     pub use crate::cx::{Cx, Halt, StepError};
-    pub use crate::effect::{Effect, EffectKind};
+    pub use crate::effect::{AttestState, Effect, EffectKind, Forge, Mode, Tracker};
     pub use crate::providers::Providers;
     pub use crate::taint::{Clean, Finite, Observed, Sha, Slug, Untrusted};
     pub use crate::wire::{Event, Payload};

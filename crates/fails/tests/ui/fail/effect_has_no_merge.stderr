@@ -1,0 +1,5 @@
+error[E0599]: no variant named `Merge` found for enum `fails::Effect`
+ --> tests/ui/fail/effect_has_no_merge.rs:3:29
+  |
+3 | fn main() { let _ = Effect::Merge { repo: "a/b".parse::<Slug>().unwrap() }; }
+  |                             ^^^^^ variant not found in `fails::Effect`

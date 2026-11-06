@@ -70,7 +70,9 @@ fn run(name: &'static str, workflows: Workflows, setup: Setup) -> Result<(), Str
                 .block_on(async {
                     runtime.recover().await?;
                     println!("ingest: {:?}", runtime.ingest(envelope).await?);
-                    runtime.drain().await
+                    let outcomes = runtime.drain().await?;
+                    runtime.deliver().await?;
+                    Ok::<_, crate::store::StoreError>(outcomes)
                 })
                 .map_err(|e| e.to_string())?;
             for outcome in outcomes {

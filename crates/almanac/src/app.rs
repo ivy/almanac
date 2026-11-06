@@ -231,6 +231,13 @@ fn run(
     let mut runtime = Runtime::new(workflows(), setup(&config))
         .tightened(config.limits())
         .in_mode(mode(dry_run));
+    // A manifest describes the binary, so it needs nothing set up.
+    if verb.as_slice() == ["synth"] {
+        let manifest = json!(runtime.manifest());
+        let pretty = serde_json::to_string_pretty(&manifest).unwrap_or_default();
+        print(format, pretty, manifest);
+        return Ok(());
+    }
     // Before anything connects, so a binary missing a provider fails at once with a diagnostic.
     runtime.validate()?;
     if verb.as_slice() == ["run"] {
@@ -242,11 +249,6 @@ fn run(
     }
 
     match verb.as_slice() {
-        ["synth"] => {
-            let manifest = json!(runtime.manifest());
-            let pretty = serde_json::to_string_pretty(&manifest).unwrap_or_default();
-            print(format, pretty, manifest);
-        }
         ["check"] => {
             let workflows = runtime.manifest().len();
             let limits = runtime.limits();

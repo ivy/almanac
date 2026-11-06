@@ -22,7 +22,7 @@ crates/registry/      publish times and package diffs, read as data
 crates/advisory/      vulnerability advisories, and checking an update against one
 crates/github/        event types generated from specs/github, and GitHub providers
 crates/simforge/      a local GitHub for tests: HTTP API, scenarios, signed webhooks, failure injection
-crates/definitions/   sample workflows and the behaviour tests
+crates/definitions/   sample workflows and the runtime's behaviour tests
 crates/fails/         trybuild compile-fail cases; these prove the safety rules
 almanacs/              standalone almanacs, each its own Cargo workspace
 images/               sandbox images
@@ -40,9 +40,9 @@ docs/                 vision, principles, requirements, roadmap
 - **The gate:** `make check` runs lint, every test, the publication check, and `cargo deny`. A change is not done until it passes.
 - **Regenerate event types:** `make generate`.
 - **Change a query or migration:** run `make sqlx-prepare` with `DATABASE_URL` pointing at a migrated database, and commit `crates/almanac/.sqlx`. Builds use that metadata and need no database.
-- **Slower tests:** `make test-db` and `make test-sandbox` need podman, and the second needs the `claude` CLI. Neither calls a model. `make check` runs both.
+- **Slower tests:** `make test-db`, `make test-sandbox`, and `make test-e2e` need podman, and the last two need the `claude` CLI. None calls a model. `make test-scaffold` compiles a new almanac. `make check` runs them all.
 - **Accept compile-fail output:** `TRYBUILD=overwrite cargo test -p fails`, then read every changed `.stderr`. A case must fail for its intended reason, not for an unrelated error.
-- **Try an almanac:** `cargo run -- synth` or `cargo run -- simulate KIND FILE --dry-run` inside `almanacs/renovate`.
+- **Try an almanac:** `cargo run -- synth` inside `almanacs/renovate`.
 
 ## Working in the open
 
@@ -69,8 +69,8 @@ This repository is public, and everything pushed to it stays public.
 
 ## Where to look first
 
-- `almanacs/renovate/src/workflows/dependency_updates.rs`: what authoring looks like.
+- `almanacs/renovate/src/workflows/build_failures.rs`: what authoring looks like.
 - `crates/almanac/src/taint.rs`: the taint rules, and `crates/fails/tests/ui/` for what they refuse.
 - `crates/almanac/src/runtime.rs`: routing, limits, and replay. `crates/almanac/src/store/` holds dedupe, keys, and the run log.
 - `crates/macros/src/lib.rs`: what `#[workflow]` and `#[prompt]` generate.
-- `docs/prd.md`: numbered requirements. Nodes cite them as `R-n`.
+- `docs/prd.md`: numbered requirements, cited as `R-n`. `docs/coverage.md` says which test proves each.

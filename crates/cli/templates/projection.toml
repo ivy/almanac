@@ -1,5 +1,8 @@
 # The fields this source's workflows need, checked against a pinned spec when generating.
 # A string is Untrusted unless `as` names a validated type, such as Slug or Sha.
+#
+# `cargo xtask generate` in the Almanac repository turns a projection into event types. A source
+# with no spec needs no projection: write an `observed!` struct and an `Event` by hand instead.
 [@CAMEL@]
 webhook = "@NAME@"
 kind = "@NAME@.event"

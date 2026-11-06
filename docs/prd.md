@@ -1,6 +1,6 @@
 # Product Requirements
 
-The requirements for Almanac v0. [vision.md](vision.md) says why it exists and [core-principles.md](core-principles.md) holds the decision filters. Requirements are numbered so work can cite them.
+The requirements for Almanac v0. [vision.md](vision.md) says why it exists and [core-principles.md](core-principles.md) holds the decision filters. Requirements are numbered so work can cite them, and [coverage.md](coverage.md) says which test proves each.
 
 ## Goal
 

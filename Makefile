@@ -11,9 +11,9 @@ export TESTCONTAINERS_RYUK_DISABLED ?= true
 
 DB_TESTS := binary(store_postgres) or binary(workflows_on_postgres) or binary(broker_flow) or binary(daemon)
 SANDBOX_TESTS := binary(podman) or binary(real_cli)
-SLOW_TESTS := $(DB_TESTS) or $(SANDBOX_TESTS)
+SLOW_TESTS := $(DB_TESTS) or $(SANDBOX_TESTS) or binary(scaffold)
 
-.PHONY: all build test test-db test-sandbox test-e2e test-fast lint fmt generate generated sqlx-prepare check-public verify-units check clean
+.PHONY: all build test test-db test-sandbox test-e2e test-scaffold test-fast lint fmt generate generated sqlx-prepare check-public verify-units check clean
 
 all: build
 
@@ -32,6 +32,10 @@ test-e2e:
 	podman build -q -t localhost/almanac-fixer:test images/fixer
 	cargo build --locked --package broker
 	cd $(ALMANAC) && cargo nextest run --locked -E 'binary(e2e)'
+
+# Scaffolds an almanac and compiles it, which takes a while.
+test-scaffold:
+	cargo nextest run --workspace --locked -E 'binary(scaffold)'
 
 # Isolation, proved with real Podman and the real CLI against a stub model. No model is called.
 test-sandbox:
@@ -74,7 +78,7 @@ generated:
 	cargo xtask generate --check
 
 # The gate. A change is not done until this passes.
-check: lint generated test test-db test-sandbox test-e2e check-public verify-units
+check: lint generated test test-db test-sandbox test-e2e test-scaffold check-public verify-units
 	cargo deny --locked check
 
 clean:

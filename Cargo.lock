@@ -75,6 +75,8 @@ name = "almanac-cli"
 version = "0.0.0"
 dependencies = [
  "almanac",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

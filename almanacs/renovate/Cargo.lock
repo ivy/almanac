@@ -49,6 +49,7 @@ version = "0.0.0"
 dependencies = [
  "almanac-macros",
  "axum",
+ "base64 0.22.1",
  "deliveries",
  "futures",
  "miette",

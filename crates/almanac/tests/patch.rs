@@ -92,6 +92,17 @@ fn a_symbolic_link_is_refused_anywhere() {
 }
 
 #[test]
+fn a_binary_file_is_refused_and_text_is_not() {
+    let write = |content: &str| Change::Write {
+        path: "src/state".to_string(),
+        content: content.to_string(),
+        executable: false,
+    };
+    assert_eq!(verdict(vec![write("AAECAw==")]), Err(Rejection::Binary));
+    assert!(verdict(vec![write("Zml4ZWQK")]).is_ok());
+}
+
+#[test]
 fn an_empty_patch_is_refused() {
     assert_eq!(verdict(vec![]), Err(Rejection::Empty));
 }

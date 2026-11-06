@@ -56,7 +56,7 @@ Validates a Renovate security pull request and gets its build passing.
 ### Safety
 
 - **R-19** Agent profiles are `Quarantined`, `Fixer`, and `Worker`. A `Fixer` accepts tainted input, holds no secrets, and has no general network access. Its output is a patch, which stays tainted.
-- **R-20** The patch policy is deterministic and rejects a patch that changes anything under `.github/`, Renovate configuration, or `mise.toml`, that exceeds a size limit, or that does not apply cleanly. The rules are data the workflow declares.
+- **R-20** The patch policy is deterministic and rejects a patch that changes anything under `.github/`, Renovate configuration, or `mise.toml`, that holds a binary file, that exceeds a size limit, or that does not apply cleanly. The rules are data the workflow declares.
 - **R-21** `Effect::Push` is the only way a patch reaches a branch. It targets the pull request's own branch only. There is no merge effect.
 - **R-22** A `Cooled` proof value can be obtained only by a check against a registry's publish time, and an agent call that requires it does not compile without one.
 - **R-23** Capabilities are enforced by a sandbox: code run for a `Fixer` cannot reach the network at all, and cannot read host credentials. The agent loop runs outside the sandbox and its only tools are sandbox calls. See [ADR 1](adrs/0001-agent-sandbox.md).

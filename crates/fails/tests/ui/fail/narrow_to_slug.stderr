@@ -36,7 +36,7 @@ help: the following other types implement trait `Finite`
   |
   | / crate::clean! {
   | |     /// Why a patch was refused. It names a reason and not a path, because paths are hostile.
-  | |     pub enum Rejection { Empty, UnsafePath, Denied, Link, TooManyFiles, TooLarge }
+  | |     pub enum Rejection { Empty, UnsafePath, Denied, Link, Binary, TooManyFiles, TooLarge }
   | | }
   | |_- in this macro invocation
 note: required by a bound in `Untrusted::<T>::narrow`

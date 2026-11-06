@@ -2,6 +2,7 @@
 //! A patch is a list of file changes, not diff text, so nothing parses hostile diff syntax, and a
 //! rename is a delete and a write, so both of its paths are checked.
 use crate::taint::{Sha, Untrusted};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 
 /// A file's new state. Paths and content are hostile.
@@ -39,7 +40,7 @@ pub struct Patch {
 
 crate::clean! {
     /// Why a patch was refused. It names a reason and not a path, because paths are hostile.
-    pub enum Rejection { Empty, UnsafePath, Denied, Link, TooManyFiles, TooLarge }
+    pub enum Rejection { Empty, UnsafePath, Denied, Link, Binary, TooManyFiles, TooLarge }
 }
 
 /// Which paths a patch may not touch. Matching ignores case.
@@ -117,6 +118,13 @@ fn components(path: &str) -> Option<Vec<String>> {
     Some(parts.iter().map(|p| p.to_lowercase()).collect())
 }
 
+/// A pushed patch runs in CI, and nobody can review bytes. Git's own test: a NUL means binary.
+fn is_binary(content: &str) -> bool {
+    STANDARD
+        .decode(content)
+        .is_ok_and(|bytes| bytes.contains(&0))
+}
+
 impl PatchPolicy {
     fn allows(&self, parts: &[String]) -> bool {
         let named = |p: &String| self.denied_names.iter().any(|d| d.eq_ignore_ascii_case(p));
@@ -143,7 +151,12 @@ impl PatchPolicy {
             }
             match change {
                 Change::Link { .. } => return Err(Rejection::Link),
-                Change::Write { content, .. } => bytes += content.len(),
+                Change::Write { content, .. } => {
+                    if is_binary(content) {
+                        return Err(Rejection::Binary);
+                    }
+                    bytes += content.len();
+                }
                 Change::Delete { .. } => {}
             }
         }

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tripped (almanac, workflow, tripped_at) VALUES ($1, $2, $3)\n             ON CONFLICT (almanac, workflow) DO UPDATE SET tripped_at = EXCLUDED.tripped_at\n             WHERE tripped.tripped_at <= $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8fbb04fee1e71e802de8c18040ef0a02033f5c442e73fec01e9c4ec163fe7f5c"
+}

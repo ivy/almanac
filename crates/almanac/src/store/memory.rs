@@ -1,16 +1,18 @@
 //! The store for tests and one-shot commands. It forgets everything when dropped.
-use super::{Admission, Budget, Claim, Entry, EntryStatus, Pending, Run, Store, Stored};
+use super::{Admission, Claim, ClaimRequest, Entry, EntryStatus, Pending, Run, Store, Stored};
 use crate::runtime::Ingest;
 use crate::workflow::Subject;
 use futures::future::BoxFuture;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Mutex;
+use time::OffsetDateTime;
 
 type Slot = (String, String);
 
 struct Waiting {
     seq: u64,
+    lane: u8,
     pending: Pending,
 }
 
@@ -19,8 +21,8 @@ struct State {
     seen: HashSet<(String, String)>,
     pending: BTreeMap<Slot, Waiting>,
     running: HashMap<Slot, String>,
-    started: HashMap<String, u32>,
-    tripped: HashSet<String>,
+    started: Vec<(String, OffsetDateTime)>,
+    tripped: HashMap<Option<String>, OffsetDateTime>,
     runs: HashMap<String, Run>,
     subjects: HashMap<Subject, Vec<String>>,
     log: HashMap<(String, String, usize), Value>,
@@ -40,7 +42,8 @@ impl State {
     fn enqueue(&mut self, slot: Slot, pending: Pending) {
         self.next_seq += 1;
         let seq = self.next_seq;
-        self.pending.insert(slot, Waiting { seq, pending });
+        let lane = pending.origin.lane();
+        self.pending.insert(slot, Waiting { seq, lane, pending });
     }
 
     fn claimable(&self, workflow: &str) -> usize {
@@ -48,6 +51,26 @@ impl State {
             .iter()
             .filter(|(slot, _)| slot.0 == workflow && !self.running.contains_key(*slot))
             .count()
+    }
+
+    fn started_since(&self, workflow: Option<&str>, since: OffsetDateTime) -> u32 {
+        let matches = |w: &str| workflow.is_none_or(|wanted| wanted == w);
+        let started = self.started.iter();
+        started.filter(|(w, at)| matches(w) && *at > since).count() as u32
+    }
+
+    /// Records a trip unless one was reported in this window.
+    fn report(
+        &mut self,
+        scope: Option<String>,
+        now: OffsetDateTime,
+        since: OffsetDateTime,
+    ) -> bool {
+        if self.tripped.get(&scope).is_some_and(|at| *at > since) {
+            return false;
+        }
+        self.tripped.insert(scope, now);
+        true
     }
 }
 
@@ -69,6 +92,7 @@ impl MemoryStore {
         let slot = (pending.workflow.clone(), pending.key.clone());
         let running = s.running.contains_key(&slot);
         if let Some(waiting) = s.pending.get_mut(&slot) {
+            waiting.lane = waiting.lane.min(pending.origin.lane());
             waiting.pending = pending;
             return if running {
                 Ingest::MarkedDirty
@@ -84,47 +108,66 @@ impl MemoryStore {
         }
     }
 
-    fn claim_now(&self, budgets: &[Budget]) -> Claim {
+    fn claim_now(&self, request: ClaimRequest<'_>) -> Claim {
         let mut s = self.state.lock().unwrap();
-        let mut candidates: Vec<(u64, Slot)> = s
-            .pending
+        let now = request.now;
+        let since = now - request.window;
+        let held: usize = request
+            .budgets
             .iter()
-            .filter(|(slot, _)| !s.running.contains_key(*slot))
-            .map(|(slot, waiting)| (waiting.seq, slot.clone()))
-            .collect();
-        candidates.sort();
-        for (_, slot) in candidates {
-            let Some(budget) = budgets.iter().find(|b| b.workflow == slot.0) else {
-                continue;
-            };
-            if s.tripped.contains(&slot.0) {
-                continue;
-            }
-            if *s.started.get(&slot.0).unwrap_or(&0) >= budget.limit {
-                s.tripped.insert(slot.0.clone());
-                let held = s.claimable(&slot.0);
+            .map(|b| s.claimable(b.workflow))
+            .sum();
+        if let Some(limit) = request.overall
+            && s.started_since(None, since) >= limit
+        {
+            if held > 0 && s.report(None, now, since) {
                 return Claim::Tripped {
-                    workflow: slot.0,
+                    workflow: None,
                     held,
                 };
             }
-            let waiting = s.pending.remove(&slot).expect("listed under the same lock");
-            s.next_run += 1;
-            let run = Run {
-                id: format!("run-{}", s.next_run),
-                workflow: slot.0.clone(),
-                key: slot.1.clone(),
-                payload: waiting.pending.payload,
-            };
-            *s.started.entry(slot.0.clone()).or_default() += 1;
-            s.running.insert(slot, run.id.clone());
-            s.runs.insert(run.id.clone(), run.clone());
-            for subject in waiting.pending.subjects {
-                s.link(subject, &run.id);
-            }
-            return Claim::Run(run);
+            return Claim::Idle;
         }
-        Claim::Idle
+        let mut open = vec![];
+        for budget in request.budgets {
+            if s.started_since(Some(budget.workflow), since) < budget.limit {
+                open.push(budget.workflow);
+                continue;
+            }
+            let held = s.claimable(budget.workflow);
+            let scope = Some(budget.workflow.to_string());
+            if held > 0 && s.report(scope.clone(), now, since) {
+                return Claim::Tripped {
+                    workflow: scope,
+                    held,
+                };
+            }
+        }
+        let next = s
+            .pending
+            .iter()
+            .filter(|(slot, _)| !s.running.contains_key(*slot) && open.contains(&slot.0.as_str()))
+            .min_by_key(|(_, waiting)| (waiting.lane, waiting.seq))
+            .map(|(slot, _)| slot.clone());
+        let Some(slot) = next else {
+            return Claim::Idle;
+        };
+        let waiting = s.pending.remove(&slot).expect("listed under the same lock");
+        s.next_run += 1;
+        let run = Run {
+            id: format!("run-{}", s.next_run),
+            workflow: slot.0.clone(),
+            key: slot.1.clone(),
+            payload: waiting.pending.payload,
+            origin: waiting.pending.origin,
+        };
+        s.started.push((slot.0.clone(), now));
+        s.running.insert(slot, run.id.clone());
+        s.runs.insert(run.id.clone(), run.clone());
+        for subject in waiting.pending.subjects {
+            s.link(subject, &run.id);
+        }
+        Claim::Run(run)
     }
 
     fn recover_now(&self) -> usize {
@@ -135,6 +178,7 @@ impl MemoryStore {
                 continue;
             }
             let payload = s.runs[run_id].payload.clone();
+            let origin = s.runs[run_id].origin;
             let subjects = s
                 .subjects
                 .iter()
@@ -146,6 +190,7 @@ impl MemoryStore {
                 key: slot.1.clone(),
                 payload,
                 subjects,
+                origin,
             };
             s.enqueue(slot.clone(), pending);
         }
@@ -163,8 +208,29 @@ impl Store for MemoryStore {
         Box::pin(async move { Ok(self.admit_now(source, delivery_id, admission)) })
     }
 
-    fn claim<'a>(&'a self, budgets: &'a [Budget]) -> BoxFuture<'a, Stored<Claim>> {
-        Box::pin(async move { Ok(self.claim_now(budgets)) })
+    fn claim<'a>(&'a self, request: ClaimRequest<'a>) -> BoxFuture<'a, Stored<Claim>> {
+        Box::pin(async move { Ok(self.claim_now(request)) })
+    }
+
+    fn note<'a>(
+        &'a self,
+        key: &'a str,
+        effect: Value,
+        status: EntryStatus,
+    ) -> BoxFuture<'a, Stored<()>> {
+        Box::pin(async move {
+            let mut s = self.state.lock().unwrap();
+            if !s.outbox.iter().any(|e| e.key == key) {
+                s.outbox.push(Entry {
+                    key: key.to_string(),
+                    run_id: None,
+                    effect,
+                    status,
+                    attempts: 0,
+                });
+            }
+            Ok(())
+        })
     }
 
     fn release<'a>(
@@ -183,7 +249,7 @@ impl Store for MemoryStore {
             for (i, effect) in effects.into_iter().enumerate() {
                 s.outbox.push(Entry {
                     key: format!("{run_id}:{i}"),
-                    run_id: run_id.to_string(),
+                    run_id: Some(run_id.to_string()),
                     effect,
                     status,
                     attempts: 0,
@@ -204,7 +270,10 @@ impl Store for MemoryStore {
     fn outbox<'a>(&'a self, run_id: &'a str) -> BoxFuture<'a, Stored<Vec<Entry>>> {
         Box::pin(async move {
             let s = self.state.lock().unwrap();
-            let entries = s.outbox.iter().filter(|e| e.run_id == run_id);
+            let entries = s
+                .outbox
+                .iter()
+                .filter(|e| e.run_id.as_deref() == Some(run_id));
             Ok(entries.cloned().collect())
         })
     }

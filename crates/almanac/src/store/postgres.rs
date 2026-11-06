@@ -1,12 +1,15 @@
 //! Durable state, shared by the almanacs of one deployment and separated by `almanac`.
-use super::{Admission, Budget, Claim, Entry, EntryStatus, Run, Store, StoreError, Stored};
-use crate::runtime::Ingest;
+use super::{Admission, Claim, ClaimRequest, Entry, EntryStatus, Run, Store, StoreError, Stored};
+use crate::runtime::{Ingest, Origin};
 use crate::workflow::Subject;
 use futures::future::BoxFuture;
 use serde_json::Value;
 use sqlx::postgres::{PgPool, PgPoolOptions};
+use time::OffsetDateTime;
 
 const MAX_CONNECTIONS: u32 = 4;
+/// The `tripped` row for the budget across all workflows.
+const OVERALL: &str = "*";
 
 impl From<sqlx::Error> for StoreError {
     fn from(e: sqlx::Error) -> Self {
@@ -69,16 +72,20 @@ impl PostgresStore {
             Admission::Queue(pending) => {
                 let subjects: Vec<String> = pending.subjects.iter().map(texted).collect();
                 let inserted = sqlx::query!(
-                    r#"INSERT INTO pending (almanac, workflow, key, payload, subjects)
-                       VALUES ($1, $2, $3, $4, $5)
+                    r#"INSERT INTO pending (almanac, workflow, key, payload, subjects, lane, origin)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7)
                        ON CONFLICT (almanac, workflow, key)
-                       DO UPDATE SET payload = EXCLUDED.payload, subjects = EXCLUDED.subjects
+                       DO UPDATE SET payload = EXCLUDED.payload, subjects = EXCLUDED.subjects,
+                                     lane = LEAST(pending.lane, EXCLUDED.lane),
+                                     origin = EXCLUDED.origin
                        RETURNING (xmax = 0) AS "inserted!""#,
                     self.almanac,
                     pending.workflow,
                     pending.key,
                     without_nul(pending.payload.clone()),
                     &subjects,
+                    i16::from(pending.origin.lane()),
+                    pending.origin.as_str(),
                 )
                 .fetch_one(&mut *tx)
                 .await?
@@ -105,84 +112,113 @@ impl PostgresStore {
         Ok(ingest)
     }
 
-    async fn claim_tx(&self, budgets: &[Budget]) -> Stored<Claim> {
+    async fn claim_tx(&self, request: ClaimRequest<'_>) -> Stored<Claim> {
         let mut tx = self.pool.begin().await?;
         // Claims are rare and short, so one at a time keeps budget counts exact.
         sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
             .bind(&self.almanac)
             .execute(&mut *tx)
             .await?;
-        let workflows: Vec<String> = budgets.iter().map(|b| b.workflow.to_string()).collect();
-        let candidates = sqlx::query!(
-            "SELECT p.workflow, p.key, p.payload, p.subjects
+        let now = request.now;
+        let since = now - request.window;
+        let workflows: Vec<String> = request
+            .budgets
+            .iter()
+            .map(|b| b.workflow.to_string())
+            .collect();
+        let counts = sqlx::query!(
+            r#"SELECT workflow, count(*) AS "started!" FROM runs
+               WHERE almanac = $1 AND started_at > $2
+               GROUP BY workflow"#,
+            self.almanac,
+            since,
+        )
+        .fetch_all(&mut *tx)
+        .await?;
+        let waiting = sqlx::query!(
+            r#"SELECT p.workflow, count(*) AS "held!" FROM pending p
+               WHERE p.almanac = $1 AND p.workflow = ANY($2)
+                 AND NOT EXISTS (
+                   SELECT 1 FROM runs r
+                   WHERE r.almanac = p.almanac AND r.workflow = p.workflow
+                     AND r.key = p.key AND r.status = 'running'
+                 )
+               GROUP BY p.workflow"#,
+            self.almanac,
+            &workflows,
+        )
+        .fetch_all(&mut *tx)
+        .await?;
+        let started = |workflow: &str| {
+            let found = counts.iter().find(|c| c.workflow == workflow);
+            found.map_or(0, |c| c.started)
+        };
+        let held = |workflow: &str| {
+            let found = waiting.iter().find(|w| w.workflow == workflow);
+            found.map_or(0, |w| w.held) as usize
+        };
+        if let Some(limit) = request.overall
+            && counts.iter().map(|c| c.started).sum::<i64>() >= i64::from(limit)
+        {
+            let total = workflows.iter().map(|w| held(w)).sum();
+            let claim = if total > 0 && self.report(&mut tx, OVERALL, now, since).await? {
+                Claim::Tripped {
+                    workflow: None,
+                    held: total,
+                }
+            } else {
+                Claim::Idle
+            };
+            tx.commit().await?;
+            return Ok(claim);
+        }
+        let mut open = vec![];
+        for budget in request.budgets {
+            if started(budget.workflow) < i64::from(budget.limit) {
+                open.push(budget.workflow.to_string());
+                continue;
+            }
+            let waiting = held(budget.workflow);
+            if waiting > 0 && self.report(&mut tx, budget.workflow, now, since).await? {
+                tx.commit().await?;
+                return Ok(Claim::Tripped {
+                    workflow: Some(budget.workflow.to_string()),
+                    held: waiting,
+                });
+            }
+        }
+        let candidate = sqlx::query!(
+            "SELECT p.workflow, p.key, p.payload, p.subjects, p.origin
              FROM pending p
              WHERE p.almanac = $1
                AND p.workflow = ANY($2)
-               AND NOT EXISTS (
-                 SELECT 1 FROM tripped t WHERE t.almanac = p.almanac AND t.workflow = p.workflow
-               )
                AND NOT EXISTS (
                  SELECT 1 FROM runs r
                  WHERE r.almanac = p.almanac AND r.workflow = p.workflow
                    AND r.key = p.key AND r.status = 'running'
                )
-             ORDER BY p.seq
+             ORDER BY p.lane, p.seq
              LIMIT 1",
             self.almanac,
-            &workflows,
+            &open,
         )
         .fetch_optional(&mut *tx)
         .await?;
-        let Some(next) = candidates else {
+        let Some(next) = candidate else {
+            tx.commit().await?;
             return Ok(Claim::Idle);
         };
-        let limit = budgets
-            .iter()
-            .find(|b| b.workflow == next.workflow)
-            .map_or(0, |b| b.limit);
-        let started = sqlx::query_scalar!(
-            r#"SELECT count(*) AS "started!" FROM runs WHERE almanac = $1 AND workflow = $2"#,
-            self.almanac,
-            next.workflow,
-        )
-        .fetch_one(&mut *tx)
-        .await?;
-        if started >= i64::from(limit) {
-            sqlx::query!(
-                "INSERT INTO tripped (almanac, workflow) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                self.almanac,
-                next.workflow,
-            )
-            .execute(&mut *tx)
-            .await?;
-            let held = sqlx::query_scalar!(
-                r#"SELECT count(*) AS "held!" FROM pending p
-                   WHERE p.almanac = $1 AND p.workflow = $2
-                     AND NOT EXISTS (
-                       SELECT 1 FROM runs r
-                       WHERE r.almanac = p.almanac AND r.workflow = p.workflow
-                         AND r.key = p.key AND r.status = 'running'
-                     )"#,
-                self.almanac,
-                next.workflow,
-            )
-            .fetch_one(&mut *tx)
-            .await?;
-            tx.commit().await?;
-            return Ok(Claim::Tripped {
-                workflow: next.workflow,
-                held: held as usize,
-            });
-        }
         let id = sqlx::query_scalar!(
-            r#"INSERT INTO runs (id, seq, almanac, workflow, key, payload, status)
-               SELECT 'run-' || n, n, $1, $2, $3, $4, 'running'
+            r#"INSERT INTO runs (id, seq, almanac, workflow, key, payload, status, started_at, origin)
+               SELECT 'run-' || n, n, $1, $2, $3, $4, 'running', $5, $6
                FROM nextval('run_seq') AS n
                RETURNING id"#,
             self.almanac,
             next.workflow,
             next.key,
             next.payload,
+            now,
+            next.origin,
         )
         .fetch_one(&mut *tx)
         .await?;
@@ -201,7 +237,31 @@ impl PostgresStore {
             workflow: next.workflow,
             key: next.key,
             payload: next.payload,
+            origin: Origin::parse(&next.origin)?,
         }))
+    }
+
+    /// Records a trip unless one was reported in this window.
+    async fn report(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        scope: &str,
+        now: OffsetDateTime,
+        since: OffsetDateTime,
+    ) -> Stored<bool> {
+        let reported = sqlx::query!(
+            "INSERT INTO tripped (almanac, workflow, tripped_at) VALUES ($1, $2, $3)
+             ON CONFLICT (almanac, workflow) DO UPDATE SET tripped_at = EXCLUDED.tripped_at
+             WHERE tripped.tripped_at <= $4",
+            self.almanac,
+            scope,
+            now,
+            since,
+        )
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+        Ok(reported > 0)
     }
 
     async fn release_tx(
@@ -244,22 +304,25 @@ impl PostgresStore {
         let interrupted = sqlx::query!(
             "UPDATE runs SET status = 'interrupted', finished_at = now()
              WHERE almanac = $1 AND status = 'running'
-             RETURNING id, workflow, key, payload",
+             RETURNING id, workflow, key, payload, origin",
             self.almanac,
         )
         .fetch_all(&mut *tx)
         .await?;
         for run in &interrupted {
             sqlx::query!(
-                "INSERT INTO pending (almanac, workflow, key, payload, subjects)
+                "INSERT INTO pending (almanac, workflow, key, payload, subjects, lane, origin)
                  SELECT $1, $2, $3, $4,
-                        coalesce(array_agg(subject), '{}') FROM run_subjects WHERE run_id = $5
+                        coalesce(array_agg(subject), '{}'), $6, $7
+                 FROM run_subjects WHERE run_id = $5
                  ON CONFLICT (almanac, workflow, key) DO NOTHING",
                 self.almanac,
                 run.workflow,
                 run.key,
                 run.payload,
                 run.id,
+                i16::from(Origin::parse(&run.origin)?.lane()),
+                run.origin,
             )
             .execute(&mut *tx)
             .await?;
@@ -285,7 +348,13 @@ fn without_nul(value: Value) -> Value {
     }
 }
 
-fn entry(key: String, run_id: String, effect: Value, status: &str, attempts: i32) -> Stored<Entry> {
+fn entry(
+    key: String,
+    run_id: Option<String>,
+    effect: Value,
+    status: &str,
+    attempts: i32,
+) -> Stored<Entry> {
     Ok(Entry {
         key,
         run_id,
@@ -330,8 +399,30 @@ impl Store for PostgresStore {
         Box::pin(self.admit_tx(source, delivery_id, admission))
     }
 
-    fn claim<'a>(&'a self, budgets: &'a [Budget]) -> BoxFuture<'a, Stored<Claim>> {
-        Box::pin(self.claim_tx(budgets))
+    fn claim<'a>(&'a self, request: ClaimRequest<'a>) -> BoxFuture<'a, Stored<Claim>> {
+        Box::pin(self.claim_tx(request))
+    }
+
+    fn note<'a>(
+        &'a self,
+        key: &'a str,
+        effect: Value,
+        status: EntryStatus,
+    ) -> BoxFuture<'a, Stored<()>> {
+        Box::pin(async move {
+            sqlx::query!(
+                "INSERT INTO outbox (key, almanac, seq, effect, status)
+                 VALUES ($1, $2, 0, $3, $4)
+                 ON CONFLICT (key) DO NOTHING",
+                key,
+                self.almanac,
+                without_nul(effect),
+                status.as_str(),
+            )
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        })
     }
 
     fn release<'a>(
@@ -422,18 +513,22 @@ impl Store for PostgresStore {
     fn run<'a>(&'a self, run_id: &'a str) -> BoxFuture<'a, Stored<Option<Run>>> {
         Box::pin(async move {
             let row = sqlx::query!(
-                "SELECT id, workflow, key, payload FROM runs WHERE id = $1 AND almanac = $2",
+                "SELECT id, workflow, key, payload, origin FROM runs WHERE id = $1 AND almanac = $2",
                 run_id,
                 self.almanac,
             )
             .fetch_optional(&self.pool)
             .await?;
-            Ok(row.map(|r| Run {
-                id: r.id,
-                workflow: r.workflow,
-                key: r.key,
-                payload: r.payload,
-            }))
+            row.map(|r| {
+                Ok(Run {
+                    id: r.id,
+                    workflow: r.workflow,
+                    key: r.key,
+                    payload: r.payload,
+                    origin: Origin::parse(&r.origin)?,
+                })
+            })
+            .transpose()
         })
     }
 

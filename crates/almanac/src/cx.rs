@@ -1,6 +1,7 @@
 //! A run's context. Every outside read and model call goes through it, so a replay
 //! returns recorded results instead of doing the work again.
 use crate::agent::{AgentSpec, Bound, Classifier, Harness, Pass};
+use crate::clock::Clock;
 use crate::cooled::{Cooled, Published};
 use crate::providers::Providers;
 use crate::store::{Store, StoreError};
@@ -66,6 +67,7 @@ impl<E: Into<StepError>> From<E> for Halt {
 pub struct Cx {
     run_id: String,
     store: Arc<dyn Store>,
+    clock: Arc<dyn Clock>,
     counts: Mutex<HashMap<&'static str, usize>>,
     agents: Vec<&'static str>,
     providers: Arc<Providers>,
@@ -75,12 +77,14 @@ impl Cx {
     pub(crate) fn new(
         run_id: String,
         store: Arc<dyn Store>,
+        clock: Arc<dyn Clock>,
         agents: Vec<&'static str>,
         providers: Arc<Providers>,
     ) -> Self {
         Self {
             run_id,
             store,
+            clock,
             counts: Mutex::default(),
             agents,
             providers,
@@ -156,7 +160,7 @@ impl Cx {
         let check = async {
             Ok(CooldownCheck {
                 published: read.await?,
-                checked_at: OffsetDateTime::now_utc(),
+                checked_at: self.clock.now(),
             })
         };
         let CooldownCheck {

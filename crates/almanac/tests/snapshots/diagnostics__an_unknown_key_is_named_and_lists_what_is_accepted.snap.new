@@ -1,0 +1,16 @@
+---
+source: crates/almanac/tests/diagnostics.rs
+assertion_line: 31
+expression: "render(&error, Format::Human)"
+---
+almanac::config::unknown_key
+
+  × unknown config key `max_runs`
+   ╭─[almanac.toml:2:1]
+ 1 │ listen = "127.0.0.1:1"
+ 2 │ max_runs = 3
+   · ────┬───
+   ·     ╰── Almanac does not read this
+   ╰────
+  help: config can only tighten limits: the keys are listen, max_chain_depth, runs_per_hour_cap,
+        overall_runs_per_hour_cap, and concurrency

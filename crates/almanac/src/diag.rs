@@ -70,7 +70,7 @@ pub enum Error {
     #[diagnostic(
         code(almanac::config::unknown_key),
         help(
-            "config can only tighten limits: the keys are listen, max_chain_depth, runs_per_hour_cap, and concurrency"
+            "config can only tighten limits: the keys are listen, max_chain_depth, runs_per_hour_cap, overall_runs_per_hour_cap, and concurrency"
         )
     )]
     UnknownKey {

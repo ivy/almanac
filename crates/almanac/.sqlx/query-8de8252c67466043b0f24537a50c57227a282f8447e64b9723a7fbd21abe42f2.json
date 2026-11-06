@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO outbox (key, almanac, seq, effect, status)\n                 VALUES ($1, $2, 0, $3, $4)\n                 ON CONFLICT (key) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8de8252c67466043b0f24537a50c57227a282f8447e64b9723a7fbd21abe42f2"
+}

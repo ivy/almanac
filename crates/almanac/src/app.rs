@@ -2,7 +2,7 @@
 use crate::config::Config;
 use crate::diag::{Error, Format, explain, render};
 use crate::providers::Providers;
-use crate::runtime::{Envelope, Runtime};
+use crate::runtime::{Envelope, Origin, Runtime};
 use crate::store::PostgresStore;
 use crate::workflow::Registered;
 use serde_json::json;
@@ -105,6 +105,7 @@ fn run(
                 delivery_id: (*file).to_string(),
                 kind: (*kind).to_string(),
                 depth: 0,
+                origin: Origin::Simulated,
                 payload,
             };
             let (ingest, outcomes) = rt.block_on(async {

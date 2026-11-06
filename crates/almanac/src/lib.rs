@@ -3,6 +3,7 @@ extern crate self as almanac;
 
 pub mod agent;
 pub mod app;
+pub mod clock;
 pub mod config;
 pub mod cooled;
 pub mod cx;

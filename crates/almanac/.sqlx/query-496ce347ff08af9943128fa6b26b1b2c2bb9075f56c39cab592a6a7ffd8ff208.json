@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.workflow, p.key, p.payload, p.subjects\n             FROM pending p\n             WHERE p.almanac = $1\n               AND p.workflow = ANY($2)\n               AND NOT EXISTS (\n                 SELECT 1 FROM tripped t WHERE t.almanac = p.almanac AND t.workflow = p.workflow\n               )\n               AND NOT EXISTS (\n                 SELECT 1 FROM runs r\n                 WHERE r.almanac = p.almanac AND r.workflow = p.workflow\n                   AND r.key = p.key AND r.status = 'running'\n               )\n             ORDER BY p.seq\n             LIMIT 1",
+  "query": "SELECT p.workflow, p.key, p.payload, p.subjects, p.origin\n             FROM pending p\n             WHERE p.almanac = $1\n               AND p.workflow = ANY($2)\n               AND NOT EXISTS (\n                 SELECT 1 FROM runs r\n                 WHERE r.almanac = p.almanac AND r.workflow = p.workflow\n                   AND r.key = p.key AND r.status = 'running'\n               )\n             ORDER BY p.lane, p.seq\n             LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -46,6 +46,17 @@
             "name": "subjects"
           }
         }
+      },
+      {
+        "ordinal": 4,
+        "name": "origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pending",
+            "name": "origin"
+          }
+        }
       }
     ],
     "parameters": {
@@ -58,8 +69,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "9657d963b61a7704812a5713ece90b36ae65b97681c61d0cca6c8e8110f27368"
+  "hash": "496ce347ff08af9943128fa6b26b1b2c2bb9075f56c39cab592a6a7ffd8ff208"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE runs SET status = 'interrupted', finished_at = now()\n             WHERE almanac = $1 AND status = 'running'\n             RETURNING id, workflow, key, payload",
+  "query": "SELECT id, workflow, key, payload, origin FROM runs WHERE id = $1 AND almanac = $2",
   "describe": {
     "columns": [
       {
@@ -46,10 +46,22 @@
             "name": "payload"
           }
         }
+      },
+      {
+        "ordinal": 4,
+        "name": "origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "runs",
+            "name": "origin"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Text"
       ]
     },
@@ -57,8 +69,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "3fecb60204bf39067240759a7ec1ebd3106a9ac6383288601291ac0a66f18b2a"
+  "hash": "d8a149875415292d864ef0a170dfcf68230369ca4aad8b8524af812807e6e51a"
 }

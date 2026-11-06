@@ -35,7 +35,7 @@ serde_json = "1"
 sha2 = "0.10"
 similar = "3"
 simforge = { path = "crates/simforge" }
-sqlx = { version = "0.9", default-features = false, features = ["json", "macros", "migrate", "postgres", "runtime-tokio", "tls-rustls-ring-webpki"] }
+sqlx = { version = "0.9", default-features = false, features = ["json", "macros", "migrate", "postgres", "runtime-tokio", "time", "tls-rustls-ring-webpki"] }
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tempfile = "3"
 tar = "0.4"

@@ -15,6 +15,7 @@ pub struct Config {
     pub listen: Option<String>,
     pub max_chain_depth: Option<u32>,
     pub runs_per_hour_cap: Option<u32>,
+    pub overall_runs_per_hour_cap: Option<u32>,
     pub concurrency: Option<usize>,
 }
 
@@ -45,6 +46,10 @@ impl Config {
         }
         from_env("ALMANAC_MAX_CHAIN_DEPTH", &mut c.max_chain_depth)?;
         from_env("ALMANAC_RUNS_PER_HOUR_CAP", &mut c.runs_per_hour_cap)?;
+        from_env(
+            "ALMANAC_OVERALL_RUNS_PER_HOUR_CAP",
+            &mut c.overall_runs_per_hour_cap,
+        )?;
         from_env("ALMANAC_CONCURRENCY", &mut c.concurrency)?;
         Ok(c)
     }
@@ -88,6 +93,7 @@ impl Config {
         Limits {
             max_depth: self.max_chain_depth.unwrap_or(d.max_depth),
             runs_cap: self.runs_per_hour_cap,
+            overall_cap: self.overall_runs_per_hour_cap,
             concurrency: self.concurrency.unwrap_or(d.concurrency),
         }
     }

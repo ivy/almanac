@@ -1,7 +1,8 @@
 use almanac::agent::Grant;
+use almanac::clock::FakeClock;
 use almanac::effect::ActionSummary;
 use almanac::prelude::*;
-use almanac::runtime::{Envelope, Guard, Ingest, Limits, Outcome, Runtime};
+use almanac::runtime::{Envelope, Guard, Ingest, Limits, Origin, Outcome, Runtime};
 use almanac::store::{EntryStatus, MemoryStore, PostgresStore, Store};
 use almanac::testing::{FakeForge, FakeTracker, FixedClassifier, ScriptedHarness};
 use definitions::error_triage::{ErrorTriage, INVESTIGATOR};
@@ -69,6 +70,7 @@ fn no_concerns() -> Value {
 
 fn pr(delivery: &str, repo: &str, depth: u32) -> Envelope {
     Envelope {
+        origin: Origin::Webhook,
         source: "github".into(),
         delivery_id: delivery.into(),
         depth,
@@ -87,6 +89,7 @@ fn issue(delivery: &str) -> Envelope {
         delivery_id: delivery.into(),
         kind: "sentry.issue".into(),
         depth: 0,
+        origin: Origin::Webhook,
         payload: json!({"issue_id": 7, "repo": "ivy/thicket", "message": INJECTION}),
     }
 }
@@ -126,6 +129,7 @@ async fn parse(v: Value) -> Result<(), String> {
             source: "t".into(),
             delivery_id: "t".into(),
             depth: 0,
+            origin: Origin::Webhook,
             kind: "github.pull_request.opened".into(),
             payload: v,
         })
@@ -262,12 +266,14 @@ async fn limits_only_ever_tighten() {
     let wide = Limits {
         max_depth: 99,
         runs_cap: Some(1000),
+        overall_cap: None,
         concurrency: 64,
     };
     let rt = runtime(FakeRegistry::default(), reviewer())
         .tightened(Limits {
             max_depth: 2,
             runs_cap: Some(5),
+            overall_cap: None,
             concurrency: 2,
         })
         .tightened(wide);
@@ -593,6 +599,7 @@ async fn a_real_renovate_pr_keeps_its_text_tainted() {
         source: "t".into(),
         delivery_id: "t".into(),
         depth: 0,
+        origin: Origin::Webhook,
         kind: "github.pull_request.opened".into(),
         payload: serde_json::from_str(FIXTURE).unwrap(),
     })
@@ -1014,4 +1021,75 @@ async fn the_manifest_shows_a_fixers_grant() {
         json!({"write": true, "egress": false, "secrets": false})
     );
     assert_eq!(manifest[0]["agents"][0]["profile"], "fixer");
+}
+
+fn budgeted(clock: &FakeClock, h: ScriptedHarness, tracker: &FakeTracker, cap: u32) -> Runtime {
+    let tracker: Arc<dyn Tracker> = Arc::new(tracker.clone());
+    let providers = Providers::new()
+        .provide::<dyn Registry>(Arc::new(FakeRegistry::default()))
+        .provide::<dyn Tracker>(tracker)
+        .harness(h);
+    Runtime::new(vec![Box::new(DependencyUpdates)], providers)
+        .with_store(store())
+        .with_clock(Arc::new(clock.clone()))
+        .in_mode(Mode::Live)
+        .alerting("owner/ops".parse().unwrap())
+        .tightened(Limits {
+            runs_cap: Some(cap),
+            ..Limits::default()
+        })
+}
+
+fn trips(outcomes: &[Outcome]) -> usize {
+    let tripped = |o: &&Outcome| matches!(o, Outcome::BudgetTripped { .. });
+    outcomes.iter().filter(tripped).count()
+}
+
+#[tokio::test]
+async fn a_tripped_budget_asks_once_and_held_work_runs_after_an_hour() {
+    let clock = FakeClock::at(time::macros::datetime!(2026-11-06 12:00 UTC));
+    let h = reviewer();
+    let tracker = FakeTracker::default();
+    let rt = budgeted(&clock, h.clone(), &tracker, 5);
+    for i in 0..20 {
+        rt.ingest(pr(&format!("d{i}"), &format!("ivy/repo-{i}"), 0))
+            .await
+            .unwrap();
+    }
+    let first = rt.drain().await.unwrap();
+    assert_eq!(h.calls(), 5);
+    assert_eq!(trips(&first), 1);
+    let again = rt.drain().await.unwrap();
+    assert_eq!(
+        (h.calls(), trips(&again)),
+        (5, 0),
+        "held, and no second alert"
+    );
+
+    rt.deliver().await.unwrap();
+    assert_eq!(tracker.filed.lock().unwrap().len(), 1);
+    assert_eq!(tracker.filed.lock().unwrap()[0].1, "owner/ops");
+
+    clock.advance(std::time::Duration::from_secs(3601));
+    let refilled = rt.drain().await.unwrap();
+    assert_eq!(h.calls(), 10, "the window opened");
+    assert_eq!(trips(&refilled), 1, "a new window may alert again");
+}
+
+#[tokio::test]
+async fn a_backfill_does_not_starve_a_live_event() {
+    let h = reviewer();
+    let rt = runtime(FakeRegistry::default(), h.clone()).tightened(Limits {
+        concurrency: 1,
+        ..Limits::default()
+    });
+    for i in 0..9 {
+        let mut scanned = pr(&format!("s{i}"), &format!("ivy/scan-{i}"), 0);
+        scanned.origin = Origin::Scan;
+        rt.ingest(scanned).await.unwrap();
+    }
+    rt.ingest(pr("live", "ivy/live", 0)).await.unwrap();
+    rt.drain().await.unwrap();
+    let inputs = h.inputs.lock().unwrap();
+    assert!(inputs[0].to_string().contains("ivy/live"), "{}", inputs[0]);
 }

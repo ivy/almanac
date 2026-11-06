@@ -6,10 +6,12 @@ mod postgres;
 pub use memory::MemoryStore;
 pub use postgres::PostgresStore;
 
-use crate::runtime::Ingest;
+use crate::runtime::{Ingest, Origin};
 use crate::workflow::Subject;
 use futures::future::BoxFuture;
 use serde_json::Value;
+use std::time::Duration;
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoreError(pub String);
@@ -31,6 +33,7 @@ pub struct Pending {
     pub key: String,
     pub payload: Value,
     pub subjects: Vec<Subject>,
+    pub origin: Origin,
 }
 
 /// What to do with a delivery, decided before it reaches the store.
@@ -47,21 +50,33 @@ pub struct Run {
     pub workflow: String,
     pub key: String,
     pub payload: Value,
+    pub origin: Origin,
 }
 
-/// How many runs a workflow may start.
+/// How many runs a workflow may start in a window.
 #[derive(Clone, Copy, Debug)]
 pub struct Budget {
     pub workflow: &'static str,
     pub limit: u32,
 }
 
+/// What a claim may start, and when it is being asked.
+#[derive(Clone, Copy, Debug)]
+pub struct ClaimRequest<'a> {
+    pub budgets: &'a [Budget],
+    /// Runs all workflows together may start in a window.
+    pub overall: Option<u32>,
+    pub window: Duration,
+    pub now: OffsetDateTime,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Claim {
     Run(Run),
-    /// A workflow just reached its budget. Reported once.
+    /// A budget was reached with work waiting. Reported once per window, so a person is asked
+    /// once. `workflow` is `None` for the overall budget.
     Tripped {
-        workflow: String,
+        workflow: Option<String>,
         held: usize,
     },
     Idle,
@@ -72,7 +87,8 @@ pub enum Claim {
 pub struct Entry {
     /// `run-id:index`, stable across retries.
     pub key: String,
-    pub run_id: String,
+    /// `None` for an effect no run produced, such as a budget alert.
+    pub run_id: Option<String>,
     pub effect: Value,
     pub status: EntryStatus,
     pub attempts: u32,
@@ -119,8 +135,17 @@ pub trait Store: Send + Sync {
         admission: Admission,
     ) -> BoxFuture<'a, Stored<Ingest>>;
 
-    /// Starts the oldest claimable event. Only workflows in `budgets` are considered.
-    fn claim<'a>(&'a self, budgets: &'a [Budget]) -> BoxFuture<'a, Stored<Claim>>;
+    /// Starts the next claimable event: live events before scanned ones, then oldest first.
+    /// Only workflows in `budgets` are considered.
+    fn claim<'a>(&'a self, request: ClaimRequest<'a>) -> BoxFuture<'a, Stored<Claim>>;
+
+    /// Records an effect no run produced. A repeated `key` changes nothing.
+    fn note<'a>(
+        &'a self,
+        key: &'a str,
+        effect: Value,
+        status: EntryStatus,
+    ) -> BoxFuture<'a, Stored<()>>;
 
     /// Ends a run, links what it learned, and records its effects, as one atomic step.
     /// A pending event for its key becomes claimable.

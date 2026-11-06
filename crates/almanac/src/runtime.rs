@@ -1,17 +1,23 @@
 //! Routes events, runs workflows, and applies limits. What it must remember is in `store`.
+use crate::clock::{Clock, SystemClock};
 use crate::cx::{Cx, Halt, StepError};
 use crate::effect::{ActionSummary, Effect, EffectKind, Forge, Mode, Planned, Push, Tracker};
 use crate::providers::Providers;
 use crate::store::{
-    Admission, Budget, Claim, Entry, EntryStatus, MemoryStore, Pending, Run, Store, StoreError,
-    Stored,
+    Admission, Budget, Claim, ClaimRequest, Entry, EntryStatus, MemoryStore, Pending, Run, Store,
+    StoreError, Stored,
 };
+use crate::taint::{Slug, Untrusted};
 use crate::workflow::{Decided, Registered, Subject};
 use futures::future::{BoxFuture, join_all};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 pub const MAX_CHAIN_DEPTH: u32 = 3;
+/// `runs_per_hour` and every budget are measured over this.
+pub const BUDGET_WINDOW: Duration = Duration::from_secs(3600);
 const MAX_CONCURRENT_RUNS: usize = 4;
 const MAX_DELIVERY_ATTEMPTS: u32 = 5;
 
@@ -20,6 +26,8 @@ const MAX_DELIVERY_ATTEMPTS: u32 = 5;
 pub struct Limits {
     pub max_depth: u32,
     pub runs_cap: Option<u32>,
+    /// Runs all workflows together may start per hour.
+    pub overall_cap: Option<u32>,
     pub concurrency: usize,
 }
 
@@ -28,6 +36,7 @@ impl Default for Limits {
         Self {
             max_depth: MAX_CHAIN_DEPTH,
             runs_cap: None,
+            overall_cap: None,
             concurrency: MAX_CONCURRENT_RUNS,
         }
     }
@@ -35,13 +44,51 @@ impl Default for Limits {
 
 impl Limits {
     pub fn tighten(self, other: Limits) -> Self {
+        let lower = |a: Option<u32>, b: Option<u32>| match (a, b) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
         Self {
             max_depth: self.max_depth.min(other.max_depth),
-            runs_cap: match (self.runs_cap, other.runs_cap) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (a, b) => a.or(b),
-            },
+            runs_cap: lower(self.runs_cap, other.runs_cap),
+            overall_cap: lower(self.overall_cap, other.overall_cap),
             concurrency: self.concurrency.min(other.concurrency),
+        }
+    }
+}
+
+/// Where an event came from. Independent of whether effects are live.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Origin {
+    #[default]
+    Webhook,
+    Scan,
+    Simulated,
+}
+
+impl Origin {
+    /// Lower claims first, so a backfill can never delay a live event.
+    pub fn lane(self) -> u8 {
+        match self {
+            Self::Webhook | Self::Simulated => 0,
+            Self::Scan => 1,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Webhook => "webhook",
+            Self::Scan => "scan",
+            Self::Simulated => "simulated",
+        }
+    }
+
+    pub(crate) fn parse(text: &str) -> Stored<Self> {
+        match text {
+            "webhook" => Ok(Self::Webhook),
+            "scan" => Ok(Self::Scan),
+            "simulated" => Ok(Self::Simulated),
+            other => Err(StoreError(format!("unknown origin `{other}`"))),
         }
     }
 }
@@ -53,6 +100,7 @@ pub struct Envelope {
     pub kind: String,
     /// How many of Almanac's own effects led here.
     pub depth: u32,
+    pub origin: Origin,
     pub payload: Value,
 }
 
@@ -85,8 +133,9 @@ pub enum Outcome {
         workflow: &'static str,
         error: String,
     },
+    /// `workflow` is `None` for the overall budget.
     BudgetTripped {
-        workflow: &'static str,
+        workflow: Option<&'static str>,
         held: usize,
     },
 }
@@ -138,6 +187,9 @@ pub struct Runtime {
     limits: Limits,
     mode: Mode,
     store: Arc<dyn Store>,
+    clock: Arc<dyn Clock>,
+    /// Where a tripped budget asks a person.
+    alerts: Option<Slug>,
 }
 
 impl Runtime {
@@ -149,11 +201,24 @@ impl Runtime {
             limits: Limits::default(),
             mode: Mode::default(),
             store: Arc::new(MemoryStore::default()),
+            clock: Arc::new(SystemClock),
+            alerts: None,
         }
     }
 
     pub fn with_store(mut self, store: Arc<dyn Store>) -> Self {
         self.store = store;
+        self
+    }
+
+    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    /// Files a question in `target` when a budget trips.
+    pub fn alerting(mut self, target: Slug) -> Self {
+        self.alerts = Some(target);
         self
     }
 
@@ -227,11 +292,11 @@ impl Runtime {
     /// Routes to the first matching workflow.
     /// A delivery is seen only once this returns `Ok`, so an error means it can be redelivered.
     pub async fn ingest(&self, e: Envelope) -> Stored<Ingest> {
-        let admission = self.admission(&e.kind, e.depth, e.payload);
+        let admission = self.admission(&e.kind, e.depth, e.origin, e.payload);
         self.store.admit(&e.source, &e.delivery_id, admission).await
     }
 
-    fn admission(&self, kind: &str, depth: u32, payload: Value) -> Admission {
+    fn admission(&self, kind: &str, depth: u32, origin: Origin, payload: Value) -> Admission {
         if depth > self.limits.max_depth {
             return Admission::Drop(Ingest::ChainStopped);
         }
@@ -246,6 +311,7 @@ impl Runtime {
             key: id.key,
             payload,
             subjects: id.subjects,
+            origin,
         })
     }
 
@@ -277,6 +343,7 @@ impl Runtime {
         let cx = Cx::new(
             run.id.clone(),
             self.store.clone(),
+            self.clock.clone(),
             w.agent_names(),
             self.providers.clone(),
         );
@@ -341,10 +408,20 @@ impl Runtime {
 
     async fn work(&self, budgets: &[Budget], out: &Mutex<Vec<Outcome>>) -> Stored<()> {
         loop {
-            match self.store.claim(budgets).await? {
+            let request = ClaimRequest {
+                budgets,
+                overall: self.limits.overall_cap,
+                window: BUDGET_WINDOW,
+                now: self.clock.now(),
+            };
+            match self.store.claim(request).await? {
                 Claim::Idle => return Ok(()),
                 Claim::Tripped { workflow, held } => {
-                    let workflow = self.workflow(&workflow)?.name();
+                    let workflow = match workflow {
+                        Some(name) => Some(self.workflow(&name)?.name()),
+                        None => None,
+                    };
+                    self.ask_about_budget(workflow, held).await?;
                     let tripped = Outcome::BudgetTripped { workflow, held };
                     out.lock().unwrap().push(tripped);
                 }
@@ -361,6 +438,31 @@ impl Runtime {
                 }
             }
         }
+    }
+
+    fn entry_status(&self) -> EntryStatus {
+        match self.mode {
+            Mode::Live => EntryStatus::Pending,
+            Mode::DryRun => EntryStatus::WouldApply,
+        }
+    }
+
+    /// Goes through the outbox like any effect, so it is delivered and retried the same way.
+    async fn ask_about_budget(&self, workflow: Option<&str>, held: usize) -> Stored<()> {
+        let Some(target) = self.alerts.clone() else {
+            return Ok(());
+        };
+        let scope = workflow.unwrap_or("all workflows");
+        let ask = Planned::Ask {
+            question: format!("A run budget was reached for {scope}"),
+            target,
+            body: Untrusted::new(format!(
+                "{held} event(s) are held and will resume as the hourly window opens."
+            )),
+        };
+        let effect = serde_json::to_value(ask).map_err(|e| StoreError(e.to_string()))?;
+        let key = format!("budget:{scope}:{}", self.clock.now().unix_timestamp());
+        self.store.note(&key, effect, self.entry_status()).await
     }
 
     /// Runs independent keys concurrently, up to `limits.concurrency` at a time.

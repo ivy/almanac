@@ -186,14 +186,19 @@ impl Tracker for FakeTracker {
 /// new handle on a scope's state: calling it twice models a restart, or a second process.
 pub mod conformance {
     use crate::runtime::Ingest;
-    use crate::store::{Admission, Budget, Claim, EntryStatus, Pending, Store};
+    use crate::runtime::Origin;
+    use crate::store::{Admission, Budget, Claim, ClaimRequest, EntryStatus, Pending, Store};
     use crate::taint::Slug;
     use crate::workflow::Subject;
     use serde_json::{Value, json};
     use std::sync::Arc;
+    use std::time::Duration;
+    use time::OffsetDateTime;
 
     const W: &str = "workflow";
     const OTHER: &str = "other";
+    const HOUR: Duration = Duration::from_secs(3600);
+    const NOW: OffsetDateTime = time::macros::datetime!(2026-11-06 12:00 UTC);
     const BUDGETS: &[Budget] = &[
         Budget {
             workflow: W,
@@ -216,7 +221,27 @@ pub mod conformance {
             key: key.to_string(),
             payload,
             subjects: vec![subject()],
+            origin: Origin::Webhook,
         })
+    }
+
+    fn scanned(key: &str, payload: Value) -> Admission {
+        Admission::Queue(Pending {
+            workflow: W.to_string(),
+            key: key.to_string(),
+            payload,
+            subjects: vec![],
+            origin: Origin::Scan,
+        })
+    }
+
+    fn request(budgets: &[Budget]) -> ClaimRequest<'_> {
+        ClaimRequest {
+            budgets,
+            overall: None,
+            window: HOUR,
+            now: NOW,
+        }
     }
 
     async fn admit(s: &Arc<dyn Store>, delivery: &str, key: &str, payload: Value) -> Ingest {
@@ -226,7 +251,7 @@ pub mod conformance {
     }
 
     async fn started(s: &Arc<dyn Store>) -> crate::store::Run {
-        match s.claim(BUDGETS).await.unwrap() {
+        match s.claim(request(BUDGETS)).await.unwrap() {
             Claim::Run(run) => run,
             other => panic!("expected a run, got {other:?}"),
         }
@@ -238,7 +263,11 @@ pub mod conformance {
         a_burst_coalesces_to_the_latest_event(&open("burst")).await;
         an_event_during_a_run_causes_one_rerun(&open("dirty")).await;
         one_of_two_concurrent_claims_wins(&open("race"), &open("race")).await;
-        a_budget_trips_once(&open("budget")).await;
+        a_budget_trips_once_per_window_and_refills(&open("budget")).await;
+        an_overall_budget_stops_every_workflow(&open("overall")).await;
+        a_live_event_runs_before_any_scanned_event(&open("lanes")).await;
+        a_live_event_lifts_a_scanned_event_on_its_key(&open("lifted")).await;
+        effects_no_run_produced_are_delivered_once(&open("noted")).await;
         oldest_work_runs_first(&open("order")).await;
         workflows_not_in_this_binary_are_left_alone(&open("unknown")).await;
         queued_work_and_the_log_survive_a_restart(&open("restart"), &open("restart")).await;
@@ -261,14 +290,14 @@ pub mod conformance {
         let first = s.admit("t", "d1", drop.clone()).await.unwrap();
         assert_eq!(first, Ingest::Rejected);
         assert_eq!(s.admit("t", "d1", drop).await.unwrap(), Ingest::Duplicate);
-        assert_eq!(s.claim(BUDGETS).await.unwrap(), Claim::Idle);
+        assert_eq!(s.claim(request(BUDGETS)).await.unwrap(), Claim::Idle);
     }
 
     async fn a_burst_coalesces_to_the_latest_event(s: &Arc<dyn Store>) {
         assert_eq!(admit(s, "d1", "k", json!(1)).await, Ingest::Queued);
         assert_eq!(admit(s, "d2", "k", json!(2)).await, Ingest::Coalesced);
         assert_eq!(started(s).await.payload, json!(2));
-        assert_eq!(s.claim(BUDGETS).await.unwrap(), Claim::Idle);
+        assert_eq!(s.claim(request(BUDGETS)).await.unwrap(), Claim::Idle);
     }
 
     async fn an_event_during_a_run_causes_one_rerun(s: &Arc<dyn Store>) {
@@ -276,7 +305,7 @@ pub mod conformance {
         let run = started(s).await;
         assert_eq!(admit(s, "d2", "k", json!(2)).await, Ingest::MarkedDirty);
         assert_eq!(admit(s, "d3", "k", json!(3)).await, Ingest::MarkedDirty);
-        assert_eq!(s.claim(BUDGETS).await.unwrap(), Claim::Idle);
+        assert_eq!(s.claim(request(BUDGETS)).await.unwrap(), Claim::Idle);
         s.release(&run.id, &[], vec![], EntryStatus::Pending)
             .await
             .unwrap();
@@ -285,19 +314,19 @@ pub mod conformance {
         s.release(&rerun.id, &[], vec![], EntryStatus::Pending)
             .await
             .unwrap();
-        assert_eq!(s.claim(BUDGETS).await.unwrap(), Claim::Idle);
+        assert_eq!(s.claim(request(BUDGETS)).await.unwrap(), Claim::Idle);
     }
 
     async fn one_of_two_concurrent_claims_wins(a: &Arc<dyn Store>, b: &Arc<dyn Store>) {
         admit(a, "d1", "k", json!(1)).await;
-        let (x, y) = futures::join!(a.claim(BUDGETS), b.claim(BUDGETS));
+        let (x, y) = futures::join!(a.claim(request(BUDGETS)), b.claim(request(BUDGETS)));
         let claims = [x.unwrap(), y.unwrap()];
         let won = claims.iter().filter(|c| matches!(c, Claim::Run(_))).count();
         assert_eq!(won, 1, "{claims:?}");
         assert!(claims.contains(&Claim::Idle), "{claims:?}");
     }
 
-    async fn a_budget_trips_once(s: &Arc<dyn Store>) {
+    async fn a_budget_trips_once_per_window_and_refills(s: &Arc<dyn Store>) {
         let one = [Budget {
             workflow: W,
             limit: 1,
@@ -305,13 +334,88 @@ pub mod conformance {
         for (delivery, key) in [("d1", "a"), ("d2", "b"), ("d3", "c")] {
             admit(s, delivery, key, json!(1)).await;
         }
-        assert!(matches!(s.claim(&one).await.unwrap(), Claim::Run(_)));
+        let at = |minutes: u64| ClaimRequest {
+            now: NOW + Duration::from_secs(minutes * 60),
+            ..request(&one)
+        };
+        assert!(matches!(s.claim(at(0)).await.unwrap(), Claim::Run(_)));
         let tripped = Claim::Tripped {
-            workflow: W.to_string(),
+            workflow: Some(W.to_string()),
             held: 2,
         };
-        assert_eq!(s.claim(&one).await.unwrap(), tripped);
-        assert_eq!(s.claim(&one).await.unwrap(), Claim::Idle);
+        assert_eq!(s.claim(at(1)).await.unwrap(), tripped);
+        assert_eq!(s.claim(at(2)).await.unwrap(), Claim::Idle);
+        assert_eq!(s.claim(at(59)).await.unwrap(), Claim::Idle);
+
+        assert!(
+            matches!(s.claim(at(61)).await.unwrap(), Claim::Run(_)),
+            "it refills"
+        );
+        let next_window = Claim::Tripped {
+            workflow: Some(W.to_string()),
+            held: 1,
+        };
+        assert_eq!(s.claim(at(62)).await.unwrap(), next_window);
+        assert_eq!(s.claim(at(63)).await.unwrap(), Claim::Idle);
+        assert!(matches!(s.claim(at(122)).await.unwrap(), Claim::Run(_)));
+        assert_eq!(s.claim(at(123)).await.unwrap(), Claim::Idle);
+    }
+
+    async fn an_overall_budget_stops_every_workflow(s: &Arc<dyn Store>) {
+        admit(s, "d1", "a", json!(1)).await;
+        s.admit("t", "d2", queue(OTHER, "b", json!(1)))
+            .await
+            .unwrap();
+        admit(s, "d3", "c", json!(1)).await;
+        let capped = ClaimRequest {
+            overall: Some(1),
+            ..request(BUDGETS)
+        };
+        assert!(matches!(s.claim(capped).await.unwrap(), Claim::Run(_)));
+        let tripped = Claim::Tripped {
+            workflow: None,
+            held: 2,
+        };
+        assert_eq!(s.claim(capped).await.unwrap(), tripped);
+        assert_eq!(s.claim(capped).await.unwrap(), Claim::Idle);
+    }
+
+    async fn a_live_event_runs_before_any_scanned_event(s: &Arc<dyn Store>) {
+        for i in 0..25 {
+            let key = format!("scan-{i}");
+            s.admit("t", &key, scanned(&key, json!(i))).await.unwrap();
+        }
+        admit(s, "live", "live", json!("live")).await;
+        let next = started(s).await;
+        assert_eq!(next.key, "live");
+        assert_eq!(next.origin, Origin::Webhook);
+        let after = started(s).await;
+        assert_eq!(after.key, "scan-0");
+        assert_eq!(after.origin, Origin::Scan);
+    }
+
+    async fn a_live_event_lifts_a_scanned_event_on_its_key(s: &Arc<dyn Store>) {
+        s.admit("t", "s1", scanned("first", json!(1)))
+            .await
+            .unwrap();
+        s.admit("t", "s2", scanned("shared", json!(1)))
+            .await
+            .unwrap();
+        assert_eq!(admit(s, "w1", "shared", json!(2)).await, Ingest::Coalesced);
+        assert_eq!(started(s).await.key, "shared");
+    }
+
+    async fn effects_no_run_produced_are_delivered_once(s: &Arc<dyn Store>) {
+        s.note("alert", json!("x"), EntryStatus::Pending)
+            .await
+            .unwrap();
+        s.note("alert", json!("y"), EntryStatus::Pending)
+            .await
+            .unwrap();
+        let waiting = s.undelivered().await.unwrap();
+        assert_eq!(waiting.len(), 1);
+        assert_eq!(waiting[0].run_id, None);
+        assert_eq!(waiting[0].effect, json!("x"));
     }
 
     async fn oldest_work_runs_first(s: &Arc<dyn Store>) {
@@ -325,7 +429,7 @@ pub mod conformance {
         s.admit("t", "d1", queue("retired", "k", json!(1)))
             .await
             .unwrap();
-        assert_eq!(s.claim(BUDGETS).await.unwrap(), Claim::Idle);
+        assert_eq!(s.claim(request(BUDGETS)).await.unwrap(), Claim::Idle);
     }
 
     async fn queued_work_and_the_log_survive_a_restart(
@@ -349,7 +453,7 @@ pub mod conformance {
     async fn recovery_requeues_interrupted_runs(s: &Arc<dyn Store>) {
         admit(s, "d1", "k", json!(1)).await;
         let interrupted = started(s).await;
-        assert_eq!(s.claim(BUDGETS).await.unwrap(), Claim::Idle);
+        assert_eq!(s.claim(request(BUDGETS)).await.unwrap(), Claim::Idle);
         assert_eq!(s.recover().await.unwrap(), 1);
         assert_eq!(s.recover().await.unwrap(), 0);
         let again = started(s).await;

@@ -1,10 +1,11 @@
 //! Needs podman. `make test-db` runs this.
-use almanac::runtime::Ingest;
-use almanac::store::{Admission, Budget, Claim, Pending, PostgresStore, Store};
+use almanac::runtime::{Ingest, Origin};
+use almanac::store::{Admission, Budget, Claim, ClaimRequest, Pending, PostgresStore, Store};
 use almanac::testing::conformance;
 use serde_json::json;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
+use std::time::Duration;
 use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::testcontainers::ContainerAsync;
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
@@ -23,6 +24,7 @@ fn queue(key: &str, payload: serde_json::Value) -> Admission {
         key: key.to_string(),
         payload,
         subjects: vec![],
+        origin: Origin::Webhook,
     })
 }
 
@@ -74,7 +76,13 @@ async fn a_nul_in_hostile_text_cannot_wedge_ingest_or_recording() {
     let hostile = json!({"title": "a\u{0}b", "nested": ["\u{0}"]});
     let admitted = store.admit("t", "d1", queue("k", hostile.clone())).await;
     assert_eq!(admitted, Ok(Ingest::Queued));
-    let Claim::Run(run) = store.claim(BUDGET).await.unwrap() else {
+    let request = ClaimRequest {
+        budgets: BUDGET,
+        overall: None,
+        window: Duration::from_secs(3600),
+        now: time::OffsetDateTime::now_utc(),
+    };
+    let Claim::Run(run) = store.claim(request).await.unwrap() else {
         panic!("expected a run");
     };
     assert_eq!(

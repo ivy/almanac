@@ -266,6 +266,7 @@ async fn a_simulated_pull_request_event_parses_as_the_real_type() {
             source: "sim".into(),
             delivery_id: "d".into(),
             depth: 0,
+            origin: almanac::runtime::Origin::Simulated,
             kind: "github.pull_request.opened".into(),
             payload: serde_json::from_slice(&body).unwrap(),
         })

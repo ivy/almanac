@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO runs (id, seq, almanac, workflow, key, payload, status)\n               SELECT 'run-' || n, n, $1, $2, $3, $4, 'running'\n               FROM nextval('run_seq') AS n\n               RETURNING id",
+  "query": "INSERT INTO runs (id, seq, almanac, workflow, key, payload, status, started_at, origin)\n               SELECT 'run-' || n, n, $1, $2, $3, $4, 'running', $5, $6\n               FROM nextval('run_seq') AS n\n               RETURNING id",
   "describe": {
     "columns": [
       {
@@ -20,12 +20,14 @@
         "Text",
         "Text",
         "Text",
-        "Jsonb"
+        "Jsonb",
+        "Timestamptz",
+        "Text"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "892d7cbdfe15b2a2d810afd88837c54cd1bf53dbc2a5d7524148973030a81769"
+  "hash": "2734cf5d100ae6a6743c0568b6cdc5d343e5eb918195b1fb1d9822538f9d82a0"
 }

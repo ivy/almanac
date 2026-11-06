@@ -6,6 +6,7 @@ pub mod app;
 pub mod config;
 pub mod cooled;
 pub mod cx;
+pub mod diag;
 pub mod effect;
 pub mod providers;
 pub mod runtime;
@@ -28,8 +29,8 @@ pub mod prelude {
     pub use crate::cx::{Cx, Halt, StepError};
     pub use crate::effect::{AttestState, Effect, EffectKind, Forge, Mode, Tracker};
     pub use crate::providers::Providers;
-    pub use crate::taint::{Clean, Finite, Observed, Sha, Slug, Untrusted};
-    pub use crate::wire::{Event, Payload};
+    pub use crate::taint::{Clean, Finite, Invalid, Observed, Sha, Slug, Untrusted};
+    pub use crate::wire::{Event, Malformed, Payload};
     pub use crate::workflow::{Registered, Subject, Workflow};
     pub use crate::{clean, observed, output};
     pub use almanac_macros::{prompt, workflow};

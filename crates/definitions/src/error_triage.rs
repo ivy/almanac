@@ -17,7 +17,7 @@ observed! {
 
 impl Event for IssueEvent {
     const KIND: &'static str = "sentry.issue";
-    fn parse(p: &Payload<'_>) -> Result<Self, String> {
+    fn parse(p: &Payload<'_>) -> Result<Self, Malformed> {
         Ok(Self {
             issue_id: p.field("/issue_id")?,
             repo: p.field("/repo")?,

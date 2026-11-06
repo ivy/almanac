@@ -20,7 +20,7 @@ impl Registry for DemoRegistry {
             Ok(UpdateEvidence {
                 repo: pr.repo.clone(),
                 sha: pr.head_sha.clone(),
-                package: "renovatebot/renovate".parse().map_err(StepError)?,
+                package: "renovatebot/renovate".parse()?,
                 install_script_added: std::env::var("DEMO_CHECKS").as_deref() == Ok("fail"),
                 publisher_changed: false,
                 provenance_verified: true,

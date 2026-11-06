@@ -71,5 +71,5 @@ for name, decl in projection.items():
         inits.append(f"            {fname}: {init},")
     out += enums
     out.append(f"observed! {{\n    pub struct {name} {{\n" + "\n".join(fields) + "\n    }\n}\n")
-    out.append(f'impl Event for {name} {{\n    const KIND: &\'static str = "{kind}";\n    fn parse(p: &Payload<\'_>) -> Result<Self, String> {{\n        Ok(Self {{\n' + "\n".join(inits) + "\n        })\n    }\n}\n")
+    out.append(f'impl Event for {name} {{\n    const KIND: &\'static str = "{kind}";\n    fn parse(p: &Payload<\'_>) -> Result<Self, Malformed> {{\n        Ok(Self {{\n' + "\n".join(inits) + "\n        })\n    }\n}\n")
 print("\n".join(out))

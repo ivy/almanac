@@ -468,7 +468,7 @@ fn a_missing_provider_fails_at_startup_and_names_what_is_missing() {
         vec![Box::new(DependencyUpdates), Box::new(ErrorTriage)],
         Providers::new(),
     );
-    let problem = rt.validate().unwrap_err();
+    let problem = rt.validate().unwrap_err().to_string();
     assert!(
         problem.contains("dependency-updates needs a provider for dyn"),
         "{problem}"
@@ -826,10 +826,10 @@ async fn a_failed_delivery_is_retried_with_the_same_key() {
     rt.ingest(pr("d1", "ivy/thicket", 0)).await.unwrap();
     rt.drain().await.unwrap();
     let first = rt.deliver().await.unwrap();
-    assert!(first[0].result.is_err(), "{first:?}");
+    assert!(first[0].error.is_some(), "{first:?}");
     let second = rt.deliver().await.unwrap();
     assert_eq!(second.len(), 1);
-    assert!(second[0].result.is_ok(), "{second:?}");
+    assert!(second[0].error.is_none(), "{second:?}");
     let calls = a.forge.calls.lock().unwrap();
     assert_eq!(calls[0], calls[1]);
 }
@@ -854,7 +854,7 @@ async fn hostile_text_stays_tagged_in_the_stored_effect() {
 #[tokio::test]
 async fn going_live_requires_a_forge_and_a_tracker() {
     let rt = Runtime::new(vec![Box::new(DependencyUpdates)], Providers::new()).in_mode(Mode::Live);
-    let problem = rt.validate().unwrap_err();
+    let problem = rt.validate().unwrap_err().to_string();
     assert!(problem.contains("may Attest but no Forge"), "{problem}");
     assert!(
         problem.contains("may File or Ask but no Tracker"),

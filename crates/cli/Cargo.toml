@@ -10,6 +10,9 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[dependencies]
+almanac.workspace = true
+
 [[bin]]
 name = "almanac"
 path = "src/main.rs"

@@ -8,7 +8,7 @@ observed! {
 
 impl Event for Received {
     const KIND: &'static str = "@KEBAB@.received";
-    fn parse(p: &Payload<'_>) -> Result<Self, String> {
+    fn parse(p: &Payload<'_>) -> Result<Self, Malformed> {
         Ok(Self { id: p.field("/id")? })
     }
 }

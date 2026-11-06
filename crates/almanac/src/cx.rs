@@ -4,7 +4,8 @@ use crate::agent::{AgentSpec, Bound, Classifier, Harness, Pass};
 use crate::cooled::{Cooled, Published};
 use crate::providers::Providers;
 use crate::store::{Store, StoreError};
-use crate::taint::{Observed, Untrusted};
+use crate::taint::{Invalid, Observed, Untrusted};
+use crate::wire::Malformed;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::future::Future;
@@ -24,6 +25,18 @@ struct CooldownCheck {
 
 #[derive(Debug)]
 pub struct StepError(pub String);
+
+impl From<Malformed> for StepError {
+    fn from(e: Malformed) -> Self {
+        Self(e.to_string())
+    }
+}
+
+impl From<Invalid> for StepError {
+    fn from(e: Invalid) -> Self {
+        Self(e.to_string())
+    }
+}
 
 impl From<StoreError> for StepError {
     fn from(e: StoreError) -> Self {

@@ -4,7 +4,7 @@ use crate::cx::{Cx, Halt, StepError};
 use crate::effect::{Effect, EffectKind};
 use crate::providers::Requirement;
 use crate::taint::Slug;
-use crate::wire::{Event, Payload};
+use crate::wire::{Event, Malformed, Payload};
 use futures::future::BoxFuture;
 use serde_json::{Value, json};
 use std::future::Future;
@@ -85,7 +85,7 @@ pub trait Registered: Send + Sync {
     fn may(&self) -> &'static [EffectKind];
     fn agent_names(&self) -> Vec<&'static str>;
     fn requirements(&self) -> Vec<Requirement>;
-    fn identify(&self, payload: &Value) -> Result<Identity, String>;
+    fn identify(&self, payload: &Value) -> Result<Identity, Malformed>;
     fn execute<'a>(
         &'a self,
         cx: &'a Cx,
@@ -117,7 +117,7 @@ impl<W: Workflow> Registered for W {
     fn requirements(&self) -> Vec<Requirement> {
         self.requires()
     }
-    fn identify(&self, payload: &Value) -> Result<Identity, String> {
+    fn identify(&self, payload: &Value) -> Result<Identity, Malformed> {
         let event = W::Event::parse(&Payload::new(payload))?;
         Ok(Identity {
             key: W::key(&event),
@@ -130,7 +130,7 @@ impl<W: Workflow> Registered for W {
         payload: &'a Value,
     ) -> BoxFuture<'a, Result<Decided, Halt>> {
         Box::pin(async move {
-            let event = W::Event::parse(&Payload::new(payload)).map_err(StepError)?;
+            let event = W::Event::parse(&Payload::new(payload)).map_err(StepError::from)?;
             let facts = self.gather(cx, &event).await?;
             Ok(Decided {
                 effects: W::decide(&facts),

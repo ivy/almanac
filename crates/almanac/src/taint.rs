@@ -64,6 +64,19 @@ impl<T: Clean> Clean for Option<T> {}
 impl __private::SealedFinite for bool {}
 impl Finite for bool {}
 
+/// Text that failed validation. It names the shape and never repeats the text, which may be
+/// hostile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Invalid(pub &'static str);
+
+impl fmt::Display for Invalid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "not a {}", self.0)
+    }
+}
+
+impl std::error::Error for Invalid {}
+
 /// A string restricted to a validated shape.
 macro_rules! validated {
     ($(#[$m:meta])* $name:ident, $what:literal, $valid:expr) => {
@@ -73,15 +86,15 @@ macro_rules! validated {
         pub struct $name(String);
 
         impl TryFrom<String> for $name {
-            type Error = String;
-            fn try_from(s: String) -> Result<Self, String> {
+            type Error = Invalid;
+            fn try_from(s: String) -> Result<Self, Invalid> {
                 let valid: fn(&str) -> bool = $valid;
-                valid(&s).then_some(Self(s)).ok_or_else(|| concat!("not a ", $what).to_string())
+                valid(&s).then_some(Self(s)).ok_or(Invalid($what))
             }
         }
         impl FromStr for $name {
-            type Err = String;
-            fn from_str(s: &str) -> Result<Self, String> {
+            type Err = Invalid;
+            fn from_str(s: &str) -> Result<Self, Invalid> {
                 s.to_string().try_into()
             }
         }

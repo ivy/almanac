@@ -27,7 +27,7 @@ observed! {
 
 impl Event for PullRequestOpened {
     const KIND: &'static str = "github.pull_request.opened";
-    fn parse(p: &Payload<'_>) -> Result<Self, String> {
+    fn parse(p: &Payload<'_>) -> Result<Self, Malformed> {
         Ok(Self {
             number: p.field("/number")?,
             state: p.field("/pull_request/state")?,

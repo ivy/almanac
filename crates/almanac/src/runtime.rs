@@ -95,7 +95,8 @@ pub enum Outcome {
 #[derive(Debug, PartialEq)]
 pub struct Delivery {
     pub key: String,
-    pub result: Result<(), String>,
+    /// Why this attempt failed. `None` means the effect was applied.
+    pub error: Option<String>,
 }
 
 fn planned(outcome: &Outcome) -> Stored<Vec<Value>> {
@@ -177,7 +178,7 @@ impl Runtime {
     }
 
     /// Everything a workflow declared that the binary did not set up.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), crate::diag::Error> {
         let mut missing = vec![];
         for w in &self.workflows {
             for need in w.requirements() {
@@ -197,7 +198,7 @@ impl Runtime {
         if missing.is_empty() {
             Ok(())
         } else {
-            Err(missing.join("; "))
+            Err(crate::diag::Error::MissingProviders { missing })
         }
     }
 
@@ -375,10 +376,10 @@ impl Runtime {
     pub async fn deliver(&self) -> Stored<Vec<Delivery>> {
         let mut report = vec![];
         for entry in self.store.undelivered().await? {
-            let result = self.apply(&entry).await;
-            match &result {
-                Ok(()) => self.store.delivered(&entry.key).await?,
-                Err(error) => {
+            let error = self.apply(&entry).await.err().map(|StepError(e)| e);
+            match &error {
+                None => self.store.delivered(&entry.key).await?,
+                Some(error) => {
                     self.store
                         .delivery_failed(&entry.key, error, MAX_DELIVERY_ATTEMPTS)
                         .await?
@@ -386,17 +387,17 @@ impl Runtime {
             }
             report.push(Delivery {
                 key: entry.key,
-                result,
+                error,
             });
         }
         Ok(report)
     }
 
-    async fn apply(&self, entry: &Entry) -> Result<(), String> {
+    async fn apply(&self, entry: &Entry) -> Result<(), StepError> {
         let planned: Planned = serde_json::from_value(entry.effect.clone())
-            .map_err(|e| format!("{}: unreadable effect: {e}", entry.key))?;
+            .map_err(|e| StepError(format!("{}: unreadable effect: {e}", entry.key)))?;
         let key = entry.key.as_str();
-        let outcome = match &planned {
+        match &planned {
             Planned::Await { .. } => Ok(()),
             Planned::Attest {
                 context,
@@ -426,14 +427,13 @@ impl Runtime {
                     .ask(key, target, question, body)
                     .await
             }
-        };
-        outcome.map_err(|StepError(error)| error)
+        }
     }
 
-    fn provider<T: ?Sized + Send + Sync + 'static>(&self, name: &str) -> Result<Arc<T>, String> {
+    fn provider<T: ?Sized + Send + Sync + 'static>(&self, name: &str) -> Result<Arc<T>, StepError> {
         self.providers
             .get::<T>()
-            .ok_or_else(|| format!("no {name} is provided"))
+            .ok_or_else(|| StepError(format!("no {name} is provided")))
     }
 
     /// What a run recorded, including what a dry run would have done.

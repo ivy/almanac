@@ -17,5 +17,5 @@ error[E0277]: the trait bound `String: Clean` is not satisfied
 note: required by a bound in `fails::Payload::<'a>::field`
  --> $WORKSPACE/crates/almanac/src/wire.rs
   |
-  |     pub fn field<T: Clean + DeserializeOwned>(&self, pointer: &str) -> Result<T, String> {
+  |     pub fn field<T: Clean + DeserializeOwned>(&self, pointer: &str) -> Result<T, Malformed> {
   |                     ^^^^^ required by this bound in `Payload::<'a>::field`

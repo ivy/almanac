@@ -1,0 +1,13 @@
+---
+source: crates/almanac/tests/diagnostics.rs
+expression: "render(&error, Format::Human)"
+---
+almanac::config::parse
+
+  × config file is not valid: invalid type: string "many", expected usize
+   ╭─[almanac.toml:1:15]
+ 1 │ concurrency = "many"
+   ·               ───┬──
+   ·                  ╰── here
+   ╰────
+  help: fix the marked line; run `explain almanac::config::parse` for the accepted keys

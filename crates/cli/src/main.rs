@@ -1,4 +1,5 @@
-//! `almanac new NAME` and `almanac generate workflow|prompt NAME`.
+//! `almanac new NAME`, `almanac generate workflow|prompt NAME`, and `almanac explain CODE`.
+use almanac::diag::Format;
 use std::{env, fs, path::Path, process::ExitCode};
 
 const CRATE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../almanac");
@@ -124,7 +125,13 @@ fn main() -> ExitCode {
         ["new", name] => new(name),
         ["generate", "workflow", name] => generate_workflow(name),
         ["generate", "prompt", name] => generate_prompt(name),
-        _ => Err("usage: almanac new NAME | almanac generate workflow|prompt NAME".to_string()),
+        ["explain", code] => almanac::diag::explain(code)
+            .map(|page| println!("{page}"))
+            .map_err(|e| almanac::diag::render(&e, Format::Human)),
+        _ => Err(
+            "usage: almanac new NAME | almanac generate workflow|prompt NAME | almanac explain CODE"
+                .to_string(),
+        ),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

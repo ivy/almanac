@@ -22,6 +22,8 @@ flate2 = "1"
 futures = "0.3"
 hex = "0.4"
 hmac = "0.12"
+insta = "1"
+miette = { version = "7", features = ["fancy"] }
 proc-macro2 = "1"
 quote = "1"
 sandbox = { path = "crates/sandbox" }
@@ -36,6 +38,7 @@ sqlx = { version = "0.9", default-features = false, features = ["json", "macros"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tempfile = "3"
 tar = "0.4"
+thiserror = "2"
 time = { version = "0.3", features = ["formatting", "macros", "parsing", "serde"] }
 syn = { version = "2", features = ["full", "visit"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync"] }

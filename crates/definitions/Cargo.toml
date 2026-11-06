@@ -15,10 +15,14 @@ almanac.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
+broker.workspace = true
+deliveries.workspace = true
+futures.workspace = true
 github.workspace = true
 renovate-triage = { path = "../../almanacs/renovate" }
 simforge.workspace = true
 serde_json.workspace = true
+sqlx.workspace = true
 time.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "time"] }
 testcontainers-modules.workspace = true

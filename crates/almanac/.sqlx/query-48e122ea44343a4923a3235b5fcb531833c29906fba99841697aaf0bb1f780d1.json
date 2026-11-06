@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE cursors SET seq = $2 WHERE almanac = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "48e122ea44343a4923a3235b5fcb531833c29906fba99841697aaf0bb1f780d1"
+}

@@ -32,7 +32,10 @@ impl PostgresStore {
     /// Connects and brings the schema up to date.
     pub async fn connect(url: &str, almanac: &str) -> Stored<Self> {
         let pool = options().connect(url).await?;
-        sqlx::migrate!("./migrations").run(&pool).await?;
+        // The database also holds the broker's log, whose migrations are not in this set.
+        let mut migrator = sqlx::migrate!("./migrations");
+        migrator.set_ignore_missing(true);
+        migrator.run(&pool).await?;
         Ok(Self {
             pool,
             almanac: almanac.to_string(),

@@ -14,6 +14,8 @@
 crates/almanac/       the library: taint, Cx, agents, effects, workflows, runtime, store, config, app
 crates/macros/        #[workflow] and #[prompt]
 crates/cli/           the `almanac` scaffolding binary and its templates
+crates/broker/        the one webhook ingress: verifies, logs, acknowledges, knows no workflows
+crates/deliveries/    the shared log the broker writes and almanacs read
 crates/sandbox/       the Sandbox provider: rootless Podman and a fake
 crates/claude/        a Harness on the Claude Code CLI, its sandbox tools, and a stub model
 crates/registry/      publish times and package diffs, read as data

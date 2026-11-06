@@ -9,7 +9,7 @@ export SQLX_OFFLINE := true
 export DOCKER_HOST ?= unix:///run/user/$(shell id -u)/podman/podman.sock
 export TESTCONTAINERS_RYUK_DISABLED ?= true
 
-DB_TESTS := binary(store_postgres) or binary(workflows_on_postgres)
+DB_TESTS := binary(store_postgres) or binary(workflows_on_postgres) or binary(broker_flow)
 SANDBOX_TESTS := binary(podman) or binary(real_cli)
 SLOW_TESTS := $(DB_TESTS) or $(SANDBOX_TESTS)
 
@@ -51,7 +51,8 @@ fmt:
 generate:
 	cargo xtask generate
 
-# Refreshes .sqlx after a query or migration changes. Needs DATABASE_URL, migrated.
+# Refreshes .sqlx after a query or migration changes. Needs DATABASE_URL, with the migrations in
+# crates/almanac and crates/deliveries applied.
 sqlx-prepare:
 	cd crates/almanac && SQLX_OFFLINE=false cargo sqlx prepare
 

@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 almanac-macros.workspace = true
+deliveries.workspace = true
 futures.workspace = true
 miette.workspace = true
 serde.workspace = true
@@ -19,7 +20,7 @@ serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 time.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["macros", "time"] }
 toml.workspace = true
 
 [dev-dependencies]

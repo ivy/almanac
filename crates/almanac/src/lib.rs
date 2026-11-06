@@ -5,6 +5,7 @@ pub mod agent;
 pub mod app;
 pub mod clock;
 pub mod config;
+pub mod consumer;
 pub mod cooled;
 pub mod cx;
 pub mod diag;

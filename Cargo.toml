@@ -14,7 +14,9 @@ publish = false
 [workspace.dependencies]
 almanac = { path = "crates/almanac" }
 almanac-macros = { path = "crates/macros" }
+broker = { path = "crates/broker" }
 claude = { path = "crates/claude" }
+deliveries = { path = "crates/deliveries" }
 github = { path = "crates/github" }
 axum = "0.8"
 base64 = "0.22"
@@ -45,6 +47,8 @@ time = { version = "0.3", features = ["formatting", "macros", "parsing", "serde"
 syn = { version = "2", features = ["full", "visit"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync"] }
 toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json"] }
 trybuild = "1"
 uuid = { version = "1", features = ["v4"] }
 wiremock = "0.6"

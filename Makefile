@@ -13,7 +13,7 @@ DB_TESTS := binary(store_postgres) or binary(workflows_on_postgres)
 SANDBOX_TESTS := binary(podman) or binary(real_cli)
 SLOW_TESTS := $(DB_TESTS) or $(SANDBOX_TESTS)
 
-.PHONY: all build test test-db test-sandbox test-fast lint fmt generate sqlx-prepare check-public check clean
+.PHONY: all build test test-db test-sandbox test-fast lint fmt generate generated sqlx-prepare check-public check clean
 
 all: build
 
@@ -49,7 +49,7 @@ fmt:
 	cd $(ALMANAC) && cargo fmt
 
 generate:
-	python3 -I tools/gen_github.py specs/github/api.github.com.json crates/github/projection.toml > crates/github/src/events.rs
+	cargo xtask generate
 
 # Refreshes .sqlx after a query or migration changes. Needs DATABASE_URL, migrated.
 sqlx-prepare:
@@ -58,8 +58,11 @@ sqlx-prepare:
 check-public:
 	tools/check-public.sh
 
+generated:
+	cargo xtask generate --check
+
 # The gate. A change is not done until this passes.
-check: lint test test-db test-sandbox check-public
+check: lint generated test test-db test-sandbox check-public
 	cargo deny --locked check
 
 clean:

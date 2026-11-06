@@ -42,8 +42,73 @@ impl<'a> Payload<'a> {
         self.at(pointer).map(Untrusted::new)
     }
 
+    /// A field of each item in the list at `pointer`. A missing list is empty.
+    fn items<T: DeserializeOwned>(&self, pointer: &str, field: &str) -> Result<Vec<T>, Malformed> {
+        let found = self.0.pointer(pointer).and_then(Value::as_array);
+        let at = |item: &Value| item.pointer(field).cloned().unwrap_or(Value::Null);
+        found
+            .into_iter()
+            .flatten()
+            .map(|item| {
+                serde_json::from_value(at(item)).map_err(|_| Malformed {
+                    pointer: format!("{pointer}[]{field}"),
+                })
+            })
+            .collect()
+    }
+
+    pub fn list<T: Clean + DeserializeOwned>(
+        &self,
+        pointer: &str,
+        field: &str,
+    ) -> Result<Vec<T>, Malformed> {
+        self.items(pointer, field)
+    }
+
+    pub fn text_list(
+        &self,
+        pointer: &str,
+        field: &str,
+    ) -> Result<Untrusted<Vec<String>>, Malformed> {
+        self.items(pointer, field).map(Untrusted::new)
+    }
+
     pub fn optional_text(&self, pointer: &str) -> Result<Untrusted<Option<String>>, Malformed> {
         self.at(pointer).map(Untrusted::new)
+    }
+}
+
+/// An event a scan can build from a REST response. `FIELDS` pairs where a value is in the
+/// response with where the event expects it, so a scanned event takes the same path as a webhook.
+pub trait FromRest: Event {
+    const OPERATION: &'static str;
+    const FIELDS: &'static [(&'static str, &'static str)];
+
+    /// A payload shaped like the webhook, holding only the projected fields.
+    fn webhook_payload(rest: &Value) -> Value {
+        let mut payload = Value::Object(serde_json::Map::new());
+        for (from, to) in Self::FIELDS {
+            let value = rest.pointer(from).cloned().unwrap_or(Value::Null);
+            place(&mut payload, to, value);
+        }
+        payload
+    }
+}
+
+fn place(root: &mut Value, pointer: &str, value: Value) {
+    let mut current = root;
+    let mut parts = pointer.trim_start_matches('/').split('/').peekable();
+    while let Some(part) = parts.next() {
+        let Value::Object(map) = current else {
+            return;
+        };
+        if parts.peek().is_none() {
+            map.insert(part.to_string(), value);
+            return;
+        }
+        current = map
+            .entry(part.to_string())
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
     }
 }
 
@@ -54,6 +119,14 @@ pub trait Event: Observed + Send + Sync + 'static {
     fn parse(payload: &Payload<'_>) -> Result<Self, Malformed>
     where
         Self: Sized;
+
+    /// Parses a raw payload. The result can hold only `Clean` values and tainted text.
+    fn from_json(value: &Value) -> Result<Self, Malformed>
+    where
+        Self: Sized,
+    {
+        Self::parse(&Payload::new(value))
+    }
 }
 
 #[cfg(test)]

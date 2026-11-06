@@ -17,7 +17,7 @@ crates/cli/           the `almanac` scaffolding binary and its templates
 crates/sandbox/       the Sandbox provider: rootless Podman and a fake
 crates/claude/        a Harness on the Claude Code CLI, its sandbox tools, and a stub model
 crates/registry/      publish times and package diffs, read as data
-crates/github/        event types generated from specs/github by tools/gen_github.py
+crates/github/        event types generated from specs/github, and GitHub providers
 crates/simforge/      a local GitHub for tests: HTTP API, scenarios, signed webhooks, failure injection
 crates/definitions/   sample workflows and the behaviour tests
 crates/fails/         trybuild compile-fail cases; these prove the safety rules
@@ -25,7 +25,8 @@ almanacs/              standalone almanacs, each its own Cargo workspace
 images/               sandbox images
 specs/                pinned API specs for sources
 spikes/               throwaway proofs behind decisions in docs/adrs
-tools/                the throwaway generator and the publication check
+tools/                the publication check
+xtask/                code generation: projections checked against pinned specs
 docs/                 vision, principles, requirements, roadmap
 ```
 

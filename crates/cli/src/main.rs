@@ -1,4 +1,4 @@
-//! `almanac new NAME`, `almanac generate workflow|prompt NAME`, and `almanac explain CODE`.
+//! `almanac new NAME`, `almanac generate workflow|prompt|source NAME`, and `almanac explain CODE`.
 use almanac::diag::Format;
 use std::{env, fs, path::Path, process::ExitCode};
 
@@ -114,6 +114,23 @@ fn generate_prompt(name: &str) -> Result<(), String> {
     write(&file, include_str!("../templates/prompt.md"))
 }
 
+/// A projection to fill in. A source with no spec uses a hand-written `observed!` type instead.
+fn generate_source(name: &str) -> Result<(), String> {
+    if !Path::new("src/workflows/mod.rs").exists() {
+        return Err("not inside an almanac".to_string());
+    }
+    let file = format!("projections/{name}.toml");
+    if Path::new(&file).exists() {
+        return Err(format!("{file} already exists"));
+    }
+    fs::create_dir_all("projections").map_err(|e| e.to_string())?;
+    let camelled = camel(name);
+    let text = include_str!("../templates/projection.toml")
+        .replace("@CAMEL@", &camelled)
+        .replace("@NAME@", name);
+    write(&file, text)
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args
@@ -125,11 +142,12 @@ fn main() -> ExitCode {
         ["new", name] => new(name),
         ["generate", "workflow", name] => generate_workflow(name),
         ["generate", "prompt", name] => generate_prompt(name),
+        ["generate", "source", name] => generate_source(name),
         ["explain", code] => almanac::diag::explain(code)
             .map(|page| println!("{page}"))
             .map_err(|e| almanac::diag::render(&e, Format::Human)),
         _ => Err(
-            "usage: almanac new NAME | almanac generate workflow|prompt NAME | almanac explain CODE"
+            "usage: almanac new NAME | almanac generate workflow|prompt|source NAME | almanac explain CODE"
                 .to_string(),
         ),
     };

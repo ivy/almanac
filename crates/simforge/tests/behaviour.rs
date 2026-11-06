@@ -274,3 +274,85 @@ async fn a_simulated_pull_request_event_parses_as_the_real_type() {
         .unwrap();
     assert_eq!(ingest, Ingest::Queued);
 }
+
+async fn received_json(url_log: &Arc<Mutex<Vec<Received>>>, at: usize) -> Value {
+    let log = url_log.lock().unwrap();
+    serde_json::from_slice(&log[at].body).unwrap()
+}
+
+#[tokio::test]
+async fn every_simulated_webhook_parses_as_its_generated_type() {
+    use almanac::prelude::*;
+    use github::{CheckSuiteCompleted, CheckSuiteCompletedConclusion, PullRequestLabeled};
+    use github::{PullRequestSynchronize, Status, StatusState};
+
+    let (sim, number) = scripted().await;
+    let (url, received) = receiver().await;
+    sim.deliver_to(&url, "s");
+    sim.add_label(REPO, number, "security");
+    let sha = sim.pull(REPO, number).head_sha;
+    let suite = sim.add_suite(REPO, Suite::finished(&sha, "renovate/x", "failure", "boom"));
+
+    sim.pull_request(REPO, number, "labeled").await;
+    sim.pull_request(REPO, number, "synchronize").await;
+    sim.suite_completed(REPO, suite).await;
+    sim.status_changed(REPO, &sha, "ci/build", "failure").await;
+
+    let labeled = PullRequestLabeled::from_json(&received_json(&received, 0).await).unwrap();
+    let is_security: fn(&Vec<String>) -> bool = |l| l.iter().any(|name| name == "security");
+    assert!(labeled.labels.narrow(is_security));
+
+    let mut synchronize = received_json(&received, 1).await;
+    synchronize["before"] = serde_json::json!("0".repeat(40));
+    PullRequestSynchronize::from_json(&synchronize).unwrap();
+
+    let completed = CheckSuiteCompleted::from_json(&received_json(&received, 2).await).unwrap();
+    assert_eq!(
+        completed.conclusion,
+        Some(CheckSuiteCompletedConclusion::Failure)
+    );
+    assert_eq!(completed.head_branch.unwrap().to_string(), "renovate/x");
+
+    let status = Status::from_json(&received_json(&received, 3).await).unwrap();
+    assert_eq!(status.state, StatusState::Failure);
+}
+
+#[tokio::test]
+async fn a_rest_pull_request_becomes_the_same_event_as_its_webhook() {
+    use almanac::prelude::*;
+    use github::PullRequestOpened;
+
+    let sim = SimForge::start().await;
+    sim.add_repo(Repo::public(REPO));
+    let mut pull = Pull::renovate("renovate/lodash-4.x", "Update lodash");
+    pull.labels.push("dependencies".to_string());
+    let number = sim.add_pull(REPO, pull);
+    let (url, received) = receiver().await;
+    sim.deliver_to(&url, "s");
+    sim.pull_request(REPO, number, "opened").await;
+
+    let rest: Value = get(&sim, &format!("/repos/{REPO}/pulls/{number}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let scanned = PullRequestOpened::from_json(&PullRequestOpened::webhook_payload(&rest)).unwrap();
+    let webhook = PullRequestOpened::from_json(&received_json(&received, 0).await).unwrap();
+
+    let as_json = |e: &PullRequestOpened| serde_json::to_value(e).unwrap();
+    assert_eq!(as_json(&scanned), as_json(&webhook));
+}
+
+#[test]
+fn a_real_pull_request_fixture_still_parses() {
+    use almanac::prelude::*;
+    let text = include_str!("../../../almanacs/renovate/fixtures/renovate-pr-opened.json");
+    let value: Value = serde_json::from_str(text).unwrap();
+    let event = github::PullRequestOpened::from_json(&value).unwrap();
+    assert_eq!(event.repo.to_string(), "ivy/thicket");
+    assert_eq!(event.author.to_string(), "ivy-s-renovate-bot[bot]");
+    let labels: fn(&Vec<String>) -> bool = |l| l.iter().any(|name| name == "dependencies");
+    assert!(event.labels.narrow(labels));
+}

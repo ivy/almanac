@@ -1,0 +1,8 @@
+# The fields this source's workflows need, checked against a pinned spec when generating.
+# A string is Untrusted unless `as` names a validated type, such as Slug or Sha.
+[@CAMEL@]
+webhook = "@NAME@"
+kind = "@NAME@.event"
+fields.id = { path = "id" }
+fields.repo = { path = "repository.full_name", as = "Slug" }
+fields.title = { path = "title" }

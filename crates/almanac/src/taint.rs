@@ -66,6 +66,8 @@ macro_rules! seal {
 seal!(bool, u32, u64, f64, Slug, Sha);
 impl<T: Clean> __private::Sealed for Option<T> {}
 impl<T: Clean> Clean for Option<T> {}
+impl<T: Clean> __private::Sealed for Vec<T> {}
+impl<T: Clean> Clean for Vec<T> {}
 impl __private::SealedFinite for bool {}
 impl Finite for bool {}
 

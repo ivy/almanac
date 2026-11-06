@@ -15,6 +15,7 @@ crates/almanac/       the library: taint, Cx, agents, effects, workflows, runtim
 crates/macros/        #[workflow] and #[prompt]
 crates/cli/           the `almanac` scaffolding binary and its templates
 crates/github/        event types generated from specs/github by tools/gen_github.py
+crates/simforge/      a local GitHub for tests: HTTP API, scenarios, signed webhooks, failure injection
 crates/definitions/   sample workflows and the behaviour tests
 crates/fails/         trybuild compile-fail cases; these prove the safety rules
 almanacs/              standalone almanacs, each its own Cargo workspace

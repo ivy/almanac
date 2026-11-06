@@ -19,6 +19,7 @@ crates/deliveries/    the shared log the broker writes and almanacs read
 crates/sandbox/       the Sandbox provider: rootless Podman and a fake
 crates/claude/        a Harness on the Claude Code CLI, its sandbox tools, and a stub model
 crates/registry/      publish times and package diffs, read as data
+crates/advisory/      vulnerability advisories, and checking an update against one
 crates/github/        event types generated from specs/github, and GitHub providers
 crates/simforge/      a local GitHub for tests: HTTP API, scenarios, signed webhooks, failure injection
 crates/definitions/   sample workflows and the behaviour tests

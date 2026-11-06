@@ -59,6 +59,7 @@ cd my-almanac
 | [docs/core-principles.md](docs/core-principles.md) | The decision filters |
 | [docs/prd.md](docs/prd.md) | The requirements, numbered, and the stack |
 | [docs/roadmap.md](docs/roadmap.md) | What is deferred, and to which milestone |
+| [docs/deploying.md](docs/deploying.md) | How to run it, stage by stage |
 | [docs/coverage.md](docs/coverage.md) | Which test proves each requirement, and what is not met |
 | [AGENTS.md](AGENTS.md) | How to work in this repository |
 

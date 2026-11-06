@@ -64,6 +64,11 @@ fn client() -> Option<GithubClient> {
     })
 }
 
+/// For verbs that only look: it refuses writes whatever else is set.
+pub fn read_only_client() -> Option<GithubClient> {
+    client().map(GithubClient::read_only)
+}
+
 /// Stands in for an agent when nothing may be spent, so a run records how far it got.
 struct NoAgent;
 

@@ -10,7 +10,7 @@ Everything in [prd.md](prd.md), running against a simulated forge and PostgreSQL
 
 ## M1: Running
 
-The operator deploys `almanacs/renovate` across their repositories, starting with a dry run and one repository.
+The operator deploys `almanacs/renovate` across their repositories, starting with a dry run and one repository. [deploying.md](deploying.md) has the steps.
 
 - One GitHub App across all repositories, its webhook URL pointed at the broker, because GitHub has no account-level webhook for personal accounts
 - The broker behind a public HTTPS ingress, and each almanac as a lingering systemd user service

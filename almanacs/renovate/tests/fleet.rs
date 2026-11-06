@@ -353,6 +353,7 @@ async fn the_verb_reads_through_the_binary_and_refuses_without_a_token() {
     let refused = tokio::process::Command::new(binary)
         .args(["--format", "json", "report"])
         .env_clear()
+        .env("ALMANAC_OWNER", OWNER)
         .output()
         .await
         .unwrap();
@@ -367,4 +368,20 @@ fn a_real_commits_suites_read_as_green_despite_apps_that_never_ran() {
     let suites: serde_json::Value = serde_json::from_str(suites).unwrap();
     let statuses = serde_json::json!({"statuses": []});
     assert_eq!(checks_of(&suites, &statuses), Checks::Green);
+}
+
+#[test]
+fn a_json5_renovate_config_is_read() {
+    let text = "{\n  // Comments and trailing commas are normal here.\n  platformAutomerge: false,\n  automerge: true,\n}\n";
+    let config = config_of(Some(text), false);
+    assert_eq!(config.platform_automerge, Some(false));
+    assert_eq!(config.automerge, Some(true));
+}
+
+#[test]
+fn a_config_that_cannot_be_read_is_unknown() {
+    assert_eq!(
+        config_of(Some("not config at all {"), false),
+        RepoConfig::default()
+    );
 }

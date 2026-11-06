@@ -13,13 +13,20 @@ DB_TESTS := binary(store_postgres) or binary(workflows_on_postgres) or binary(br
 SANDBOX_TESTS := binary(podman) or binary(real_cli)
 SLOW_TESTS := $(DB_TESTS) or $(SANDBOX_TESTS) or binary(scaffold)
 
-.PHONY: all build test test-db test-sandbox test-e2e test-scaffold test-fast lint fmt generate generated sqlx-prepare check-public verify-units check clean
+.PHONY: all build package test test-db test-sandbox test-e2e test-scaffold test-fast lint fmt generate generated sqlx-prepare check-public verify-units check clean
 
 all: build
 
 build:
 	cargo build --workspace --locked
 	cd $(ALMANAC) && cargo build --locked
+
+# Release binaries in dist/, for docs/deploying.md.
+package:
+	cargo build --release --locked --package broker
+	cd $(ALMANAC) && cargo build --release --locked
+	mkdir -p dist
+	cp target/release/almanac-broker $(ALMANAC)/target/release/almanac-renovate dist/
 
 # Every test. almanacs keep their own Cargo workspaces, so each is tested on its own.
 test:

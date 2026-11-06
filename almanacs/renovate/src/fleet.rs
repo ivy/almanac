@@ -2,14 +2,14 @@
 //! never stored, so it cannot go stale. Pull request titles are hostile text, so a report names a
 //! pull request by number and validated branch only.
 use crate::events::PATCH_TRAILER;
-use crate::providers::registry_endpoints;
+use crate::providers::{read_only_client, registry_endpoints};
 use crate::update::{Ages, PullText, RegistryAges, update_of};
 use crate::workflows::build_failures::MIN_RELEASE_AGE;
 use almanac::diag::Error;
 use almanac::prelude::*;
 use almanac::{Said, Verb};
 use futures::future::BoxFuture;
-use github::client::{Auth, GithubClient};
+use github::client::GithubClient;
 use registry::HttpRegistry;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -22,10 +22,12 @@ pub const ATTEMPT_CAP: u32 = 3;
 pub const TRUST_CONTEXT: &str = "almanac/trust";
 /// Renovate's login in the operator's repositories, unless the environment names another.
 const DEFAULT_AUTHOR: &str = "ivy-s-renovate-bot[bot]";
-const CONFIG_FILES: [&str; 4] = [
+const CONFIG_FILES: [&str; 6] = [
     "renovate.json",
+    "renovate.json5",
     ".renovaterc.json",
     ".github/renovate.json",
+    ".github/renovate.json5",
     ".renovaterc",
 ];
 const VULNERABILITY_SUFFIX: &str = "-vulnerability";
@@ -252,8 +254,8 @@ fn trust_of(statuses: &Value) -> Option<Trust> {
     }
 }
 
-fn config_of(text: Option<&str>, trust_required: bool) -> RepoConfig {
-    let parsed = text.and_then(|t| serde_json::from_str::<Value>(t).ok());
+pub fn config_of(text: Option<&str>, trust_required: bool) -> RepoConfig {
+    let parsed = text.and_then(|t| json5::from_str::<Value>(t).ok());
     let flag = |key: &str| parsed.as_ref().and_then(|c| c[key].as_bool());
     RepoConfig {
         automerge: flag("automerge"),
@@ -449,16 +451,17 @@ fn required(name: &str, purpose: &str) -> Result<String, Error> {
 /// Always read-only: a report has no reason to write.
 fn report_verb<'a>(_args: &'a [String], _config: &'a Config) -> BoxFuture<'a, Result<Said, Error>> {
     Box::pin(async move {
-        let token = required("GITHUB_TOKEN", "a token that can read the repositories")?;
         let owner = required(
             "ALMANAC_OWNER",
             "the account whose repositories to report on",
         )?;
-        let api = std::env::var("GITHUB_API_URL");
-        let api = api.unwrap_or_else(|_| "https://api.github.com".to_string());
         let author = std::env::var("ALMANAC_RENOVATE_AUTHOR");
         let author = author.unwrap_or_else(|_| DEFAULT_AUTHOR.to_string());
-        let client = GithubClient::new(api, Auth::Token(token)).read_only();
+        let client = read_only_client().ok_or_else(|| Error::EnvMissing {
+            name: "GITHUB_TOKEN".to_string(),
+            purpose: "a token that can read the repositories, or the GITHUB_APP_ settings"
+                .to_string(),
+        })?;
         let registry = HttpRegistry::new(registry_endpoints());
         let ages = RegistryAges(Arc::new(registry));
         let found = report(&client, &ages, &owner, &author).await?;

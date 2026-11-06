@@ -16,6 +16,7 @@ almanac = { path = "../../crates/almanac" }
 futures = "0.3"
 claude = { path = "../../crates/claude" }
 github = { path = "../../crates/github" }
+json5 = "1"
 registry = { path = "../../crates/registry" }
 sandbox = { path = "../../crates/sandbox" }
 serde = { version = "1", features = ["derive"] }

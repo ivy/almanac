@@ -30,6 +30,12 @@ const VERIFY: &str = "cd /work; status=0; \
         pnpm -r --if-present run \"$script\" || status=1; \
       done; \
     fi; \
+    if [ -f package-lock.json ]; then \
+      npm install --offline --ignore-scripts --no-audit --no-fund || status=1; \
+      for script in typecheck lint test build; do \
+        npm run --if-present \"$script\" || status=1; \
+      done; \
+    fi; \
     find . -name go.mod -not -path './node_modules/*' -not -path './.cache/*' | while read -r mod; do \
       (cd \"$(dirname \"$mod\")\" && go build ./... && go test ./...) || exit 1; \
     done || status=1; \
@@ -61,6 +67,8 @@ fn spec(base: SandboxSpec) -> SandboxSpec {
             ("COREPACK_HOME", "/work/.cache/corepack"),
             ("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0"),
             ("GOTOOLCHAIN", "local"),
+            ("npm_config_cache", "/work/.cache/npm"),
+            ("npm_config_prefer_offline", "true"),
             ("npm_config_store_dir", "/work/.cache/pnpm"),
             ("pnpm_config_store_dir", "/work/.cache/pnpm"),
             ("PNPM_STORE_DIR", "/work/.cache/pnpm"),
@@ -140,7 +148,7 @@ fn stub_agent(_: &Value) -> Turn {
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (list, out) = (&args[0], &args[1]);
-    let stub = args.iter().any(|a| a == "--stub");
+    let stub = args.iter().any(|a| a.starts_with("--stub"));
     std::fs::create_dir_all(format!("{out}/patches")).unwrap();
     let targets: Vec<Value> =
         serde_json::from_str(&std::fs::read_to_string(list).unwrap()).unwrap();
@@ -148,7 +156,17 @@ async fn main() {
     let api = "https://api.github.com";
     let client = Arc::new(GithubClient::new(api, Auth::Token(token)).read_only());
 
-    let model = if stub {
+    let scripted = args
+        .iter()
+        .position(|a| a == "--stub-exec")
+        .map(|i| args[i + 1].clone());
+    let model = if let Some(command) = scripted {
+        let exec = Turn::Tool {
+            name: "mcp__sandbox__exec".to_string(),
+            input: json!({"command": command}),
+        };
+        Some(StubModel::start(vec![exec, stub_agent(&Value::Null)]).await)
+    } else if stub {
         Some(StubModel::answering(stub_agent).await)
     } else {
         None

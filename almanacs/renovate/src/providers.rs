@@ -18,6 +18,8 @@ const API: &str = "https://api.github.com";
 const CVE_NOW: &str = "https://cve.now";
 const DEFAULT_AUTHOR: &str = "ivy-s-renovate-bot[bot]";
 const SANDBOX_IMAGE: &str = "localhost/almanac-fixer:latest";
+/// Stops a runaway session. It is a ceiling, not a target.
+const MAX_SESSION_USD: f64 = 6.0;
 
 /// Reads commits for the harness.
 struct GithubCheckouts(Arc<GithubClient>);
@@ -87,6 +89,7 @@ impl Harness for NoAgent {
 fn harness(checkouts: Arc<GithubClient>) -> Option<ClaudeHarness> {
     let mut config = ClaudeConfig::new(env::var("ANTHROPIC_API_KEY").ok()?);
     config.base_url = env::var("ANTHROPIC_BASE_URL").ok();
+    config.max_budget_usd = Some(MAX_SESSION_USD);
     let sandbox: Arc<dyn Sandbox> = Arc::new(PodmanSandbox);
     let image = env::var("ALMANAC_SANDBOX_IMAGE").unwrap_or_else(|_| SANDBOX_IMAGE.to_string());
     let cache = |spec: SandboxSpec| SandboxSpec {
@@ -96,6 +99,11 @@ fn harness(checkouts: Arc<GithubClient>) -> Option<ClaudeHarness> {
             ("GOMODCACHE".to_string(), "/work/.cache/go".to_string()),
             ("GOCACHE".to_string(), "/work/.cache/gobuild".to_string()),
             ("GOTOOLCHAIN".to_string(), "local".to_string()),
+            (
+                "npm_config_cache".to_string(),
+                "/work/.cache/npm".to_string(),
+            ),
+            ("npm_config_prefer_offline".to_string(), "true".to_string()),
             ("XDG_CACHE_HOME".to_string(), "/work/.cache".to_string()),
             (
                 "COREPACK_HOME".to_string(),

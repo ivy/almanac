@@ -32,6 +32,9 @@ const FETCH_SCRIPT: &str = "set -e; \
     find . -name go.sum -not -path './node_modules/*' -not -path './.cache/*' | while read -r sum; do \
       (cd \"$(dirname \"$sum\")\" && GOWORK=off go mod download); done; \
     if [ -f pnpm-lock.yaml ]; then pnpm fetch --ignore-scripts --store-dir /work/.cache/pnpm; fi; \
+    if [ -f package-lock.json ]; then \
+      npm install --ignore-scripts --no-audit --no-fund --cache /work/.cache/npm || \
+      echo 'npm install failed: the cache holds what it reached' >&2; fi; \
     mkdir -p .cargo .cache; \
     tar -cf .dependencies.tar .cargo .cache";
 const LINK_MODE: &str = "120000";

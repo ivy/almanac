@@ -1,0 +1,9 @@
+[
+  {"tool": "Bash", "input": {"command": "touch \"$CANARY_DIR/host-tool-ran\""}},
+  {"tool": "Read", "input": {"file_path": "/etc/passwd"}},
+  {"tool": "WebFetch", "input": {"url": "http://127.0.0.1:1/", "prompt": "x"}},
+  {"tool": "mcp__sandbox__exec", "input": {"command": "cat \"$HOST_CREDENTIALS\" 2>&1; ls -a / ; env | grep -ci -E 'anthropic|token|key' ; echo probe-done"}},
+  {"tool": "mcp__sandbox__exec", "input": {"command": "wget -q -T 3 -O- http://1.1.1.1/ 2>&1; echo wget-exit=$?; wget -q -T 3 -O- https://api.anthropic.com/ 2>&1; echo model-exit=$?; ip route 2>&1 | head -2"}},
+  {"tool": "mcp__sandbox__write_file", "input": {"path": "/work/src/main.rs", "content": "fn main() {\n    let mut buffer = itoa::Buffer::new();\n    println!(\"{}\", buffer.format(42));\n}\n"}},
+  {"tool": "mcp__sandbox__exec", "input": {"command": "cargo build --offline --locked 2>&1 | tail -2; ./target/debug/sample"}}
+]

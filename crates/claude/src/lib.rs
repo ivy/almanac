@@ -44,7 +44,8 @@ pub struct ClaudeConfig {
     /// Overrides the API endpoint. Tests point this at a stub.
     pub base_url: Option<String>,
     pub model: Option<String>,
-    /// Input plus output tokens a session may use before it is killed.
+    /// Tokens a session may use before it is killed, cached ones included, because a long
+    /// session's context is nearly all cache reads.
     pub token_budget: u64,
     pub timeout: Duration,
     pub max_turns: u32,
@@ -422,10 +423,15 @@ async fn changes(sandbox: &dyn Sandbox, id: &SandboxId) -> Result<Vec<Value>, St
 }
 
 fn tokens(usage: &Value) -> u64 {
-    ["input_tokens", "output_tokens"]
-        .iter()
-        .filter_map(|k| usage[k].as_u64())
-        .sum()
+    [
+        "input_tokens",
+        "output_tokens",
+        "cache_creation_input_tokens",
+        "cache_read_input_tokens",
+    ]
+    .iter()
+    .filter_map(|k| usage[k].as_u64())
+    .sum()
 }
 
 /// The end of a command's output, where a failure usually shows.
@@ -439,13 +445,19 @@ async fn read_result(child: &mut Child, budget: u64) -> Result<(String, Value), 
     let stdout = child.stdout.take().expect("stdout was piped");
     let mut lines = BufReader::new(stdout).lines();
     let mut used = 0;
+    let mut counted = None;
     while let Some(line) = lines.next_line().await.map_err(step)? {
         let Ok(event) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
         match event["type"].as_str() {
             Some("assistant") => {
-                used += tokens(&event["message"]["usage"]);
+                // A message arrives as one event per content block, each repeating its usage.
+                let id = event["message"]["id"].as_str().map(str::to_string);
+                if id.is_none() || id != counted {
+                    used += tokens(&event["message"]["usage"]);
+                }
+                counted = id;
                 if used > budget {
                     return Err(step(format!(
                         "session killed: used {used} tokens of a {budget} budget"

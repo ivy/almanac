@@ -82,6 +82,31 @@ async fn a_session_over_its_token_budget_is_killed_and_reported() {
 }
 
 #[tokio::test]
+async fn cached_tokens_count_against_the_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let usage = json!({"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 200});
+    let event = json!({"type": "assistant", "message": {"usage": usage}});
+    let mut config = cli(dir.path(), &format!("echo '{event}'\nsleep 30"));
+    config.token_budget = 100;
+    let error = read(config).await.unwrap_err();
+    assert!(error.contains("202 tokens of a 100 budget"), "{error}");
+}
+
+#[tokio::test]
+async fn a_message_split_across_events_is_counted_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let event =
+        json!({"type": "assistant", "message": {"id": "m1", "usage": {"input_tokens": 60}}});
+    let done = json!({"type": "result", "is_error": false, "result": "{}"});
+    let mut config = cli(
+        dir.path(),
+        &format!("echo '{event}'\necho '{event}'\necho '{done}'"),
+    );
+    config.token_budget = 100;
+    assert_eq!(read(config).await.unwrap(), json!({}));
+}
+
+#[tokio::test]
 async fn a_session_over_its_time_limit_is_killed_and_reported() {
     let dir = tempfile::tempdir().unwrap();
     let mut config = cli(dir.path(), "sleep 30");

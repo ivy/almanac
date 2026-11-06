@@ -2,8 +2,10 @@
 use crate::config::Config;
 use crate::providers::Providers;
 use crate::runtime::{Envelope, Runtime};
+use crate::store::PostgresStore;
 use crate::workflow::Registered;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 const USAGE: &str = "usage: <almanac> synth | check | ingest KIND FILE | serve";
 
@@ -23,7 +25,17 @@ pub fn main(name: &'static str, workflows: Workflows, setup: Setup) -> ExitCode 
 fn run(name: &'static str, workflows: Workflows, setup: Setup) -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let config = Config::load()?;
-    let runtime = Runtime::new(workflows(), setup(&config)).tightened(config.limits());
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut runtime = Runtime::new(workflows(), setup(&config)).tightened(config.limits());
+    if let Ok(url) = std::env::var("DATABASE_URL") {
+        let store = rt
+            .block_on(PostgresStore::connect(&url, name))
+            .map_err(|e| e.to_string())?;
+        runtime = runtime.with_store(Arc::new(store));
+    }
     runtime.validate()?;
 
     match args
@@ -54,11 +66,14 @@ fn run(name: &'static str, workflows: Workflows, setup: Setup) -> Result<(), Str
                 depth: 0,
                 payload,
             };
-            println!("ingest: {:?}", runtime.ingest(envelope));
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .build()
+            let outcomes = rt
+                .block_on(async {
+                    runtime.recover().await?;
+                    println!("ingest: {:?}", runtime.ingest(envelope).await?);
+                    runtime.drain().await
+                })
                 .map_err(|e| e.to_string())?;
-            for outcome in rt.block_on(runtime.drain()) {
+            for outcome in outcomes {
                 println!("{outcome:?}");
             }
         }

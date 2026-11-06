@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n                         SELECT 1 FROM runs\n                         WHERE almanac = $1 AND workflow = $2 AND key = $3 AND status = 'running'\n                       ) AS \"running!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "running!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d2abc62f12a5ff6a32c29090d62f65abac9a158199904e56d20d389f184fa19c"
+}

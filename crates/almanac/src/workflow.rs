@@ -14,6 +14,9 @@ use std::future::Future;
 pub struct Subject(String);
 
 impl Subject {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
     pub fn repo(repo: &Slug) -> Self {
         Self(format!("repo:{repo}"))
     }

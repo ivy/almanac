@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"held!\" FROM pending p\n                   WHERE p.almanac = $1 AND p.workflow = $2\n                     AND NOT EXISTS (\n                       SELECT 1 FROM runs r\n                       WHERE r.almanac = p.almanac AND r.workflow = p.workflow\n                         AND r.key = p.key AND r.status = 'running'\n                     )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "held!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "17033a92341a815cb706921d52d38d59326a02c56eeaa33ad968062579d71138"
+}

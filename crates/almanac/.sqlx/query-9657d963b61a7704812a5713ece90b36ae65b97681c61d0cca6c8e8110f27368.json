@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.workflow, p.key, p.payload, p.subjects\n             FROM pending p\n             WHERE p.almanac = $1\n               AND p.workflow = ANY($2)\n               AND NOT EXISTS (\n                 SELECT 1 FROM tripped t WHERE t.almanac = p.almanac AND t.workflow = p.workflow\n               )\n               AND NOT EXISTS (\n                 SELECT 1 FROM runs r\n                 WHERE r.almanac = p.almanac AND r.workflow = p.workflow\n                   AND r.key = p.key AND r.status = 'running'\n               )\n             ORDER BY p.seq\n             LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workflow",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pending",
+            "name": "workflow"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pending",
+            "name": "key"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "payload",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "pending",
+            "name": "payload"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "subjects",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "pending",
+            "name": "subjects"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9657d963b61a7704812a5713ece90b36ae65b97681c61d0cca6c8e8110f27368"
+}

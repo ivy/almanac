@@ -11,7 +11,7 @@
 ## Repo map
 
 ```text
-crates/almanac/       the library: taint, Cx, agents, effects, workflows, runtime, config, app
+crates/almanac/       the library: taint, Cx, agents, effects, workflows, runtime, store, config, app
 crates/macros/        #[workflow] and #[prompt]
 crates/cli/           the `almanac` scaffolding binary and its templates
 crates/github/        event types generated from specs/github by tools/gen_github.py
@@ -28,6 +28,8 @@ docs/                 vision, principles, requirements, roadmap
 - **Set up:** `mise install`, then `hk install --mise`. If a global `core.hooksPath` is set, first run `git config --local core.hooksPath .git/hooks`.
 - **The gate:** `make check` runs lint, every test, the publication check, and `cargo deny`. A change is not done until it passes.
 - **Regenerate event types:** `make generate`.
+- **Change a query or migration:** run `make sqlx-prepare` with `DATABASE_URL` pointing at a migrated database, and commit `crates/almanac/.sqlx`. Builds use that metadata and need no database.
+- **Database tests:** `make test-db` needs podman. `make check` includes it.
 - **Accept compile-fail output:** `TRYBUILD=overwrite cargo test -p fails`, then read every changed `.stderr`. A case must fail for its intended reason, not for an unrelated error.
 - **Try an almanac:** `cargo run -- synth` or `cargo run -- ingest KIND FILE` inside `almanacs/renovate`.
 
@@ -58,6 +60,6 @@ This repository is public, and everything pushed to it stays public.
 
 - `almanacs/renovate/src/workflows/dependency_updates.rs`: what authoring looks like.
 - `crates/almanac/src/taint.rs`: the taint rules, and `crates/fails/tests/ui/` for what they refuse.
-- `crates/almanac/src/runtime.rs`: dedupe, keys, budgets, and replay.
+- `crates/almanac/src/runtime.rs`: routing, limits, and replay. `crates/almanac/src/store/` holds dedupe, keys, and the run log.
 - `crates/macros/src/lib.rs`: what `#[workflow]` and `#[prompt]` generate.
 - `docs/prd.md`: numbered requirements. Nodes cite them as `R-n`.

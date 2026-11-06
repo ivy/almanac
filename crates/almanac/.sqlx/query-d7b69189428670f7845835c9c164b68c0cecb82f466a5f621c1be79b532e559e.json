@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO run_subjects (run_id, subject)\n         SELECT $1, subject FROM unnest($2::text[]) AS subject\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d7b69189428670f7845835c9c164b68c0cecb82f466a5f621c1be79b532e559e"
+}

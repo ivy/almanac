@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pending (almanac, workflow, key, payload, subjects)\n                       VALUES ($1, $2, $3, $4, $5)\n                       ON CONFLICT (almanac, workflow, key)\n                       DO UPDATE SET payload = EXCLUDED.payload, subjects = EXCLUDED.subjects\n                       RETURNING (xmax = 0) AS \"inserted!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inserted!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "69ab8ad893fee1467f854e5e1196e90caca931a5a2df1087928d5d9ea0f2962b"
+}

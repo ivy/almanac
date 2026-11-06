@@ -2,9 +2,9 @@
 //! returns recorded results instead of doing the work again.
 use crate::agent::{AgentSpec, Bound, Classifier, Harness, Pass};
 use crate::providers::Providers;
+use crate::store::{Store, StoreError};
 use crate::taint::{Observed, Untrusted};
 use serde::{Serialize, de::DeserializeOwned};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
@@ -14,6 +14,12 @@ impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> Record for T {}
 
 #[derive(Debug)]
 pub struct StepError(pub String);
+
+impl From<StoreError> for StepError {
+    fn from(e: StoreError) -> Self {
+        Self(e.to_string())
+    }
+}
 
 impl From<serde_json::Error> for StepError {
     fn from(e: serde_json::Error) -> Self {
@@ -34,11 +40,9 @@ impl<E: Into<StepError>> From<E> for Halt {
     }
 }
 
-pub(crate) type RunLog = Arc<Mutex<HashMap<(String, String, usize), Value>>>;
-
 pub struct Cx {
     run_id: String,
-    log: RunLog,
+    store: Arc<dyn Store>,
     counts: Mutex<HashMap<&'static str, usize>>,
     agents: Vec<&'static str>,
     providers: Arc<Providers>,
@@ -47,13 +51,13 @@ pub struct Cx {
 impl Cx {
     pub(crate) fn new(
         run_id: String,
-        log: RunLog,
+        store: Arc<dyn Store>,
         agents: Vec<&'static str>,
         providers: Arc<Providers>,
     ) -> Self {
         Self {
             run_id,
-            log,
+            store,
             counts: Mutex::default(),
             agents,
             providers,
@@ -89,14 +93,14 @@ impl Cx {
             *n += 1;
             *n
         };
-        let key = (self.run_id.clone(), name.to_string(), occurrence);
-        let recorded = self.log.lock().unwrap().get(&key).cloned();
-        if let Some(value) = recorded {
+        if let Some(value) = self.store.recorded(&self.run_id, name, occurrence).await? {
             return Ok(serde_json::from_value(value)?);
         }
         let out = work.await?;
         let value = serde_json::to_value(&out)?;
-        self.log.lock().unwrap().insert(key, value);
+        self.store
+            .record(&self.run_id, name, occurrence, value)
+            .await?;
         Ok(out)
     }
 

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM pending WHERE almanac = $1 AND workflow = $2 AND key = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d0afc8919e28451faba81ec4b2aa0602b7d477392c2da348d0619f553d7da399"
+}

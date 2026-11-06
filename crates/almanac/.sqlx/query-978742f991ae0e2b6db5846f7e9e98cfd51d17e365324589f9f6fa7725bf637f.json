@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id FROM run_subjects s JOIN runs r ON r.id = s.run_id\n                 WHERE s.subject = $1 AND r.almanac = $2\n                 ORDER BY r.seq",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "runs",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "978742f991ae0e2b6db5846f7e9e98cfd51d17e365324589f9f6fa7725bf637f"
+}

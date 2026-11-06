@@ -8,6 +8,7 @@ pub mod cx;
 pub mod effect;
 pub mod providers;
 pub mod runtime;
+pub mod store;
 pub mod taint;
 pub mod testing;
 pub mod wire;

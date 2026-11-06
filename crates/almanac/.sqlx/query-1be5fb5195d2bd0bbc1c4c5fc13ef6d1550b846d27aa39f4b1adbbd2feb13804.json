@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO seen (almanac, source, delivery_id) VALUES ($1, $2, $3)\n             ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1be5fb5195d2bd0bbc1c4c5fc13ef6d1550b846d27aa39f4b1adbbd2feb13804"
+}

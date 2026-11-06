@@ -1,12 +1,13 @@
-//! In-memory stand-in for the stateful service. `seen` is a unique index in a real build,
-//! and `slots` a table whose partial unique index enforces one active run per key.
-use crate::cx::{Cx, Halt, RunLog, StepError};
+//! Routes events, runs workflows, and applies limits. What it must remember is in `store`.
+use crate::cx::{Cx, Halt, StepError};
 use crate::effect::{ActionSummary, Effect};
 use crate::providers::Providers;
+use crate::store::{
+    Admission, Budget, Claim, MemoryStore, Pending, Run, Store, StoreError, Stored,
+};
 use crate::workflow::{Decided, Registered, Subject};
 use futures::future::{BoxFuture, join_all};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 pub const MAX_CHAIN_DEPTH: u32 = 3;
@@ -53,7 +54,7 @@ pub struct Envelope {
     pub payload: Value,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Ingest {
     Duplicate,
     ChainStopped,
@@ -109,44 +110,12 @@ impl Guard for AllowDeclared {
     }
 }
 
-type Slot = (usize, String);
-
-struct Pending {
-    payload: Value,
-    subjects: Vec<Subject>,
-}
-
-/// The per-key state machine. Every transition is one match on this.
-enum SlotState {
-    Queued(Pending),
-    Running { next: Option<Pending> },
-}
-
-#[derive(Clone)]
-struct Run {
-    id: String,
-    workflow: usize,
-    payload: Value,
-}
-
-#[derive(Default)]
-struct State {
-    seen: HashSet<(String, String)>,
-    slots: BTreeMap<Slot, SlotState>,
-    started: HashMap<usize, u32>,
-    tripped: HashSet<usize>,
-    runs: HashMap<String, Run>,
-    subjects: HashMap<Subject, Vec<String>>,
-    next_run: u64,
-}
-
 pub struct Runtime {
     workflows: Vec<Box<dyn Registered>>,
     providers: Arc<Providers>,
     guard: Box<dyn Guard>,
     limits: Limits,
-    state: Mutex<State>,
-    log: RunLog,
+    store: Arc<dyn Store>,
 }
 
 impl Runtime {
@@ -156,9 +125,13 @@ impl Runtime {
             providers: Arc::new(providers),
             guard: Box::new(AllowDeclared),
             limits: Limits::default(),
-            state: Mutex::default(),
-            log: Arc::default(),
+            store: Arc::new(MemoryStore::default()),
         }
+    }
+
+    pub fn with_store(mut self, store: Arc<dyn Store>) -> Self {
+        self.store = store;
+        self
     }
 
     pub fn guarded(mut self, guard: impl Guard + 'static) -> Self {
@@ -201,113 +174,59 @@ impl Runtime {
         self.workflows.iter().map(|w| w.manifest()).collect()
     }
 
-    /// Routes to the first matching workflow; a real build fans out to all of them.
-    pub fn ingest(&self, e: Envelope) -> Ingest {
-        let mut s = self.state.lock().unwrap();
-        if !s.seen.insert((e.source, e.delivery_id)) {
-            return Ingest::Duplicate;
+    /// Routes to the first matching workflow.
+    /// A delivery is seen only once this returns `Ok`, so an error means it can be redelivered.
+    pub async fn ingest(&self, e: Envelope) -> Stored<Ingest> {
+        let admission = self.admission(&e.kind, e.depth, e.payload);
+        self.store.admit(&e.source, &e.delivery_id, admission).await
+    }
+
+    fn admission(&self, kind: &str, depth: u32, payload: Value) -> Admission {
+        if depth > self.limits.max_depth {
+            return Admission::Drop(Ingest::ChainStopped);
         }
-        if e.depth > self.limits.max_depth {
-            return Ingest::ChainStopped;
-        }
-        let Some(workflow) = self.workflows.iter().position(|w| w.kind() == e.kind) else {
-            return Ingest::Unrouted;
+        let Some(workflow) = self.workflows.iter().find(|w| w.kind() == kind) else {
+            return Admission::Drop(Ingest::Unrouted);
         };
-        let Ok(id) = self.workflows[workflow].identify(&e.payload) else {
-            return Ingest::Rejected;
+        let Ok(id) = workflow.identify(&payload) else {
+            return Admission::Drop(Ingest::Rejected);
         };
-        let pending = Pending {
-            payload: e.payload,
+        Admission::Queue(Pending {
+            workflow: workflow.name().to_string(),
+            key: id.key,
+            payload,
             subjects: id.subjects,
-        };
-        match s.slots.get_mut(&(workflow, id.key.clone())) {
-            None => {
-                s.slots
-                    .insert((workflow, id.key), SlotState::Queued(pending));
-                Ingest::Queued
-            }
-            Some(SlotState::Queued(queued)) => {
-                *queued = pending;
-                Ingest::Coalesced
-            }
-            Some(SlotState::Running { next }) => {
-                *next = Some(pending);
-                Ingest::MarkedDirty
-            }
-        }
+        })
     }
 
-    fn claim(&self, out: &Mutex<Vec<Outcome>>) -> Option<(Slot, Run)> {
-        let mut s = self.state.lock().unwrap();
-        let queued: Vec<Slot> = s
-            .slots
+    fn budgets(&self) -> Vec<Budget> {
+        self.workflows
             .iter()
-            .filter(|(_, state)| matches!(state, SlotState::Queued(_)))
-            .map(|(slot, _)| slot.clone())
-            .collect();
-        for slot in queued {
-            let workflow = slot.0;
-            if s.tripped.contains(&workflow) {
-                continue;
-            }
-            let declared = self.workflows[workflow].runs_per_hour();
-            let limit = self
-                .limits
-                .runs_cap
-                .map_or(declared, |cap| cap.min(declared));
-            if *s.started.get(&workflow).unwrap_or(&0) >= limit {
-                s.tripped.insert(workflow);
-                let held = s
-                    .slots
-                    .iter()
-                    .filter(|(k, v)| k.0 == workflow && matches!(v, SlotState::Queued(_)))
-                    .count();
-                out.lock().unwrap().push(Outcome::BudgetTripped {
-                    workflow: self.workflows[workflow].name(),
-                    held,
-                });
-                continue;
-            }
-            let Some(SlotState::Queued(pending)) = s
-                .slots
-                .insert(slot.clone(), SlotState::Running { next: None })
-            else {
-                unreachable!("listed as queued under the same lock");
-            };
-            *s.started.entry(workflow).or_default() += 1;
-            s.next_run += 1;
-            let run = Run {
-                id: format!("run-{}", s.next_run),
-                workflow,
-                payload: pending.payload,
-            };
-            s.runs.insert(run.id.clone(), run.clone());
-            for subject in pending.subjects {
-                s.subjects.entry(subject).or_default().push(run.id.clone());
-            }
-            return Some((slot, run));
-        }
-        None
+            .map(|w| {
+                let declared = w.runs_per_hour();
+                Budget {
+                    workflow: w.name(),
+                    limit: self
+                        .limits
+                        .runs_cap
+                        .map_or(declared, |cap| cap.min(declared)),
+                }
+            })
+            .collect()
     }
 
-    fn release(&self, slot: Slot, run: &Run, links: Vec<Subject>) {
-        let mut s = self.state.lock().unwrap();
-        for subject in links {
-            s.subjects.entry(subject).or_default().push(run.id.clone());
-        }
-        if let Some(SlotState::Running {
-            next: Some(pending),
-        }) = s.slots.remove(&slot)
-        {
-            s.slots.insert(slot, SlotState::Queued(pending));
-        }
+    fn workflow(&self, name: &str) -> Stored<&dyn Registered> {
+        self.workflows
+            .iter()
+            .find(|w| w.name() == name)
+            .map(|w| w.as_ref())
+            .ok_or_else(|| StoreError(format!("no workflow named `{name}` in this binary")))
     }
 
-    async fn execute(&self, run: &Run) -> (Outcome, Vec<Subject>) {
-        let w = &self.workflows[run.workflow];
+    async fn execute(&self, w: &dyn Registered, run: &Run) -> (Outcome, Vec<Subject>) {
         let cx = Cx::new(
             run.id.clone(),
-            self.log.clone(),
+            self.store.clone(),
             w.agent_names(),
             self.providers.clone(),
         );
@@ -370,35 +289,54 @@ impl Runtime {
         }
     }
 
-    async fn work(&self, out: &Mutex<Vec<Outcome>>) {
-        while let Some((slot, run)) = self.claim(out) {
-            let (outcome, links) = self.execute(&run).await;
-            self.release(slot, &run, links);
-            out.lock().unwrap().push(outcome);
+    async fn work(&self, budgets: &[Budget], out: &Mutex<Vec<Outcome>>) -> Stored<()> {
+        loop {
+            match self.store.claim(budgets).await? {
+                Claim::Idle => return Ok(()),
+                Claim::Tripped { workflow, held } => {
+                    let workflow = self.workflow(&workflow)?.name();
+                    let tripped = Outcome::BudgetTripped { workflow, held };
+                    out.lock().unwrap().push(tripped);
+                }
+                Claim::Run(run) => {
+                    let w = self.workflow(&run.workflow)?;
+                    let (outcome, links) = self.execute(w, &run).await;
+                    self.store.release(&run.id, &links).await?;
+                    out.lock().unwrap().push(outcome);
+                }
+            }
         }
     }
 
     /// Runs independent keys concurrently, up to `limits.concurrency` at a time.
-    pub async fn drain(&self) -> Vec<Outcome> {
+    pub async fn drain(&self) -> Stored<Vec<Outcome>> {
         let out = Mutex::default();
-        join_all((0..self.limits.concurrency).map(|_| self.work(&out))).await;
-        out.into_inner().unwrap()
+        let budgets = self.budgets();
+        let workers = (0..self.limits.concurrency).map(|_| self.work(&budgets, &out));
+        for finished in join_all(workers).await {
+            finished?;
+        }
+        Ok(out.into_inner().unwrap())
+    }
+
+    /// Requeues what a crash left running. Call this once before draining after a start.
+    pub async fn recover(&self) -> Stored<usize> {
+        self.store.recover().await
     }
 
     /// Re-run from the log. Recorded reads, model calls, and guard verdicts are reused;
     /// policy runs again.
-    pub async fn replay(&self, run_id: &str) -> Outcome {
-        let run = self.state.lock().unwrap().runs[run_id].clone();
-        self.execute(&run).await.0
+    pub async fn replay(&self, run_id: &str) -> Stored<Outcome> {
+        let run = self
+            .store
+            .run(run_id)
+            .await?
+            .ok_or_else(|| StoreError(format!("no run named `{run_id}`")))?;
+        let w = self.workflow(&run.workflow)?;
+        Ok(self.execute(w, &run).await.0)
     }
 
-    pub fn runs_for(&self, subject: &Subject) -> Vec<String> {
-        self.state
-            .lock()
-            .unwrap()
-            .subjects
-            .get(subject)
-            .cloned()
-            .unwrap_or_default()
+    pub async fn runs_for(&self, subject: &Subject) -> Stored<Vec<String>> {
+        self.store.runs_for(subject).await
     }
 }

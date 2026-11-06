@@ -1,0 +1,388 @@
+//! Durable state, shared by the almanacs of one deployment and separated by `almanac`.
+use super::{Admission, Budget, Claim, Run, Store, StoreError, Stored};
+use crate::runtime::Ingest;
+use crate::workflow::Subject;
+use futures::future::BoxFuture;
+use serde_json::Value;
+use sqlx::postgres::{PgPool, PgPoolOptions};
+
+const MAX_CONNECTIONS: u32 = 4;
+
+impl From<sqlx::Error> for StoreError {
+    fn from(e: sqlx::Error) -> Self {
+        Self(e.to_string())
+    }
+}
+
+impl From<sqlx::migrate::MigrateError> for StoreError {
+    fn from(e: sqlx::migrate::MigrateError) -> Self {
+        Self(e.to_string())
+    }
+}
+
+pub struct PostgresStore {
+    pool: PgPool,
+    almanac: String,
+}
+
+impl PostgresStore {
+    /// Connects and brings the schema up to date.
+    pub async fn connect(url: &str, almanac: &str) -> Stored<Self> {
+        let pool = options().connect(url).await?;
+        sqlx::migrate!("./migrations").run(&pool).await?;
+        Ok(Self {
+            pool,
+            almanac: almanac.to_string(),
+        })
+    }
+
+    /// Connects on first use, to a schema something else has already migrated.
+    pub fn lazy(url: &str, almanac: &str) -> Stored<Self> {
+        Ok(Self {
+            pool: options().connect_lazy(url)?,
+            almanac: almanac.to_string(),
+        })
+    }
+
+    async fn admit_tx(
+        &self,
+        source: &str,
+        delivery_id: &str,
+        admission: Admission,
+    ) -> Stored<Ingest> {
+        let mut tx = self.pool.begin().await?;
+        let fresh = sqlx::query!(
+            "INSERT INTO seen (almanac, source, delivery_id) VALUES ($1, $2, $3)
+             ON CONFLICT DO NOTHING",
+            self.almanac,
+            source,
+            delivery_id,
+        )
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        if fresh == 0 {
+            return Ok(Ingest::Duplicate);
+        }
+        let ingest = match admission {
+            Admission::Drop(ingest) => ingest,
+            Admission::Queue(pending) => {
+                let subjects: Vec<String> = pending.subjects.iter().map(texted).collect();
+                let inserted = sqlx::query!(
+                    r#"INSERT INTO pending (almanac, workflow, key, payload, subjects)
+                       VALUES ($1, $2, $3, $4, $5)
+                       ON CONFLICT (almanac, workflow, key)
+                       DO UPDATE SET payload = EXCLUDED.payload, subjects = EXCLUDED.subjects
+                       RETURNING (xmax = 0) AS "inserted!""#,
+                    self.almanac,
+                    pending.workflow,
+                    pending.key,
+                    without_nul(pending.payload.clone()),
+                    &subjects,
+                )
+                .fetch_one(&mut *tx)
+                .await?
+                .inserted;
+                let running = sqlx::query_scalar!(
+                    r#"SELECT EXISTS (
+                         SELECT 1 FROM runs
+                         WHERE almanac = $1 AND workflow = $2 AND key = $3 AND status = 'running'
+                       ) AS "running!""#,
+                    self.almanac,
+                    pending.workflow,
+                    pending.key,
+                )
+                .fetch_one(&mut *tx)
+                .await?;
+                match (running, inserted) {
+                    (true, _) => Ingest::MarkedDirty,
+                    (false, true) => Ingest::Queued,
+                    (false, false) => Ingest::Coalesced,
+                }
+            }
+        };
+        tx.commit().await?;
+        Ok(ingest)
+    }
+
+    async fn claim_tx(&self, budgets: &[Budget]) -> Stored<Claim> {
+        let mut tx = self.pool.begin().await?;
+        // Claims are rare and short, so one at a time keeps budget counts exact.
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+            .bind(&self.almanac)
+            .execute(&mut *tx)
+            .await?;
+        let workflows: Vec<String> = budgets.iter().map(|b| b.workflow.to_string()).collect();
+        let candidates = sqlx::query!(
+            "SELECT p.workflow, p.key, p.payload, p.subjects
+             FROM pending p
+             WHERE p.almanac = $1
+               AND p.workflow = ANY($2)
+               AND NOT EXISTS (
+                 SELECT 1 FROM tripped t WHERE t.almanac = p.almanac AND t.workflow = p.workflow
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM runs r
+                 WHERE r.almanac = p.almanac AND r.workflow = p.workflow
+                   AND r.key = p.key AND r.status = 'running'
+               )
+             ORDER BY p.seq
+             LIMIT 1",
+            self.almanac,
+            &workflows,
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(next) = candidates else {
+            return Ok(Claim::Idle);
+        };
+        let limit = budgets
+            .iter()
+            .find(|b| b.workflow == next.workflow)
+            .map_or(0, |b| b.limit);
+        let started = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "started!" FROM runs WHERE almanac = $1 AND workflow = $2"#,
+            self.almanac,
+            next.workflow,
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if started >= i64::from(limit) {
+            sqlx::query!(
+                "INSERT INTO tripped (almanac, workflow) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                self.almanac,
+                next.workflow,
+            )
+            .execute(&mut *tx)
+            .await?;
+            let held = sqlx::query_scalar!(
+                r#"SELECT count(*) AS "held!" FROM pending p
+                   WHERE p.almanac = $1 AND p.workflow = $2
+                     AND NOT EXISTS (
+                       SELECT 1 FROM runs r
+                       WHERE r.almanac = p.almanac AND r.workflow = p.workflow
+                         AND r.key = p.key AND r.status = 'running'
+                     )"#,
+                self.almanac,
+                next.workflow,
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            return Ok(Claim::Tripped {
+                workflow: next.workflow,
+                held: held as usize,
+            });
+        }
+        let id = sqlx::query_scalar!(
+            r#"INSERT INTO runs (id, seq, almanac, workflow, key, payload, status)
+               SELECT 'run-' || n, n, $1, $2, $3, $4, 'running'
+               FROM nextval('run_seq') AS n
+               RETURNING id"#,
+            self.almanac,
+            next.workflow,
+            next.key,
+            next.payload,
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query!(
+            "DELETE FROM pending WHERE almanac = $1 AND workflow = $2 AND key = $3",
+            self.almanac,
+            next.workflow,
+            next.key,
+        )
+        .execute(&mut *tx)
+        .await?;
+        link(&mut tx, &id, &next.subjects).await?;
+        tx.commit().await?;
+        Ok(Claim::Run(Run {
+            id,
+            workflow: next.workflow,
+            key: next.key,
+            payload: next.payload,
+        }))
+    }
+
+    async fn release_tx(&self, run_id: &str, links: &[Subject]) -> Stored<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query!(
+            "UPDATE runs SET status = 'finished', finished_at = now()
+             WHERE id = $1 AND status = 'running'",
+            run_id,
+        )
+        .execute(&mut *tx)
+        .await?;
+        let links: Vec<String> = links.iter().map(texted).collect();
+        link(&mut tx, run_id, &links).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn recover_tx(&self) -> Stored<usize> {
+        let mut tx = self.pool.begin().await?;
+        let interrupted = sqlx::query!(
+            "UPDATE runs SET status = 'interrupted', finished_at = now()
+             WHERE almanac = $1 AND status = 'running'
+             RETURNING id, workflow, key, payload",
+            self.almanac,
+        )
+        .fetch_all(&mut *tx)
+        .await?;
+        for run in &interrupted {
+            sqlx::query!(
+                "INSERT INTO pending (almanac, workflow, key, payload, subjects)
+                 SELECT $1, $2, $3, $4,
+                        coalesce(array_agg(subject), '{}') FROM run_subjects WHERE run_id = $5
+                 ON CONFLICT (almanac, workflow, key) DO NOTHING",
+                self.almanac,
+                run.workflow,
+                run.key,
+                run.payload,
+                run.id,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(interrupted.len())
+    }
+}
+
+/// PostgreSQL's `jsonb` refuses U+0000, and a payload is hostile text. Left in, one crafted
+/// title would fail its delivery forever.
+fn without_nul(value: Value) -> Value {
+    match value {
+        Value::String(s) => Value::String(s.replace('\0', "\u{fffd}")),
+        Value::Array(items) => Value::Array(items.into_iter().map(without_nul).collect()),
+        Value::Object(fields) => Value::Object(
+            fields
+                .into_iter()
+                .map(|(k, v)| (k.replace('\0', "\u{fffd}"), without_nul(v)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+fn options() -> PgPoolOptions {
+    PgPoolOptions::new().max_connections(MAX_CONNECTIONS)
+}
+
+fn texted(subject: &Subject) -> String {
+    subject.as_str().to_string()
+}
+
+async fn link(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    run_id: &str,
+    subjects: &[String],
+) -> Stored<()> {
+    sqlx::query!(
+        "INSERT INTO run_subjects (run_id, subject)
+         SELECT $1, subject FROM unnest($2::text[]) AS subject
+         ON CONFLICT DO NOTHING",
+        run_id,
+        subjects,
+    )
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+impl Store for PostgresStore {
+    fn admit<'a>(
+        &'a self,
+        source: &'a str,
+        delivery_id: &'a str,
+        admission: Admission,
+    ) -> BoxFuture<'a, Stored<Ingest>> {
+        Box::pin(self.admit_tx(source, delivery_id, admission))
+    }
+
+    fn claim<'a>(&'a self, budgets: &'a [Budget]) -> BoxFuture<'a, Stored<Claim>> {
+        Box::pin(self.claim_tx(budgets))
+    }
+
+    fn release<'a>(&'a self, run_id: &'a str, links: &'a [Subject]) -> BoxFuture<'a, Stored<()>> {
+        Box::pin(self.release_tx(run_id, links))
+    }
+
+    fn recover(&self) -> BoxFuture<'_, Stored<usize>> {
+        Box::pin(self.recover_tx())
+    }
+
+    fn run<'a>(&'a self, run_id: &'a str) -> BoxFuture<'a, Stored<Option<Run>>> {
+        Box::pin(async move {
+            let row = sqlx::query!(
+                "SELECT id, workflow, key, payload FROM runs WHERE id = $1 AND almanac = $2",
+                run_id,
+                self.almanac,
+            )
+            .fetch_optional(&self.pool)
+            .await?;
+            Ok(row.map(|r| Run {
+                id: r.id,
+                workflow: r.workflow,
+                key: r.key,
+                payload: r.payload,
+            }))
+        })
+    }
+
+    fn recorded<'a>(
+        &'a self,
+        run_id: &'a str,
+        name: &'a str,
+        occurrence: usize,
+    ) -> BoxFuture<'a, Stored<Option<Value>>> {
+        Box::pin(async move {
+            let value = sqlx::query_scalar!(
+                "SELECT value FROM run_log WHERE run_id = $1 AND name = $2 AND occurrence = $3",
+                run_id,
+                name,
+                occurrence as i32,
+            )
+            .fetch_optional(&self.pool)
+            .await?;
+            Ok(value)
+        })
+    }
+
+    fn record<'a>(
+        &'a self,
+        run_id: &'a str,
+        name: &'a str,
+        occurrence: usize,
+        value: Value,
+    ) -> BoxFuture<'a, Stored<()>> {
+        Box::pin(async move {
+            sqlx::query!(
+                "INSERT INTO run_log (run_id, name, occurrence, value) VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (run_id, name, occurrence) DO UPDATE SET value = EXCLUDED.value",
+                run_id,
+                name,
+                occurrence as i32,
+                without_nul(value),
+            )
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        })
+    }
+
+    fn runs_for<'a>(&'a self, subject: &'a Subject) -> BoxFuture<'a, Stored<Vec<String>>> {
+        Box::pin(async move {
+            let ids = sqlx::query_scalar!(
+                "SELECT r.id FROM run_subjects s JOIN runs r ON r.id = s.run_id
+                 WHERE s.subject = $1 AND r.almanac = $2
+                 ORDER BY r.seq",
+                subject.as_str(),
+                self.almanac,
+            )
+            .fetch_all(&self.pool)
+            .await?;
+            Ok(ids)
+        })
+    }
+}

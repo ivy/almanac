@@ -1,9 +1,11 @@
 # Dependency policy, checked by `make check`. https://embarkstudios.github.io/cargo-deny/
 #
-# Permissive licences only: anything else fails by being absent from the list.
+# Permissive licences only: anything else fails by being absent from the list. The policy
+# covers what ships, so tools used only by tests are outside it.
 
 [graph]
 all-features = true
+exclude-dev = true
 
 [licenses]
 allow = [

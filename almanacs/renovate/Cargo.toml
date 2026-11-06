@@ -12,8 +12,15 @@ unsafe_code = "forbid"
 
 [dependencies]
 almanac = { path = "../../crates/almanac" }
+futures = "0.3"
 github = { path = "../../crates/github" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt"] }
 
 [dev-dependencies]
-serde_json = "1"
+insta = { version = "1", features = ["json"] }
+proptest = "1"
+simforge = { path = "../../crates/simforge" }
 tempfile = "3"
+tokio = { version = "1", features = ["macros", "process", "rt-multi-thread"] }

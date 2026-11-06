@@ -18,7 +18,7 @@ pub mod testing;
 pub mod wire;
 pub mod workflow;
 
-pub use app::main;
+pub use app::{Said, Verb, main, main_with};
 pub use taint::__private;
 
 /// Everything a workflow author needs.

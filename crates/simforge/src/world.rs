@@ -10,6 +10,10 @@ pub struct Repo {
     pub full_name: String,
     pub private: bool,
     pub archived: bool,
+    /// The text of `renovate.json`, if the repository has one.
+    pub renovate: Option<String>,
+    /// Status contexts required on the default branch.
+    pub required_checks: Vec<String>,
 }
 
 impl Repo {
@@ -18,6 +22,8 @@ impl Repo {
             full_name: full_name.to_string(),
             private: false,
             archived: false,
+            renovate: None,
+            required_checks: vec![],
         }
     }
 
@@ -45,6 +51,8 @@ pub struct Pull {
     pub mergeable_state: String,
     /// Set for a pull request from a fork.
     pub head_repo: Option<String>,
+    /// Messages of the commits on the branch, oldest first.
+    pub commits: Vec<String>,
 }
 
 impl Pull {
@@ -63,6 +71,7 @@ impl Pull {
             draft: false,
             mergeable_state: "clean".to_string(),
             head_repo: None,
+            commits: vec!["Update".to_string()],
         }
     }
 }

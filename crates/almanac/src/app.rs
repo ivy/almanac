@@ -6,6 +6,7 @@ use crate::providers::Providers;
 use crate::runtime::{Envelope, Origin, Outcome, Runtime};
 use crate::store::PostgresStore;
 use crate::workflow::Registered;
+use futures::future::BoxFuture;
 use serde_json::json;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -28,10 +29,33 @@ fn format_of(args: &mut Vec<String>) -> Format {
     Format::Json
 }
 
+/// What a verb has to say, for people and for agents.
+pub struct Said {
+    pub human: String,
+    pub json: serde_json::Value,
+}
+
+type VerbFn = for<'a> fn(&'a [String], &'a Config) -> BoxFuture<'a, Result<Said, Error>>;
+
+/// A verb an almanac adds of its own, given the arguments after its name.
+pub struct Verb {
+    pub name: &'static str,
+    pub run: VerbFn,
+}
+
 pub fn main(name: &'static str, workflows: Workflows, setup: Setup) -> ExitCode {
+    main_with(name, workflows, setup, &[])
+}
+
+pub fn main_with(
+    name: &'static str,
+    workflows: Workflows,
+    setup: Setup,
+    verbs: &'static [Verb],
+) -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let format = format_of(&mut args);
-    match run(name, args, format, workflows, setup) {
+    match run(name, args, format, workflows, setup, verbs) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{}", render(&e, format));
@@ -95,6 +119,7 @@ fn run(
     format: Format,
     workflows: Workflows,
     setup: Setup,
+    verbs: &'static [Verb],
 ) -> Result<(), Error> {
     let dry_run = flag(&mut args, "--dry-run");
     let repo = option(&mut args, "--repo");
@@ -113,6 +138,11 @@ fn run(
         .enable_all()
         .build()
         .map_err(|source| Error::Startup { source })?;
+    if let Some(verb) = verbs.iter().find(|v| Some(v.name) == verb.first().copied()) {
+        let said = rt.block_on((verb.run)(&args[1..], &config))?;
+        print(format, said.human, said.json);
+        return Ok(());
+    }
     let mut runtime = Runtime::new(workflows(), setup(&config))
         .tightened(config.limits())
         .in_mode(mode(dry_run));

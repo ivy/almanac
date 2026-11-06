@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 almanac.workspace = true
+base64.workspace = true
 jsonwebtoken.workspace = true
 reqwest.workspace = true
 serde.workspace = true

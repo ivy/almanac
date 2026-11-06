@@ -7,6 +7,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post};
+use base64::Engine;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -29,6 +30,12 @@ pub fn router(world: Shared) -> Router {
         .route("/repos/{owner}/{repo}", get(repository))
         .route("/repos/{owner}/{repo}/pulls", get(pulls))
         .route("/repos/{owner}/{repo}/pulls/{number}", get(pull))
+        .route(
+            "/repos/{owner}/{repo}/pulls/{number}/commits",
+            get(pull_commits),
+        )
+        .route("/repos/{owner}/{repo}/branches/{branch}", get(branch))
+        .route("/repos/{owner}/{repo}/contents/{*path}", get(contents))
         .route(
             "/repos/{owner}/{repo}/commits/{sha}/check-suites",
             get(check_suites),
@@ -268,6 +275,69 @@ async fn pull(
     found
 }
 
+async fn pull_commits(
+    State(world): State<Shared>,
+    Path((owner, repo, number)): Path<(String, String, u64)>,
+    Query(params): Params,
+) -> Response {
+    let world = world.lock().unwrap();
+    let name = format!("{owner}/{repo}");
+    let Some(pull) = world.pulls.get(&(name.clone(), number)) else {
+        return missing();
+    };
+    let who = json!({"name": "a", "email": "a@b", "date": "2026-11-05T12:00:00Z"});
+    let items = pull
+        .commits
+        .iter()
+        .map(|message| {
+            json!({
+                "sha": "0".repeat(40), "node_id": "C_1", "url": "/c", "html_url": "/c",
+                "comments_url": "/c", "parents": [],
+                "commit": {
+                    "url": "/c", "author": who, "committer": who, "message": message,
+                    "comment_count": 0, "tree": {"sha": "t", "url": "/t"},
+                },
+            })
+        })
+        .collect();
+    let path = format!("/repos/{name}/pulls/{number}/commits");
+    paged(&world, &path, "page", &params, items)
+}
+
+async fn branch(
+    State(world): State<Shared>,
+    Path((owner, repo, branch)): Path<(String, String, String)>,
+) -> Response {
+    let world = world.lock().unwrap();
+    let Some(r) = world.repos.get(&format!("{owner}/{repo}")) else {
+        return missing();
+    };
+    axum::Json(json!({
+        "name": branch,
+        "protected": !r.required_checks.is_empty(),
+        "protection": {"required_status_checks": {"contexts": r.required_checks}},
+    }))
+    .into_response()
+}
+
+async fn contents(
+    State(world): State<Shared>,
+    Path((owner, repo, path)): Path<(String, String, String)>,
+) -> Response {
+    let world = world.lock().unwrap();
+    let found = world.repos.get(&format!("{owner}/{repo}"));
+    match found.and_then(|r| r.renovate.as_ref()) {
+        Some(text) if path == "renovate.json" => axum::Json(json!({
+            "type": "file", "encoding": "base64", "name": path, "path": path, "size": text.len(),
+            "sha": "0", "url": "/f", "git_url": null, "html_url": null, "download_url": null,
+            "content": base64::engine::general_purpose::STANDARD.encode(text),
+            "_links": {"self": "/f", "git": null, "html": null},
+        }))
+        .into_response(),
+        _ => missing(),
+    }
+}
+
 async fn check_suites(
     State(world): State<Shared>,
     Path((owner, repo, sha)): Path<(String, String, String)>,
@@ -422,12 +492,14 @@ async fn update_ref(
             .into_response();
     }
     world.refs.insert(key, sha.clone());
+    let message = world.commits.get(&sha).cloned().unwrap_or_default();
     let moved = world
         .pulls
         .iter_mut()
         .filter(|((n, _), p)| *n == name && p.head_ref == branch);
     for (_, pull) in moved {
         pull.head_sha = sha.clone();
+        pull.commits.push(message.clone());
     }
     axum::Json(json!({
         "ref": format!("refs/heads/{branch}"), "node_id": "REF_1", "url": "/ref",

@@ -74,7 +74,9 @@ impl SimForge {
     pub fn move_branch(&self, repo: &str, number: u64, sha: &str, message: &str) {
         let mut world = self.world.lock().unwrap();
         world.commits.insert(sha.to_string(), message.to_string());
-        world.pull_mut(repo, number).head_sha = sha.to_string();
+        let pull = world.pull_mut(repo, number);
+        pull.head_sha = sha.to_string();
+        pull.commits.push(message.to_string());
     }
 
     /// The next requests matching `path_contains` fail, in order.

@@ -1,0 +1,13 @@
+---
+source: tests/fleet.rs
+expression: render(&found)
+---
+owner/alpha
+  #1     mergeable          renovate/left-pad-2.x  nothing is in its way
+         note: automerge is off, so this will not merge itself
+owner/beta
+  #1     waiting            renovate/tar-7.x  a publish time for the update
+  #2     waiting            renovate/ansi-5.x  Renovate to rebase it
+  #3     mergeable          renovate/no-ci-1.x  nothing is in its way
+         note: no checks ran on this pull request
+3 repositories scanned: 2 mergeable, 2 waiting

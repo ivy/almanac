@@ -20,6 +20,7 @@ pages! {
     "almanac::config::unknown_key" => "almanac.config.unknown_key",
     "almanac::config::secret" => "almanac.config.secret",
     "almanac::config::env_value" => "almanac.config.env_value",
+    "almanac::config::env_missing" => "almanac.config.env_missing",
     "almanac::usage" => "almanac.usage",
     "almanac::provider::missing" => "almanac.provider.missing",
     "almanac::store::failed" => "almanac.store.failed",
@@ -108,6 +109,13 @@ pub enum Error {
         help("set {name} to a whole number, or unset it")
     )]
     EnvValue { name: String },
+
+    #[error("{name} is not set")]
+    #[diagnostic(
+        code(almanac::config::env_missing),
+        help("set {name} in the environment: {purpose}")
+    )]
+    EnvMissing { name: String, purpose: String },
 
     #[error("not a command: {given}")]
     #[diagnostic(code(almanac::usage), help("{usage}"))]
@@ -278,6 +286,10 @@ mod tests {
                 span: None,
             },
             Error::EnvValue { name: "n".into() },
+            Error::EnvMissing {
+                name: "n".into(),
+                purpose: "p".into(),
+            },
             Error::Usage {
                 given: "g".into(),
                 usage: "u".into(),
@@ -323,6 +335,7 @@ mod tests {
                 | Error::UnknownKey { .. }
                 | Error::SecretInConfig { .. }
                 | Error::EnvValue { .. }
+                | Error::EnvMissing { .. }
                 | Error::Usage { .. }
                 | Error::MissingProviders { .. }
                 | Error::Store(_)

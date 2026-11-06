@@ -1,5 +1,10 @@
-use renovate_triage::{providers, workflows};
+use renovate_triage::{fleet, providers, workflows};
 
 fn main() -> std::process::ExitCode {
-    almanac::main("renovate-triage", workflows::all, providers::all)
+    almanac::main_with(
+        "renovate-triage",
+        workflows::all,
+        providers::all,
+        fleet::VERBS,
+    )
 }

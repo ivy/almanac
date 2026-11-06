@@ -151,6 +151,10 @@ async fn reads_match_the_spec() {
             format!("/repos/{REPO}/pulls/{number}"),
         ),
         (
+            "/repos/{owner}/{repo}/pulls/{pull_number}/commits",
+            format!("/repos/{REPO}/pulls/{number}/commits"),
+        ),
+        (
             "/repos/{owner}/{repo}/commits/{ref}/check-suites",
             format!("/repos/{REPO}/commits/{sha}/check-suites"),
         ),

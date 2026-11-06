@@ -34,14 +34,12 @@ async fn discovery_skips_archived_repositories_and_other_owners() {
     let sim = SimForge::start().await;
     sim.add_repo(Repo::public("owner/live"));
     sim.add_repo(Repo {
-        full_name: "owner/private".to_string(),
         private: true,
-        archived: false,
+        ..Repo::public("owner/private")
     });
     sim.add_repo(Repo {
-        full_name: "owner/old".to_string(),
-        private: false,
         archived: true,
+        ..Repo::public("owner/old")
     });
     sim.add_repo(Repo::public("someone/else"));
     let found = client(&sim).repositories("owner").await.unwrap();

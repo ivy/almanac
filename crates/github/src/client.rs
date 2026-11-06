@@ -1,5 +1,6 @@
 //! GitHub's REST API: authentication, pagination, and rate limits, for every provider here.
 use almanac::diag::Error;
+use base64::Engine;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use reqwest::{Method, Response, StatusCode};
 use serde::Serialize;
@@ -386,6 +387,47 @@ impl GithubClient {
     pub async fn job_logs(&self, repo: &str, job: u64) -> Result<String, Error> {
         self.get_text(&format!("/repos/{repo}/actions/jobs/{job}/logs"))
             .await
+    }
+
+    /// Messages of the commits on a pull request, oldest first.
+    pub async fn pull_commit_messages(
+        &self,
+        repo: &str,
+        number: u64,
+    ) -> Result<Vec<String>, Error> {
+        let commits = self
+            .get_all(&format!("/repos/{repo}/pulls/{number}/commits"))
+            .await?;
+        let message = |c: &Value| c["commit"]["message"].as_str().map(str::to_string);
+        Ok(commits.iter().filter_map(message).collect())
+    }
+
+    /// A file's text, or `None` if the repository does not have it.
+    pub async fn file(&self, repo: &str, path: &str) -> Result<Option<String>, Error> {
+        let found = match self.get(&format!("/repos/{repo}/contents/{path}")).await {
+            Ok(found) => found,
+            Err(Error::ForgeRefused { status: 404, .. }) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let text: String = found["content"]
+            .as_str()
+            .unwrap_or_default()
+            .split_whitespace()
+            .collect();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(text)
+            .unwrap_or_default();
+        Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+    }
+
+    /// Status contexts a branch requires. A token that may not see protection reads as none.
+    pub async fn required_checks(&self, repo: &str, branch: &str) -> Result<Vec<String>, Error> {
+        let found = self
+            .get(&format!("/repos/{repo}/branches/{branch}"))
+            .await?;
+        let contexts = found["protection"]["required_status_checks"]["contexts"].as_array();
+        let names = contexts.into_iter().flatten().filter_map(Value::as_str);
+        Ok(names.map(str::to_string).collect())
     }
 
     pub async fn deliveries(&self) -> Result<Vec<Value>, Error> {

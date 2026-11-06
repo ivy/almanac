@@ -9,7 +9,8 @@ pub use podman::PodmanSandbox;
 use futures::future::BoxFuture;
 use std::time::Duration;
 
-/// Where a sandbox's files live. It is the only place a sandboxed process can write.
+/// Where a sandbox's files live. Besides a private scratch `/tmp`, it is the only place a
+/// sandboxed process can write.
 pub const WORKDIR: &str = "/work";
 
 #[derive(Clone, Debug, PartialEq)]

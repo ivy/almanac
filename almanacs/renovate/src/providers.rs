@@ -87,7 +87,31 @@ fn harness(checkouts: Arc<GithubClient>) -> Option<ClaudeHarness> {
     let cache = |spec: SandboxSpec| SandboxSpec {
         env: vec![
             ("CARGO_HOME".to_string(), "/work/.cargo".to_string()),
+            ("GOPATH".to_string(), "/work/.cache/gopath".to_string()),
             ("GOMODCACHE".to_string(), "/work/.cache/go".to_string()),
+            ("GOCACHE".to_string(), "/work/.cache/gobuild".to_string()),
+            ("GOTOOLCHAIN".to_string(), "local".to_string()),
+            ("XDG_CACHE_HOME".to_string(), "/work/.cache".to_string()),
+            (
+                "COREPACK_HOME".to_string(),
+                "/work/.cache/corepack".to_string(),
+            ),
+            (
+                "COREPACK_ENABLE_DOWNLOAD_PROMPT".to_string(),
+                "0".to_string(),
+            ),
+            (
+                "npm_config_store_dir".to_string(),
+                "/work/.cache/pnpm".to_string(),
+            ),
+            (
+                "pnpm_config_store_dir".to_string(),
+                "/work/.cache/pnpm".to_string(),
+            ),
+            (
+                "PNPM_STORE_DIR".to_string(),
+                "/work/.cache/pnpm".to_string(),
+            ),
         ],
         ..spec
     };

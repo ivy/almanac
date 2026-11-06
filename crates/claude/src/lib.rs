@@ -23,13 +23,15 @@ pub const WORKSPACE_FIELD: &str = "$workspace";
 pub const CHECKOUT_FIELD: &str = "$checkout";
 const PATCH_TIMEOUT: Duration = Duration::from_secs(60);
 const FETCH_TIMEOUT: Duration = Duration::from_secs(900);
+const TAIL_LINES: usize = 60;
 const SOURCE_PATH: &str = ".almanac/source.tar.gz";
 const DEPENDENCIES_PATH: &str = ".dependencies.tar";
 /// Runs no package code: each of these only downloads what a lockfile names. See ADR 1.
 const FETCH_SCRIPT: &str = "set -e; \
     if [ -f Cargo.lock ]; then cargo fetch --locked; fi; \
-    if [ -f go.sum ]; then go mod download; fi; \
-    if [ -f pnpm-lock.yaml ]; then pnpm fetch --ignore-scripts; fi; \
+    find . -name go.sum -not -path './node_modules/*' -not -path './.cache/*' | while read -r sum; do \
+      (cd \"$(dirname \"$sum\")\" && go mod download); done; \
+    if [ -f pnpm-lock.yaml ]; then pnpm fetch --ignore-scripts --store-dir /work/.cache/pnpm; fi; \
     mkdir -p .cargo .cache; \
     tar -cf .dependencies.tar .cargo .cache";
 const LINK_MODE: &str = "120000";
@@ -46,6 +48,13 @@ pub struct ClaudeConfig {
     pub token_budget: u64,
     pub timeout: Duration,
     pub max_turns: u32,
+    /// Stops a session at this spend, if the CLI reports one.
+    pub max_budget_usd: Option<f64>,
+    /// Run after the agent finishes and before the patch is read, to record whether the
+    /// repository's own checks pass.
+    pub verify: Option<String>,
+    /// Uses the CLI's own login from this home, for local evaluation with no API key.
+    pub home: Option<String>,
     /// Replaces `--bare`, for local evaluation only. See the ADR.
     pub isolation_flags: Vec<String>,
 }
@@ -60,6 +69,9 @@ impl ClaudeConfig {
             token_budget: 2_000_000,
             timeout: Duration::from_secs(1800),
             max_turns: 60,
+            max_budget_usd: None,
+            verify: None,
+            home: None,
             isolation_flags: vec!["--bare".to_string()],
         }
     }
@@ -227,10 +239,23 @@ impl ClaudeHarness {
         }
         baseline(sandbox.as_ref(), id).await?;
         let tools = mcp::serve(sandbox.clone(), id.clone(), self.config.timeout).await?;
-        let answer = self.converse(prompt, input, Some(&tools)).await?;
+        let (answer, usage) = self.conversation(prompt, input, Some(&tools)).await?;
+        // Read first: checks can leave files behind, and those are not the agent's change.
         let changes = changes(sandbox.as_ref(), id).await?;
         let diff = captured(sandbox.as_ref(), id, "git diff --cached --binary").await?;
-        Ok(json!({"answer": answer, "changes": changes, "diff": diff}))
+        let verified = match &self.config.verify {
+            Some(command) => {
+                let out = sandbox
+                    .exec(id, command, self.config.timeout)
+                    .await
+                    .map_err(step)?;
+                json!({"exit_code": out.exit_code, "tail": tail(&out.stdout, &out.stderr)})
+            }
+            None => Value::Null,
+        };
+        Ok(json!({
+            "answer": answer, "changes": changes, "diff": diff, "usage": usage, "verified": verified,
+        }))
     }
 
     fn command(&self, prompt: &str, home: &str, tools: Option<&mcp::Tools>) -> Command {
@@ -255,13 +280,18 @@ impl ClaudeHarness {
         command
             .env_clear()
             .env("PATH", std::env::var("PATH").unwrap_or_default())
-            .env("HOME", home)
-            .env("ANTHROPIC_API_KEY", &c.api_key)
+            .env("HOME", c.home.as_deref().unwrap_or(home))
             .current_dir(home)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
+        if !c.api_key.is_empty() {
+            command.env("ANTHROPIC_API_KEY", &c.api_key);
+        }
+        if let Some(budget) = c.max_budget_usd {
+            command.args(["--max-budget-usd", &budget.to_string()]);
+        }
         if let Some(url) = &c.base_url {
             command.env("ANTHROPIC_BASE_URL", url);
         }
@@ -276,6 +306,17 @@ impl ClaudeHarness {
         input: Value,
         tools: Option<&mcp::Tools>,
     ) -> Result<Value, StepError> {
+        self.conversation(prompt, input, tools)
+            .await
+            .map(|(answer, _)| answer)
+    }
+
+    async fn conversation(
+        &self,
+        prompt: &str,
+        input: Value,
+        tools: Option<&mcp::Tools>,
+    ) -> Result<(Value, Value), StepError> {
         let home = tempfile::tempdir().map_err(step)?;
         let home_path = home.path().to_string_lossy().into_owned();
         let mut child = self
@@ -296,7 +337,10 @@ impl ClaudeHarness {
                 "session killed: over its {}s time limit",
                 self.config.timeout.as_secs()
             ))),
-            Ok(answer) => parse_answer(&answer?),
+            Ok(finished) => {
+                let (text, usage) = finished?;
+                Ok((parse_answer(&text)?, usage))
+            }
         }
     }
 }
@@ -385,7 +429,14 @@ fn tokens(usage: &Value) -> u64 {
         .sum()
 }
 
-async fn read_result(child: &mut Child, budget: u64) -> Result<String, StepError> {
+/// The end of a command's output, where a failure usually shows.
+fn tail(stdout: &str, stderr: &str) -> String {
+    let all = format!("{stdout}{stderr}");
+    let lines: Vec<&str> = all.lines().collect();
+    lines[lines.len().saturating_sub(TAIL_LINES)..].join("\n")
+}
+
+async fn read_result(child: &mut Child, budget: u64) -> Result<(String, Value), StepError> {
     let stdout = child.stdout.take().expect("stdout was piped");
     let mut lines = BufReader::new(stdout).lines();
     let mut used = 0;
@@ -407,7 +458,13 @@ async fn read_result(child: &mut Child, budget: u64) -> Result<String, StepError
                     let reason = event["subtype"].as_str().unwrap_or("unknown");
                     return Err(step(format!("session failed: {reason}")));
                 }
-                return Ok(event["result"].as_str().unwrap_or_default().to_string());
+                let usage = json!({
+                    "tokens": used,
+                    "cost_usd": event["total_cost_usd"],
+                    "turns": event["num_turns"],
+                });
+                let text = event["result"].as_str().unwrap_or_default().to_string();
+                return Ok((text, usage));
             }
             _ => {}
         }

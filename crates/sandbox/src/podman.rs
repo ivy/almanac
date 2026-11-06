@@ -17,6 +17,7 @@ const KILLED: i32 = 137;
 const UNPRIVILEGED: &str = "1000:1000";
 /// Longer than any session. A sandbox whose owner was killed outright ends itself by this.
 const LIFETIME_SECONDS: u32 = 7200;
+const SCRATCH_MB: u32 = 1024;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -63,6 +64,10 @@ fn create_args(name: &str, spec: &SandboxSpec) -> Vec<String> {
         "{WORKDIR}:rw,exec,size={}m,mode=0755,U",
         spec.work_mb
     ));
+    // Some tools insist on /tmp whatever TMPDIR says. This one is private and in memory, and it
+    // goes when the sandbox does.
+    args.push("--tmpfs".to_string());
+    args.push(format!("/tmp:rw,size={SCRATCH_MB}m,mode=1777"));
     if spec.egress == Egress::None {
         args.push("--network=none".to_string());
     }

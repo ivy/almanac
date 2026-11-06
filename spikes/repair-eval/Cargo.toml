@@ -1,0 +1,17 @@
+[package]
+name = "repair-eval"
+version = "0.0.0"
+edition = "2024"
+license = "ISC"
+publish = false
+
+[workspace]
+
+[dependencies]
+almanac = { path = "../../crates/almanac" }
+almanac-renovate = { path = "../../almanacs/renovate" }
+claude = { path = "../../crates/claude" }
+github = { path = "../../crates/github" }
+sandbox = { path = "../../crates/sandbox" }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

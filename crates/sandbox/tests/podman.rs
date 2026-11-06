@@ -14,15 +14,28 @@ async fn run(p: &PodmanSandbox, id: &SandboxId, command: &str) -> ExecOutput {
 }
 
 #[tokio::test]
-async fn a_session_can_write_only_inside_its_checkout() {
+async fn a_session_can_write_only_inside_its_checkout_and_private_scratch() {
     let p = PodmanSandbox;
     let id = started(&p).await;
     assert_eq!(run(&p, &id, "echo x > /work/file").await.exit_code, 0);
-    for outside in ["/tmp/x", "/etc/x", "/x", "/usr/x", "/var/tmp/x", "/root/x"] {
+    assert_eq!(run(&p, &id, "echo x > /tmp/scratch").await.exit_code, 0);
+    for outside in ["/etc/x", "/x", "/usr/x", "/var/tmp/x", "/root/x"] {
         let out = run(&p, &id, &format!("echo x > {outside}")).await;
         assert_ne!(out.exit_code, 0, "{outside} was writable");
     }
     p.destroy(&id).await.unwrap();
+}
+
+#[tokio::test]
+async fn scratch_space_is_not_shared_between_sandboxes() {
+    let p = PodmanSandbox;
+    let first = started(&p).await;
+    run(&p, &first, "echo secret > /tmp/left-behind").await;
+    let second = started(&p).await;
+    let out = run(&p, &second, "cat /tmp/left-behind").await;
+    assert_ne!(out.exit_code, 0, "{out:?}");
+    p.destroy(&first).await.unwrap();
+    p.destroy(&second).await.unwrap();
 }
 
 #[tokio::test]

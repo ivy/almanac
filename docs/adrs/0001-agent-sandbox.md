@@ -89,3 +89,4 @@ Adopting Daytona needs one new `Sandbox` implementation, generated from `specs/d
 - The `claude` process runs on the host and parses hostile text. A bug in it is the remaining path from hostile text to the host, so run it with an empty working directory and a minimal environment, and revisit under M5.
 - The MCP server is part of the trust boundary and must expose nothing but sandbox calls.
 - Every `Sandbox` needs a wall-clock limit and resource limits, because hostile code runs there by design.
+- A sandbox also has a private in-memory `/tmp`, because `pnpm` hard-codes its store locks there and ignores `TMPDIR`. It is not shared, never enters a patch, and goes with the sandbox.

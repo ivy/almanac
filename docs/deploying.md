@@ -84,9 +84,10 @@ Expect some failed deliveries around a change to your ingress. Scans recover wha
 
 ## 6. Dry run on one repository
 
-A run is dry unless `ALMANAC_MODE=live` is set, and a read-only pass cannot write or call a model:
+A run is dry unless `ALMANAC_MODE=live` is set, and a read-only pass cannot write or call a model. Both commands read `almanac-renovate.env`, which systemd loads for the service and a shell does not:
 
 ```bash
+set -a; . ~/.config/almanac/almanac-renovate.env; set +a
 ALMANAC_READ_ONLY=1 almanac-renovate report
 ALMANAC_READ_ONLY=1 almanac-renovate backfill --repo owner/repo --dry-run
 ```

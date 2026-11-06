@@ -116,6 +116,8 @@ fn place(root: &mut Value, pointer: &str, value: Value) {
 /// hand-written otherwise.
 pub trait Event: Observed + Send + Sync + 'static {
     const KIND: &'static str;
+    /// Other kinds this event is parsed from, for a condition that arrives in several shapes.
+    const ALSO: &'static [&'static str] = &[];
     fn parse(payload: &Payload<'_>) -> Result<Self, Malformed>
     where
         Self: Sized;

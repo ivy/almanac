@@ -225,6 +225,7 @@ fn push_of(sim: &SimForge, number: u64, branch: &str) -> Push {
         pull: number,
         branch: branch.parse().unwrap(),
         message: "fix: repair the build".to_string(),
+        hold: None,
         base: base.parse().unwrap(),
         patch: Untrusted::new(Patch {
             changes: vec![

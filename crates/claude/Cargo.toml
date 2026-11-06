@@ -18,9 +18,11 @@ futures.workspace = true
 sandbox.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tar.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "process", "time"] }
 uuid.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
 tokio = { workspace = true, features = ["macros"] }

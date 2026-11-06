@@ -18,7 +18,20 @@ use tokio::process::{Child, Command};
 /// The input field holding a base64 tar of the checkout. The harness takes it out, so it never
 /// reaches the model.
 pub const WORKSPACE_FIELD: &str = "$workspace";
+/// The input field naming a commit to check out, as `{"repo": ..., "sha": ...}`. Like the
+/// workspace, it is taken out before the model sees the input.
+pub const CHECKOUT_FIELD: &str = "$checkout";
 const PATCH_TIMEOUT: Duration = Duration::from_secs(60);
+const FETCH_TIMEOUT: Duration = Duration::from_secs(900);
+const SOURCE_PATH: &str = ".almanac/source.tar.gz";
+const DEPENDENCIES_PATH: &str = ".dependencies.tar";
+/// Runs no package code: each of these only downloads what a lockfile names. See ADR 1.
+const FETCH_SCRIPT: &str = "set -e; \
+    if [ -f Cargo.lock ]; then cargo fetch --locked; fi; \
+    if [ -f go.sum ]; then go mod download; fi; \
+    if [ -f pnpm-lock.yaml ]; then pnpm fetch --ignore-scripts; fi; \
+    mkdir -p .cargo .cache; \
+    tar -cf .dependencies.tar .cargo .cache";
 const LINK_MODE: &str = "120000";
 const EXECUTABLE_MODE: &str = "100755";
 
@@ -52,9 +65,21 @@ impl ClaudeConfig {
     }
 }
 
+/// Where a commit's source comes from.
+pub trait Checkouts: Send + Sync {
+    /// A gzipped tar with one top directory.
+    fn tarball<'a>(
+        &'a self,
+        repo: &'a str,
+        sha: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<u8>, StepError>>;
+}
+
 pub struct ClaudeHarness {
     config: ClaudeConfig,
     sandbox: Option<(Arc<dyn Sandbox>, SandboxSpec)>,
+    checkouts: Option<Arc<dyn Checkouts>>,
+    fetching: Option<SandboxSpec>,
 }
 
 fn step(reason: impl std::fmt::Display) -> StepError {
@@ -66,7 +91,85 @@ impl ClaudeHarness {
         Self {
             config,
             sandbox: None,
+            checkouts: None,
+            fetching: None,
         }
+    }
+
+    pub fn with_checkouts(mut self, checkouts: Arc<dyn Checkouts>) -> Self {
+        self.checkouts = Some(checkouts);
+        self
+    }
+
+    /// Fetches a checkout's dependencies first, in a separate sandbox with no agent in it, because
+    /// the agent's sandbox has no network.
+    pub fn with_fetching(mut self, spec: SandboxSpec) -> Self {
+        self.fetching = Some(spec);
+        self
+    }
+
+    /// Unpacks in the sandbox, so a hostile archive is never read on the host.
+    async fn unpack_source(
+        &self,
+        sandbox: &dyn Sandbox,
+        id: &SandboxId,
+        wrapped: Vec<u8>,
+    ) -> Result<(), StepError> {
+        sandbox.upload(id, wrapped).await.map_err(step)?;
+        let unpack = format!("tar -xzf {SOURCE_PATH} --strip-components=1 && rm -rf .almanac");
+        captured(sandbox, id, &unpack).await.map(|_| ())
+    }
+
+    async fn fetch_dependencies(
+        &self,
+        sandbox: &dyn Sandbox,
+        spec: &SandboxSpec,
+        wrapped: Vec<u8>,
+    ) -> Result<Vec<u8>, StepError> {
+        let id = sandbox.create(spec).await.map_err(step)?;
+        let fetched = async {
+            self.unpack_source(sandbox, &id, wrapped).await?;
+            let out = sandbox
+                .exec(&id, FETCH_SCRIPT, FETCH_TIMEOUT)
+                .await
+                .map_err(step)?;
+            if out.exit_code != 0 {
+                return Err(step(format!(
+                    "fetching dependencies failed: {}",
+                    out.stderr
+                )));
+            }
+            sandbox.download(&id, DEPENDENCIES_PATH).await.map_err(step)
+        };
+        let result = fetched.await;
+        let destroyed = sandbox.destroy(&id).await;
+        let archive = result?;
+        destroyed.map_err(step)?;
+        Ok(archive)
+    }
+
+    async fn check_out(
+        &self,
+        sandbox: &dyn Sandbox,
+        id: &SandboxId,
+        wanted: Value,
+    ) -> Result<(), StepError> {
+        let source = self
+            .checkouts
+            .as_ref()
+            .ok_or_else(|| step("a checkout was asked for and none is configured"))?;
+        let repo = wanted["repo"].as_str().unwrap_or_default();
+        let sha = wanted["sha"].as_str().unwrap_or_default();
+        let wrapped = wrapped_source(source.tarball(repo, sha).await?)?;
+        if let Some(spec) = &self.fetching {
+            let dependencies = self
+                .fetch_dependencies(sandbox, spec, wrapped.clone())
+                .await?;
+            sandbox.upload(id, dependencies).await.map_err(step)?;
+            let unpack = format!("tar -xf {DEPENDENCIES_PATH} && rm {DEPENDENCIES_PATH}");
+            captured(sandbox, id, &unpack).await?;
+        }
+        self.unpack_source(sandbox, id, wrapped).await
     }
 
     /// Where sessions that may write do their work. Without this they are refused.
@@ -118,6 +221,9 @@ impl ClaudeHarness {
                 .decode(text)
                 .map_err(step)?;
             sandbox.upload(id, archive).await.map_err(step)?;
+        }
+        if let Some(wanted) = input.as_object_mut().and_then(|o| o.remove(CHECKOUT_FIELD)) {
+            self.check_out(sandbox.as_ref(), id, wanted).await?;
         }
         baseline(sandbox.as_ref(), id).await?;
         let tools = mcp::serve(sandbox.clone(), id.clone(), self.config.timeout).await?;
@@ -195,11 +301,11 @@ impl ClaudeHarness {
     }
 }
 
-/// A commit to diff against, so the patch holds only what the agent changed. Scratch space and
-/// the dependency cache are excluded, so they never read as changes.
+/// A commit to diff against, so the patch holds only what the agent changed. Scratch space, the
+/// dependency cache, and build output are excluded, because a repository may not ignore them.
 async fn baseline(sandbox: &dyn Sandbox, id: &SandboxId) -> Result<(), StepError> {
     let command = "git init -q . && mkdir -p .git/info && \
-                   printf '.tmp/\\n.cargo/\\n' >> .git/info/exclude && git add -A && \
+                   printf '.tmp/\\n.cargo/\\n.cache/\\ntarget/\\nnode_modules/\\n__pycache__/\\n' >> .git/info/exclude && git add -A && \
                    git -c user.name=almanac -c user.email=almanac@localhost \
                    commit -q --allow-empty -m baseline";
     let out = sandbox
@@ -213,6 +319,20 @@ async fn baseline(sandbox: &dyn Sandbox, id: &SandboxId) -> Result<(), StepError
         )));
     }
     Ok(())
+}
+
+/// A plain tar holding the gzipped source as one file, so `Sandbox::upload` can place it without
+/// the host reading what is inside.
+fn wrapped_source(tarball: Vec<u8>) -> Result<Vec<u8>, StepError> {
+    let mut builder = tar::Builder::new(vec![]);
+    let mut header = tar::Header::new_gnu();
+    header.set_size(tarball.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    builder
+        .append_data(&mut header, SOURCE_PATH, tarball.as_slice())
+        .map_err(step)?;
+    builder.into_inner().map_err(step)
 }
 
 async fn captured(

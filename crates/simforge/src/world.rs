@@ -53,6 +53,8 @@ pub struct Pull {
     pub head_repo: Option<String>,
     /// Messages of the commits on the branch, oldest first.
     pub commits: Vec<String>,
+    /// The paths the pull request changes.
+    pub files: Vec<String>,
 }
 
 impl Pull {
@@ -72,6 +74,7 @@ impl Pull {
             mergeable_state: "clean".to_string(),
             head_repo: None,
             commits: vec!["Update".to_string()],
+            files: vec![],
         }
     }
 }
@@ -159,6 +162,8 @@ pub struct World {
     pub target: Option<(String, String)>,
     /// Commit messages, by sha.
     pub commits: BTreeMap<String, String>,
+    /// A gzipped tar of each repository's source, served for any commit.
+    pub tarballs: BTreeMap<String, Vec<u8>>,
     /// Reads of a pull request still to answer with `mergeable: null`.
     pub unknown_reads: u32,
     next: u64,
@@ -312,9 +317,16 @@ impl World {
             "status": s.status, "conclusion": s.conclusion,
             "url": self.url(&format!("/check-suites/{}", s.id)),
             "before": null, "after": null, "pull_requests": [], "app": null,
+            "head_commit": self.commit_summary(&s.sha),
             "created_at": TIME, "updated_at": TIME,
             "latest_check_runs_count": 1,
         })
+    }
+
+    fn commit_summary(&self, sha: &str) -> Value {
+        let message = self.commits.get(sha).map_or("Update", String::as_str);
+        json!({"id": sha, "tree_id": sha, "message": message, "timestamp": TIME,
+               "author": {"name": "a", "email": "a@b"}, "committer": {"name": "a", "email": "a@b"}})
     }
 
     pub fn check_run_json(&self, repo: &str, s: &Suite) -> Value {

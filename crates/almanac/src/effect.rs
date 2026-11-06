@@ -45,6 +45,9 @@ pub enum Effect {
         pull: u64,
         branch: Slug,
         message: &'static str,
+        /// A status to set `pending` on the new commit before the branch moves, so nothing can
+        /// merge between the push and CI finishing.
+        hold: Option<&'static str>,
         patch: Checked,
     },
 }
@@ -105,6 +108,7 @@ pub enum Planned {
         pull: u64,
         branch: Slug,
         message: String,
+        hold: Option<String>,
         base: Sha,
         patch: Untrusted<Patch>,
     },
@@ -150,12 +154,14 @@ impl From<&Effect> for Planned {
                 pull,
                 branch,
                 message,
+                hold,
                 patch,
             } => Self::Push {
                 repo,
                 pull,
                 branch,
                 message: message.to_string(),
+                hold: hold.map(str::to_string),
                 base: patch.base().clone(),
                 patch: Untrusted::new(patch.patch().clone()),
             },
@@ -195,6 +201,7 @@ pub struct Push {
     pub pull: u64,
     pub branch: Slug,
     pub message: String,
+    pub hold: Option<String>,
     pub base: Sha,
     pub patch: Untrusted<Patch>,
 }

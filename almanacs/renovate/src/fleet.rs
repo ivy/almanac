@@ -1,14 +1,19 @@
 //! Where every Renovate pull request stands. State is derived from what GitHub says now and is
 //! never stored, so it cannot go stale. Pull request titles are hostile text, so a report names a
 //! pull request by number and validated branch only.
+use crate::events::PATCH_TRAILER;
+use crate::update::{Ages, PullText, RegistryAges, update_of};
+use crate::workflows::build_failures::MIN_RELEASE_AGE;
 use almanac::diag::Error;
 use almanac::prelude::*;
 use almanac::{Said, Verb};
 use futures::future::BoxFuture;
 use github::client::{Auth, GithubClient};
+use registry::{Endpoints, HttpRegistry};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Repairs tried on one pull request before a person is asked.
@@ -16,7 +21,6 @@ pub const ATTEMPT_CAP: u32 = 3;
 pub const TRUST_CONTEXT: &str = "almanac/trust";
 /// Renovate's login in the operator's repositories, unless the environment names another.
 const DEFAULT_AUTHOR: &str = "ivy-s-renovate-bot[bot]";
-const PATCH_TRAILER: &str = "Almanac-Key:";
 const CONFIG_FILES: [&str; 4] = [
     "renovate.json",
     ".renovaterc.json",
@@ -188,7 +192,7 @@ fn is_failed(conclusion: &str) -> bool {
 }
 
 /// Combines check suites with commit statuses, leaving out Almanac's own.
-fn checks_of(suites: &Value, statuses: &Value) -> Checks {
+pub fn checks_of(suites: &Value, statuses: &Value) -> Checks {
     let suites = suites["check_suites"]
         .as_array()
         .cloned()
@@ -211,6 +215,11 @@ fn checks_of(suites: &Value, statuses: &Value) -> Checks {
         return Checks::None;
     }
     Checks::Green
+}
+
+/// Whether Almanac is holding this commit.
+pub fn trust_pending(statuses: &Value) -> bool {
+    trust_of(statuses) == Some(Trust::Pending)
 }
 
 fn trust_of(statuses: &Value) -> Option<Trust> {
@@ -274,8 +283,27 @@ pub struct Report {
     pub repositories: Vec<RepoReport>,
 }
 
+/// The same test a workflow applies, so a report and a run cannot disagree.
+async fn cooldown_of(ages: &dyn Ages, pull: &Value) -> Cooldown {
+    let text = Untrusted::new(PullText {
+        body: pull["body"].as_str().map(str::to_string),
+    });
+    let update = text.map(update_of);
+    match ages.newest(&update).await {
+        Ok(published @ Published::At(_)) => {
+            let now = time::OffsetDateTime::now_utc();
+            match Cooled::check(published, MIN_RELEASE_AGE, now) {
+                Some(_) => Cooldown::Passed,
+                None => Cooldown::Young,
+            }
+        }
+        _ => Cooldown::Unknown,
+    }
+}
+
 async fn observe(
     client: &GithubClient,
+    ages: &dyn Ages,
     repo: &str,
     number: u64,
     config: RepoConfig,
@@ -298,7 +326,7 @@ async fn observe(
         trust: trust_of(&statuses),
         security: labels.iter().any(|l| l["name"] == json!("security")),
         attempts: attempts as u32,
-        cooldown: Cooldown::Unknown,
+        cooldown: cooldown_of(ages, &pull).await,
         config,
     };
     let branch = pull["head"]["ref"].as_str().unwrap_or_default().to_string();
@@ -306,7 +334,12 @@ async fn observe(
 }
 
 /// Every open Renovate pull request across `owner`'s repositories, by repository.
-pub async fn report(client: &GithubClient, owner: &str, author: &str) -> Result<Report, Error> {
+pub async fn report(
+    client: &GithubClient,
+    ages: &dyn Ages,
+    owner: &str,
+    author: &str,
+) -> Result<Report, Error> {
     let repositories = client.repositories(owner).await?;
     let mut out = Report {
         repositories_scanned: repositories.len(),
@@ -323,7 +356,7 @@ pub async fn report(client: &GithubClient, owner: &str, author: &str) -> Result<
         let mut reports = vec![];
         for pull in &pulls {
             let number = pull["number"].as_u64().unwrap_or_default();
-            let (facts, branch) = observe(client, repo, number, config).await?;
+            let (facts, branch) = observe(client, ages, repo, number, config).await?;
             if branch.parse::<Slug>().is_err() {
                 out.unreadable.push(format!("{repo}#{number}"));
                 continue;
@@ -402,7 +435,9 @@ fn report_verb<'a>(_args: &'a [String], _config: &'a Config) -> BoxFuture<'a, Re
         let author = std::env::var("ALMANAC_RENOVATE_AUTHOR");
         let author = author.unwrap_or_else(|_| DEFAULT_AUTHOR.to_string());
         let client = GithubClient::new(api, Auth::Token(token)).read_only();
-        let found = report(&client, &owner, &author).await?;
+        let registry = HttpRegistry::new(Endpoints::default());
+        let ages = RegistryAges(Arc::new(registry));
+        let found = report(&client, &ages, &owner, &author).await?;
         Ok(Said {
             human: render(&found),
             json: json!(found),

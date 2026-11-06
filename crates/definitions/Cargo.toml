@@ -12,14 +12,13 @@ workspace = true
 
 [dependencies]
 almanac.workspace = true
+github.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
 broker.workspace = true
 deliveries.workspace = true
 futures.workspace = true
-github.workspace = true
-renovate-triage = { path = "../../almanacs/renovate" }
 simforge.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

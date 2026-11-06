@@ -135,6 +135,14 @@ impl GithubForge {
             .client
             .post(&format!("/repos/{repo}/git/commits"), &commit)
             .await?;
+        // Set before the branch moves, so the new commit is never unheld.
+        if let Some(context) = &push.hold {
+            let status = json!({"state": "pending", "context": context});
+            let sha = commit["sha"].as_str().unwrap_or_default();
+            self.client
+                .post(&format!("/repos/{repo}/statuses/{sha}"), &status)
+                .await?;
+        }
         // Never forced: if the branch moved in the meantime, GitHub refuses this.
         let update = json!({"sha": commit["sha"], "force": false});
         let path = format!("/repos/{repo}/git/refs/heads/{}", push.branch);

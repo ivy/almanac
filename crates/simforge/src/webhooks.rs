@@ -18,6 +18,14 @@ pub enum Fate {
     Held,
 }
 
+fn branches_at(world: &World, repo: &str, sha: &str) -> Vec<Value> {
+    let pulls = world
+        .pulls
+        .iter()
+        .filter(|((r, _), p)| r == repo && p.head_sha == sha);
+    pulls.map(|(_, p)| json!({"name": p.head_ref})).collect()
+}
+
 /// The value of `X-Hub-Signature-256`.
 pub fn sign(secret: &str, body: &[u8]) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("any key length");
@@ -184,6 +192,8 @@ impl SimForge {
             let world = self.world.lock().unwrap();
             json!({
                 "sha": sha, "context": context, "state": state,
+                "branches": branches_at(&world, repo, sha),
+                "commit": {"commit": {"message": world.commits.get(sha).map_or("Update", String::as_str)}},
                 "repository": world.repo_json(&world.repos[repo]),
                 "sender": world.user_json("github-actions[bot]"),
             })

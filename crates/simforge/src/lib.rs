@@ -65,6 +65,12 @@ impl SimForge {
         world.pull_mut(repo, number).labels.push(label.to_string());
     }
 
+    /// What `/tarball/{sha}` serves for a repository.
+    pub fn set_tarball(&self, repo: &str, bytes: Vec<u8>) {
+        let mut world = self.world.lock().unwrap();
+        world.tarballs.insert(repo.to_string(), bytes);
+    }
+
     /// `mergeable` reads as null for the next `reads` reads, as GitHub computes it lazily.
     pub fn mergeable_after(&self, reads: u32) {
         self.world.lock().unwrap().unknown_reads = reads;

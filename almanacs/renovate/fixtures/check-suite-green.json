@@ -1,0 +1,11 @@
+{
+  "action": "completed",
+  "repository": {"full_name": "ivy/thicket"},
+  "check_suite": {
+    "head_sha": "0123456789abcdef0123456789abcdef01234567",
+    "head_branch": "renovate/actions-checkout-7.x",
+    "conclusion": "success",
+    "head_commit": {"message": "chore(deps): update actions/checkout action to v7"}
+  },
+  "sender": {"login": "github-actions[bot]"}
+}

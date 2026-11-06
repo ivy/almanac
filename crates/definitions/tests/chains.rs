@@ -41,6 +41,7 @@ fn repair_or_ask(r: &Repair) -> Vec<Effect> {
                 pull: r.pull,
                 branch: r.branch.clone(),
                 message: "fix: repair the build",
+                hold: None,
                 patch,
             }],
             Err(_) => vec![],

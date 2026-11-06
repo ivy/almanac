@@ -6,6 +6,7 @@ fn push(patch: &Untrusted<Patch>, base: &Sha) -> Result<Effect, Rejection> {
         pull: 1,
         branch: "renovate/x".parse().unwrap(),
         message: "fix",
+        hold: None,
         patch: DEFAULT_POLICY.check(patch, base)?,
     })
 }

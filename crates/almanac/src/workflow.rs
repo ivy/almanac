@@ -121,6 +121,12 @@ pub trait Workflow: Send + Sync + 'static {
         async { Ok(vec![]) }
     }
 
+    /// Whether this event deserves a run at all. A plain check of the event, so most deliveries
+    /// cost nothing.
+    fn wanted(_event: &Self::Event) -> bool {
+        true
+    }
+
     /// One active run per key.
     fn key(event: &Self::Event) -> String;
 
@@ -153,6 +159,7 @@ pub trait Workflow: Send + Sync + 'static {
 pub struct Identity {
     pub key: String,
     pub subjects: Vec<Subject>,
+    pub wanted: bool,
 }
 
 pub struct Decided {
@@ -164,6 +171,7 @@ pub trait Registered: Send + Sync {
     fn name(&self) -> &'static str;
     fn intent(&self) -> &'static str;
     fn kind(&self) -> &'static str;
+    fn handles(&self, kind: &str) -> bool;
     fn runs_per_hour(&self) -> u32;
     fn may(&self) -> &'static [EffectKind];
     fn agent_names(&self) -> Vec<&'static str>;
@@ -189,6 +197,9 @@ impl<W: Workflow> Registered for W {
     fn kind(&self) -> &'static str {
         W::Event::KIND
     }
+    fn handles(&self, kind: &str) -> bool {
+        kind == W::Event::KIND || W::Event::ALSO.contains(&kind)
+    }
     fn runs_per_hour(&self) -> u32 {
         W::RUNS_PER_HOUR
     }
@@ -206,6 +217,7 @@ impl<W: Workflow> Registered for W {
         Ok(Identity {
             key: W::key(&event),
             subjects: W::subjects(&event),
+            wanted: W::wanted(&event),
         })
     }
     fn execute<'a>(

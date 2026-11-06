@@ -389,6 +389,34 @@ impl GithubClient {
             .await
     }
 
+    /// The open pull request whose head is `branch` in the same repository, as a REST response.
+    pub async fn pull_for_branch(&self, repo: &str, branch: &str) -> Result<Option<Value>, Error> {
+        let owner = repo.split('/').next().unwrap_or_default();
+        let path = format!("/repos/{repo}/pulls?state=open&head={owner}:{branch}");
+        Ok(self.get_all(&path).await?.into_iter().next())
+    }
+
+    /// The paths a pull request changes.
+    pub async fn pull_files(&self, repo: &str, number: u64) -> Result<Vec<String>, Error> {
+        let files = self
+            .get_all(&format!("/repos/{repo}/pulls/{number}/files"))
+            .await?;
+        let path = |f: &Value| f["filename"].as_str().map(str::to_string);
+        Ok(files.iter().filter_map(path).collect())
+    }
+
+    /// A commit's source as a gzipped tar, with one top directory.
+    pub async fn tarball(&self, repo: &str, sha: &str) -> Result<Vec<u8>, Error> {
+        let path = format!("/repos/{repo}/tarball/{sha}");
+        let response = self.request(Method::GET, &path, None).await?;
+        let bytes = response.bytes().await;
+        let bytes = bytes.map_err(|e| Error::ForgeUnreachable {
+            action: path,
+            reason: e.to_string(),
+        })?;
+        Ok(bytes.to_vec())
+    }
+
     /// Messages of the commits on a pull request, oldest first.
     pub async fn pull_commit_messages(
         &self,

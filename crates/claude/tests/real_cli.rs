@@ -1,9 +1,13 @@
 //! The real CLI and real Podman against a stub model: no credential and no spend.
 //! `make test-sandbox` runs this.
 use almanac::agent::Grant;
+use almanac::cx::StepError;
 use almanac::patch::{Change, Patch};
 use claude::stub::{StubModel, Turn, tool};
-use claude::{ClaudeConfig, ClaudeHarness};
+use claude::{CHECKOUT_FIELD, Checkouts, ClaudeConfig, ClaudeHarness};
+use flate2::Compression;
+use flate2::write::GzEncoder;
+use futures::future::BoxFuture;
 use sandbox::{PodmanSandbox, SandboxSpec};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -160,6 +164,81 @@ async fn deletes_renames_and_links_come_back_as_what_they_are() {
     assert!(shown.contains("Delete { path: \"d/keep\" }"), "{shown}");
     assert!(shown.contains("Write { path: \"d/new\""), "{shown}");
     assert!(shown.contains("Link { path: \"d/link\" }"), "{shown}");
+}
+
+struct OneProject;
+
+impl Checkouts for OneProject {
+    fn tarball<'a>(
+        &'a self,
+        _repo: &'a str,
+        _sha: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<u8>, StepError>> {
+        Box::pin(async {
+            let mut builder = tar::Builder::new(GzEncoder::new(vec![], Compression::fast()));
+            let files = [
+                (
+                    "owner-repo-abc/Cargo.toml",
+                    "[package]\nname = \"sample\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nitoa = \"1\"\n",
+                ),
+                (
+                    "owner-repo-abc/Cargo.lock",
+                    "version = 4\n\n[[package]]\nname = \"itoa\"\nversion = \"1.0.18\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682\"\n\n[[package]]\nname = \"sample\"\nversion = \"0.1.0\"\ndependencies = [\n \"itoa\",\n]\n",
+                ),
+                (
+                    "owner-repo-abc/src/main.rs",
+                    "fn main() {\n    let mut b = itoa::Buffer::new();\n    println!(\"{}\", b.format(BROKEN));\n}\n",
+                ),
+            ];
+            for (path, text) in files {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(text.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                builder
+                    .append_data(&mut header, path, text.as_bytes())
+                    .unwrap();
+            }
+            Ok(builder.into_inner().unwrap().finish().unwrap())
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_fixer_gets_a_checkout_and_its_dependencies_and_builds_with_no_network() {
+    let fixed = "fn main() {\n    let mut b = itoa::Buffer::new();\n    println!(\"{}\", b.format(42));\n}\n";
+    let model = StubModel::start(vec![
+        tool("mcp__sandbox__exec", json!({"command": "cargo build --offline --locked 2>&1 | tail -1"})),
+        tool("mcp__sandbox__write_file", json!({"path": "src/main.rs", "content": fixed})),
+        tool("mcp__sandbox__exec", json!({"command": "cargo build --offline --locked 2>&1 | tail -1 && ./target/debug/sample"})),
+        Turn::Text(r#"{"summary": "defined the value"}"#.to_string()),
+    ])
+    .await;
+    let env = vec![("CARGO_HOME".to_string(), "/work/.cargo".to_string())];
+    let agent = SandboxSpec {
+        env: env.clone(),
+        ..SandboxSpec::agent(IMAGE)
+    };
+    let fetching = SandboxSpec {
+        env,
+        ..SandboxSpec::fetch(IMAGE, vec![])
+    };
+    let harness = ClaudeHarness::new(config(&model))
+        .with_sandbox(Arc::new(PodmanSandbox), agent)
+        .with_checkouts(Arc::new(OneProject))
+        .with_fetching(fetching);
+    let input = json!({"logs": "boom", CHECKOUT_FIELD: {"repo": "owner/repo", "sha": "abc"}});
+    let out = harness.session("Fix.", WRITE, input).await.unwrap();
+    let patch: Patch = serde_json::from_value(out).unwrap();
+    let seen = results(&model);
+    assert!(seen[0].contains("error"), "broken before the fix: {seen:?}");
+    assert!(
+        seen[2].contains("42"),
+        "built offline after the fix: {seen:?}"
+    );
+    let paths: Vec<_> = patch.changes.iter().map(|c| format!("{c:?}")).collect();
+    assert_eq!(paths.len(), 1, "only the edit is in the patch: {paths:?}");
+    assert!(paths[0].contains("src/main.rs"), "{paths:?}");
 }
 
 #[tokio::test]

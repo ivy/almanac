@@ -348,7 +348,7 @@ async fn a_rest_pull_request_becomes_the_same_event_as_its_webhook() {
 #[test]
 fn a_real_pull_request_fixture_still_parses() {
     use almanac::prelude::*;
-    let text = include_str!("../../../almanacs/renovate/fixtures/renovate-pr-opened.json");
+    let text = include_str!("../../definitions/fixtures/renovate-pr-opened.json");
     let value: Value = serde_json::from_str(text).unwrap();
     let event = github::PullRequestOpened::from_json(&value).unwrap();
     assert_eq!(event.repo.to_string(), "ivy/thicket");

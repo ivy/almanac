@@ -1,6 +1,6 @@
 use EffectKind as K;
 use almanac::prelude::*;
-use renovate_triage::workflows::dependency_updates::{CiState::*, *};
+use definitions::dependency_updates::{CiState::*, *};
 
 fn effects(checks_pass: bool, verdict: Verdict, ci: CiState) -> Vec<EffectKind> {
     let evidence = UpdateEvidence {

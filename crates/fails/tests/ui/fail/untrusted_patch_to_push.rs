@@ -6,6 +6,7 @@ fn push(patch: Untrusted<Patch>) -> Effect {
         pull: 1,
         branch: "renovate/x".parse().unwrap(),
         message: "fix",
+        hold: None,
         patch,
     }
 }

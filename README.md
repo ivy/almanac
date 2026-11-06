@@ -37,7 +37,7 @@ mise install
 make check
 cd almanacs/renovate
 cargo run -- synth
-cargo run -- simulate github.pull_request.opened fixtures/renovate-pr-opened.json --dry-run
+cargo run -- simulate github.check_suite.completed fixtures/check-suite-green.json --dry-run
 ```
 
 ## Documents

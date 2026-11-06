@@ -1,11 +1,11 @@
 use almanac::prelude::*;
 
-pub mod dependency_updates;
+pub mod build_failures;
 // almanac:modules
 
 pub fn all() -> Vec<Box<dyn Registered>> {
     vec![
-        Box::new(dependency_updates::DependencyUpdates),
+        Box::new(build_failures::BuildFailures),
         // almanac:register
     ]
 }

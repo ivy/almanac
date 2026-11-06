@@ -114,6 +114,8 @@ pub enum Ingest {
     Echo,
     ChainStopped,
     Unrouted,
+    /// A workflow handles this kind and did not want this event.
+    Ignored,
     Rejected,
     Queued,
     Coalesced,
@@ -214,6 +216,8 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new(workflows: Vec<Box<dyn Registered>>, providers: Providers) -> Self {
+        let identity = providers.identity();
+        let alerts = providers.alerts();
         Self {
             workflows,
             providers: Arc::new(providers),
@@ -222,9 +226,9 @@ impl Runtime {
             mode: Mode::default(),
             store: Arc::new(MemoryStore::default()),
             clock: Arc::new(SystemClock),
-            alerts: None,
+            alerts,
             stopped: AtomicBool::new(false),
-            identity: vec![],
+            identity,
         }
     }
 
@@ -347,12 +351,15 @@ impl Runtime {
         if self.is_echo(&e.payload) {
             return Ok(Admission::Drop(Ingest::Echo));
         }
-        let Some(workflow) = self.workflows.iter().find(|w| w.kind() == e.kind) else {
+        let Some(workflow) = self.workflows.iter().find(|w| w.handles(&e.kind)) else {
             return Ok(Admission::Drop(Ingest::Unrouted));
         };
         let Ok(id) = workflow.identify(&e.payload) else {
             return Ok(Admission::Drop(Ingest::Rejected));
         };
+        if !id.wanted {
+            return Ok(Admission::Drop(Ingest::Ignored));
+        }
         let depth = self
             .inferred_depth(workflow.name(), &id.key, e.depth)
             .await?;
@@ -601,6 +608,7 @@ impl Runtime {
                 pull,
                 branch,
                 message,
+                hold,
                 base,
                 patch,
             } => {
@@ -609,6 +617,7 @@ impl Runtime {
                     pull: *pull,
                     branch: branch.clone(),
                     message: message.clone(),
+                    hold: hold.clone(),
                     base: base.clone(),
                     patch: patch.clone(),
                 };

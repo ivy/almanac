@@ -35,10 +35,12 @@ async fn the_daemon_reports_ready_answers_health_and_stops_on_sigterm() {
         .unwrap();
     let health_port = free_port();
 
-    let mut daemon = Command::new(env!("CARGO_BIN_EXE_renovate-triage"))
+    let mut daemon = Command::new(env!("CARGO_BIN_EXE_almanac-renovate"))
         .arg("run")
         .env_clear()
         .env("DATABASE_URL", &url)
+        .env("GITHUB_TOKEN", "t")
+        .env("ANTHROPIC_API_KEY", "k")
         .env("NOTIFY_SOCKET", &socket_path)
         .env("ALMANAC_LISTEN", format!("127.0.0.1:{health_port}"))
         .env("ALMANAC_CONFIG", dir.path().join("none.toml"))
@@ -67,9 +69,11 @@ async fn the_daemon_reports_ready_answers_health_and_stops_on_sigterm() {
 #[tokio::test]
 async fn run_needs_a_database() {
     let dir = tempfile::tempdir().unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_renovate-triage"))
+    let out = Command::new(env!("CARGO_BIN_EXE_almanac-renovate"))
         .args(["--format", "json", "run"])
         .env_clear()
+        .env("GITHUB_TOKEN", "t")
+        .env("ANTHROPIC_API_KEY", "k")
         .env("ALMANAC_CONFIG", dir.path().join("none.toml"))
         .output()
         .await
@@ -82,11 +86,10 @@ async fn run_needs_a_database() {
 #[tokio::test]
 async fn startup_fails_with_a_diagnostic_when_a_provider_is_missing() {
     let dir = tempfile::tempdir().unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_renovate-triage"))
+    let out = Command::new(env!("CARGO_BIN_EXE_almanac-renovate"))
         .args(["--format", "json", "run"])
         .env_clear()
         .env("DATABASE_URL", "postgres://unreachable.invalid/none")
-        .env("DEMO_NO_REGISTRY", "1")
         .env("ALMANAC_CONFIG", dir.path().join("none.toml"))
         .output()
         .await

@@ -213,6 +213,7 @@ struct Args {
     runs_per_hour: Option<LitInt>,
     decide: Option<ExprPath>,
     scan: Option<ExprPath>,
+    when: Option<ExprPath>,
     subjects: Vec<ExprCall>,
     links: Vec<ExprCall>,
 }
@@ -268,6 +269,7 @@ fn parse_args(attr: Tokens) -> Result<Args> {
             "intent" => args.intent = Some(string(value)?),
             "decide" => args.decide = Some(path(value)?),
             "scan" => args.scan = Some(path(value)?),
+            "when" => args.when = Some(path(value)?),
             "subjects" => args.subjects = calls(value)?,
             "links" => args.links = calls(value)?,
             "may" => {
@@ -492,6 +494,14 @@ fn expand(attr: Tokens, item: Tokens) -> Result<Tokens> {
         }
     });
 
+    let when = args.when.as_ref().map(|when| {
+        quote! {
+            fn wanted(event: &#on) -> bool {
+                #when(event)
+            }
+        }
+    });
+
     let name = &function.sig.ident;
     let visibility = &function.vis;
     let label = name.to_string().replace('_', "-");
@@ -512,6 +522,7 @@ fn expand(attr: Tokens, item: Tokens) -> Result<Tokens> {
             const RUNS_PER_HOUR: u32 = #runs_per_hour;
 
             #scan
+            #when
 
             fn key(#event: &#on) -> ::std::string::String {
                 #key

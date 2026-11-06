@@ -1,5 +1,5 @@
 //! The HTTP surface. Paths and shapes follow `specs/github`; `tests/shape.rs` checks them.
-use crate::world::{Failure, Issue, Status, World, Write};
+use crate::world::{Failure, Issue, Pull, Status, World, Write};
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::{Path, Query, Request, State};
@@ -34,6 +34,11 @@ pub fn router(world: Shared) -> Router {
             "/repos/{owner}/{repo}/pulls/{number}/commits",
             get(pull_commits),
         )
+        .route(
+            "/repos/{owner}/{repo}/pulls/{number}/files",
+            get(pull_files),
+        )
+        .route("/repos/{owner}/{repo}/tarball/{sha}", get(tarball))
         .route("/repos/{owner}/{repo}/branches/{branch}", get(branch))
         .route("/repos/{owner}/{repo}/contents/{*path}", get(contents))
         .route(
@@ -243,10 +248,13 @@ async fn pulls(
         return missing();
     };
     let wanted = params.get("state").map_or("open", String::as_str);
+    let head = params.get("head").and_then(|h| h.split_once(':'));
+    let on_head = |p: &Pull| head.is_none_or(|(_, branch)| p.head_ref == branch);
     let items = world
         .pulls
         .iter()
         .filter(|((n, _), p)| *n == name && (wanted == "all" || p.state == wanted))
+        .filter(|(_, p)| on_head(p))
         .map(|(_, p)| world.pull_simple_json(r, p))
         .collect();
     paged(
@@ -302,6 +310,32 @@ async fn pull_commits(
         .collect();
     let path = format!("/repos/{name}/pulls/{number}/commits");
     paged(&world, &path, "page", &params, items)
+}
+
+async fn pull_files(
+    State(world): State<Shared>,
+    Path((owner, repo, number)): Path<(String, String, u64)>,
+    Query(params): Params,
+) -> Response {
+    let world = world.lock().unwrap();
+    let name = format!("{owner}/{repo}");
+    let Some(pull) = world.pulls.get(&(name.clone(), number)) else {
+        return missing();
+    };
+    let items = pull.files.iter().map(|f| json!({"filename": f})).collect();
+    let path = format!("/repos/{name}/pulls/{number}/files");
+    paged(&world, &path, "page", &params, items)
+}
+
+async fn tarball(
+    State(world): State<Shared>,
+    Path((owner, repo, _)): Path<(String, String, String)>,
+) -> Response {
+    let world = world.lock().unwrap();
+    match world.tarballs.get(&format!("{owner}/{repo}")) {
+        Some(bytes) => bytes.clone().into_response(),
+        None => missing(),
+    }
 }
 
 async fn branch(

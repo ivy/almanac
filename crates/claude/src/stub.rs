@@ -7,7 +7,9 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde_json::{Value, json};
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// One model turn.
 #[derive(Clone, Debug)]
@@ -23,16 +25,21 @@ pub fn tool(name: &str, input: Value) -> Turn {
     }
 }
 
+type Responder = Box<dyn Fn(&Value) -> Turn + Send + Sync>;
+
 #[derive(Default)]
 struct Script {
     turns: VecDeque<Turn>,
     requests: Vec<Value>,
     tokens_per_turn: u64,
+    /// Answers from the request, for sessions that interleave.
+    responder: Option<Responder>,
 }
 
 #[derive(Clone)]
 pub struct StubModel {
     script: Arc<Mutex<Script>>,
+    held: Arc<AtomicBool>,
     pub url: String,
 }
 
@@ -43,21 +50,46 @@ impl StubModel {
 
     /// As `start`, with each turn reporting this many output tokens.
     pub async fn costing(turns: Vec<Turn>, tokens_per_turn: u64) -> Self {
-        let script = Arc::new(Mutex::new(Script {
+        Self::serve(Script {
             turns: turns.into(),
-            requests: vec![],
             tokens_per_turn,
-        }));
+            ..Script::default()
+        })
+        .await
+    }
+
+    /// Answers each request by calling `responder`, however sessions interleave.
+    pub async fn answering(responder: impl Fn(&Value) -> Turn + Send + Sync + 'static) -> Self {
+        Self::serve(Script {
+            tokens_per_turn: 1,
+            responder: Some(Box::new(responder)),
+            ..Script::default()
+        })
+        .await
+    }
+
+    /// Leaves every answer waiting until `release`, so a test can act during a run.
+    pub fn hold(&self) {
+        self.held.store(true, Ordering::SeqCst);
+    }
+
+    pub fn release(&self) {
+        self.held.store(false, Ordering::SeqCst);
+    }
+
+    async fn serve(script: Script) -> Self {
+        let script = Arc::new(Mutex::new(script));
+        let held = Arc::new(AtomicBool::new(false));
         let app = Router::new()
             .route("/v1/messages", post(messages))
             .route("/v1/messages/count_tokens", post(count))
-            .with_state(script.clone());
+            .with_state((script.clone(), held.clone()));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("a free port");
         let url = format!("http://{}", listener.local_addr().expect("a bound port"));
         tokio::spawn(async move { axum::serve(listener, app).await });
-        Self { script, url }
+        Self { script, held, url }
     }
 
     pub fn requests(&self) -> Vec<Value> {
@@ -86,13 +118,22 @@ fn sse(name: &str, data: &Value) -> String {
     format!("event: {name}\ndata: {data}\n\n")
 }
 
-async fn messages(State(script): State<Arc<Mutex<Script>>>, Json(body): Json<Value>) -> Response {
+async fn messages(
+    State((script, held)): State<(Arc<Mutex<Script>>, Arc<AtomicBool>)>,
+    Json(body): Json<Value>,
+) -> Response {
     let (turn, tokens, number) = {
         let mut s = script.lock().unwrap();
         s.requests.push(body.clone());
-        let turn = s.turns.pop_front().unwrap_or(Turn::Text("{}".to_string()));
+        let turn = match &s.responder {
+            Some(responder) => responder(&body),
+            None => s.turns.pop_front().unwrap_or(Turn::Text("{}".to_string())),
+        };
         (turn, s.tokens_per_turn, s.requests.len())
     };
+    while held.load(Ordering::SeqCst) {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     let model = body["model"].as_str().unwrap_or("stub");
     let usage = json!({"input_tokens": 1, "output_tokens": tokens});
     let (block, delta, stop) = match turn {

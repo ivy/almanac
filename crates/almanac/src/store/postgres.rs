@@ -150,6 +150,11 @@ impl PostgresStore {
                    WHERE r.almanac = p.almanac AND r.workflow = p.workflow
                      AND r.key = p.key AND r.status = 'running'
                  )
+                 AND NOT EXISTS (
+                   SELECT 1 FROM outbox o JOIN runs r ON r.id = o.run_id
+                   WHERE o.status = 'pending' AND r.almanac = p.almanac
+                     AND r.workflow = p.workflow AND r.key = p.key
+                 )
                GROUP BY p.workflow"#,
             self.almanac,
             &workflows,
@@ -203,6 +208,11 @@ impl PostgresStore {
                  SELECT 1 FROM runs r
                  WHERE r.almanac = p.almanac AND r.workflow = p.workflow
                    AND r.key = p.key AND r.status = 'running'
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM outbox o JOIN runs r ON r.id = o.run_id
+                 WHERE o.status = 'pending' AND r.almanac = p.almanac
+                   AND r.workflow = p.workflow AND r.key = p.key
                )
              ORDER BY p.lane, p.seq
              LIMIT 1",

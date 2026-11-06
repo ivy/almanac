@@ -499,7 +499,7 @@ async fn a_cooldown_await_is_reconsidered_by_a_scan_once_it_passes() {
     let rt = Runtime::new(vec![Box::new(BuildFailures)], providers).in_mode(Mode::Live);
 
     assert_eq!(rt.backfill(None).await.unwrap().queued, 1);
-    rt.drain().await.unwrap();
+    rt.settle().await.unwrap();
     assert_eq!(harness.calls(), 0, "still inside its cooldown");
 
     let again = rt.backfill(None).await.unwrap();
@@ -511,7 +511,7 @@ async fn a_cooldown_await_is_reconsidered_by_a_scan_once_it_passes() {
 
     *published.lock().unwrap() = hours_old(100);
     assert_eq!(rt.backfill(None).await.unwrap().queued, 1, "it cooled");
-    rt.drain().await.unwrap();
+    rt.settle().await.unwrap();
     assert_eq!(harness.calls(), 1, "now it is repaired");
 }
 

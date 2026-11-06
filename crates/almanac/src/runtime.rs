@@ -579,6 +579,21 @@ impl Runtime {
         Ok(out.into_inner().unwrap())
     }
 
+    /// Runs and applies until nothing is left. A key waits for its last run's effects, so a
+    /// rerun that was held back starts as soon as they land.
+    pub async fn settle(&self) -> Stored<Vec<Outcome>> {
+        let mut all = vec![];
+        loop {
+            let outcomes = self.drain().await?;
+            let delivered = self.deliver().await?;
+            let idle = outcomes.is_empty() && delivered.iter().all(|d| d.error.is_some());
+            all.extend(outcomes);
+            if idle {
+                return Ok(all);
+            }
+        }
+    }
+
     /// Applies recorded effects, oldest first. A failure leaves an effect to be retried by a
     /// later call, up to a limit. Providers receive a stable key, so a crash between applying
     /// and marking it delivered changes nothing when it is applied again.

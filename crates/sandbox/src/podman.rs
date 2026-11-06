@@ -15,6 +15,8 @@ const EXEC_GRACE: Duration = Duration::from_secs(5);
 /// Exit code when `timeout -s KILL` kills a command.
 const KILLED: i32 = 137;
 const UNPRIVILEGED: &str = "1000:1000";
+/// Longer than any session. A sandbox whose owner was killed outright ends itself by this.
+const LIFETIME_SECONDS: u32 = 7200;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -75,7 +77,7 @@ fn create_args(name: &str, spec: &SandboxSpec) -> Vec<String> {
         args.push(pair);
     }
     args.push(spec.image.clone());
-    args.extend(["sleep".to_string(), "86400".to_string()]);
+    args.extend(["sleep".to_string(), LIFETIME_SECONDS.to_string()]);
     args
 }
 

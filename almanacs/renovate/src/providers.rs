@@ -74,11 +74,28 @@ fn harness(checkouts: Arc<GithubClient>) -> Option<ClaudeHarness> {
     )
 }
 
+/// Where registries are. `ALMANAC_REGISTRY_URL` points them all at one mirror.
+pub fn registry_endpoints() -> Endpoints {
+    match env::var("ALMANAC_REGISTRY_URL") {
+        Ok(url) => Endpoints {
+            npm: url.clone(),
+            crates: url.clone(),
+            pypi: url.clone(),
+            go: url.clone(),
+            github: url.clone(),
+            docker: url,
+        },
+        Err(_) => Endpoints::default(),
+    }
+}
+
 pub fn all(_config: &Config) -> Providers {
-    let registry: Arc<dyn PackageRegistry> = Arc::new(HttpRegistry::new(Endpoints::default()));
+    let registry: Arc<dyn PackageRegistry> = Arc::new(HttpRegistry::new(registry_endpoints()));
     let ages: Arc<dyn Ages> = Arc::new(RegistryAges(registry.clone()));
     let vetting: Arc<dyn Vetting> = Arc::new(RealVetting {
-        advisories: Arc::new(CveNow::new(CVE_NOW)),
+        advisories: Arc::new(CveNow::new(
+            env::var("ALMANAC_ADVISORIES_URL").unwrap_or_else(|_| CVE_NOW.to_string()),
+        )),
         registry,
     });
     let mut providers = Providers::new()

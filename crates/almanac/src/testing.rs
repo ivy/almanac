@@ -272,6 +272,7 @@ pub mod conformance {
         a_live_event_runs_before_any_scanned_event(&open("lanes")).await;
         a_live_event_lifts_a_scanned_event_on_its_key(&open("lifted")).await;
         effects_no_run_produced_are_delivered_once(&open("noted")).await;
+        a_key_waits_for_its_last_runs_effects(&open("waits")).await;
         a_ledger_keeps_what_was_done_to_a_key(&open("ledger"), &open("ledger")).await;
         depth_survives_a_restart(&open("depth")).await;
         oldest_work_runs_first(&open("order")).await;
@@ -443,6 +444,22 @@ pub mod conformance {
         assert_eq!(started(s).await.depth, 2);
         s.recover().await.unwrap();
         assert_eq!(started(s).await.depth, 2);
+    }
+
+    async fn a_key_waits_for_its_last_runs_effects(s: &Arc<dyn Store>) {
+        admit(s, "d1", "k", json!(1)).await;
+        let run = started(s).await;
+        admit(s, "d2", "k", json!(2)).await;
+        s.release(&run.id, &[], vec![json!("push")], EntryStatus::Pending)
+            .await
+            .unwrap();
+        assert_eq!(
+            s.claim(request(BUDGETS)).await.unwrap(),
+            Claim::Idle,
+            "a rerun must see what the effect changed"
+        );
+        s.delivered(&format!("{}:0", run.id)).await.unwrap();
+        assert_eq!(started(s).await.payload, json!(2));
     }
 
     async fn effects_no_run_produced_are_delivered_once(s: &Arc<dyn Store>) {

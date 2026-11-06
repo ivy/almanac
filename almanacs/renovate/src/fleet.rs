@@ -2,6 +2,7 @@
 //! never stored, so it cannot go stale. Pull request titles are hostile text, so a report names a
 //! pull request by number and validated branch only.
 use crate::events::PATCH_TRAILER;
+use crate::providers::registry_endpoints;
 use crate::update::{Ages, PullText, RegistryAges, update_of};
 use crate::workflows::build_failures::MIN_RELEASE_AGE;
 use almanac::diag::Error;
@@ -9,7 +10,7 @@ use almanac::prelude::*;
 use almanac::{Said, Verb};
 use futures::future::BoxFuture;
 use github::client::{Auth, GithubClient};
-use registry::{Endpoints, HttpRegistry};
+use registry::HttpRegistry;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -453,7 +454,7 @@ fn report_verb<'a>(_args: &'a [String], _config: &'a Config) -> BoxFuture<'a, Re
         let author = std::env::var("ALMANAC_RENOVATE_AUTHOR");
         let author = author.unwrap_or_else(|_| DEFAULT_AUTHOR.to_string());
         let client = GithubClient::new(api, Auth::Token(token)).read_only();
-        let registry = HttpRegistry::new(Endpoints::default());
+        let registry = HttpRegistry::new(registry_endpoints());
         let ages = RegistryAges(Arc::new(registry));
         let found = report(&client, &ages, &owner, &author).await?;
         Ok(Said {

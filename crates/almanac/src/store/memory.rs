@@ -49,10 +49,25 @@ impl State {
         self.pending.insert(slot, Waiting { seq, lane, pending });
     }
 
+    /// A key waits for its last run's effects, because a run must see what they changed.
+    fn undelivered_on(&self, slot: &Slot) -> bool {
+        let of_slot = |run_id: &String| {
+            let run = self.runs.get(run_id);
+            run.is_some_and(|r| r.workflow == slot.0 && r.key == slot.1)
+        };
+        self.outbox
+            .iter()
+            .any(|e| e.status == EntryStatus::Pending && e.run_id.as_ref().is_some_and(of_slot))
+    }
+
+    fn is_free(&self, slot: &Slot) -> bool {
+        !self.running.contains_key(slot) && !self.undelivered_on(slot)
+    }
+
     fn claimable(&self, workflow: &str) -> usize {
         self.pending
-            .iter()
-            .filter(|(slot, _)| slot.0 == workflow && !self.running.contains_key(*slot))
+            .keys()
+            .filter(|slot| slot.0 == workflow && self.is_free(slot))
             .count()
     }
 
@@ -149,7 +164,7 @@ impl MemoryStore {
         let next = s
             .pending
             .iter()
-            .filter(|(slot, _)| !s.running.contains_key(*slot) && open.contains(&slot.0.as_str()))
+            .filter(|(slot, _)| s.is_free(slot) && open.contains(&slot.0.as_str()))
             .min_by_key(|(_, waiting)| (waiting.lane, waiting.seq))
             .map(|(slot, _)| slot.clone());
         let Some(slot) = next else {

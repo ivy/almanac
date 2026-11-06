@@ -112,8 +112,7 @@ impl Consumer {
         tokio::pin!(stop);
         loop {
             self.catch_up(runtime).await?;
-            runtime.drain().await?;
-            runtime.deliver().await?;
+            runtime.settle().await?;
             tokio::select! {
                 () = &mut stop => return Ok(()),
                 _ = listener.recv() => {}

@@ -96,8 +96,7 @@ fn mode(dry_run: bool) -> Mode {
 
 /// Runs what is queued and applies it, reporting what happened.
 async fn settle(runtime: &Runtime) -> Result<Vec<String>, Error> {
-    let outcomes = runtime.drain().await?;
-    runtime.deliver().await?;
+    let outcomes = runtime.settle().await?;
     let mut shown = vec![];
     for outcome in &outcomes {
         let line = match outcome {

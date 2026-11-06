@@ -13,7 +13,7 @@ DB_TESTS := binary(store_postgres) or binary(workflows_on_postgres) or binary(br
 SANDBOX_TESTS := binary(podman) or binary(real_cli)
 SLOW_TESTS := $(DB_TESTS) or $(SANDBOX_TESTS)
 
-.PHONY: all build test test-db test-sandbox test-fast lint fmt generate generated sqlx-prepare check-public verify-units check clean
+.PHONY: all build test test-db test-sandbox test-e2e test-fast lint fmt generate generated sqlx-prepare check-public verify-units check clean
 
 all: build
 
@@ -24,7 +24,14 @@ build:
 # Every test. almanacs keep their own Cargo workspaces, so each is tested on its own.
 test:
 	cargo nextest run --workspace --locked --no-tests=pass -E 'not ($(SLOW_TESTS))'
-	cd $(ALMANAC) && cargo nextest run --locked --no-tests=pass -E 'not binary(daemon)'
+	cd $(ALMANAC) && cargo nextest run --locked --no-tests=pass -E 'not (binary(daemon) or binary(e2e))'
+
+# The real broker and daemon as processes, on PostgreSQL, with the real CLI and Podman. Only the
+# model and GitHub are simulated.
+test-e2e:
+	podman build -q -t localhost/almanac-fixer:test images/fixer
+	cargo build --locked --package broker
+	cd $(ALMANAC) && cargo nextest run --locked -E 'binary(e2e)'
 
 # Isolation, proved with real Podman and the real CLI against a stub model. No model is called.
 test-sandbox:
@@ -67,7 +74,7 @@ generated:
 	cargo xtask generate --check
 
 # The gate. A change is not done until this passes.
-check: lint generated test test-db test-sandbox check-public verify-units
+check: lint generated test test-db test-sandbox test-e2e check-public verify-units
 	cargo deny --locked check
 
 clean:

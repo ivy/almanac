@@ -144,6 +144,26 @@ async fn a_fixer_session_edits_in_the_sandbox_and_returns_a_patch() {
 }
 
 #[tokio::test]
+async fn a_fixer_that_closes_in_prose_keeps_its_patch_and_its_cost() {
+    let model = StubModel::start(vec![
+        tool(
+            "mcp__sandbox__write_file",
+            json!({"path": "src/fixed.txt", "content": "fixed\n"}),
+        ),
+        Turn::Text("The build passes now.".to_string()),
+    ])
+    .await;
+    let out = harness(&model)
+        .session("Fix.", WRITE, json!({}))
+        .await
+        .unwrap();
+    assert_eq!(out["answer"], json!("The build passes now."));
+    assert!(out["usage"]["cost_usd"].is_number(), "{out}");
+    let patch: Patch = serde_json::from_value(out).unwrap();
+    assert_eq!(patch.changes.len(), 1, "{patch:?}");
+}
+
+#[tokio::test]
 async fn deletes_renames_and_links_come_back_as_what_they_are() {
     let setup = "mkdir d && echo keep > d/keep && echo old > d/old && git add -A && \
                  git -c user.name=a -c user.email=a@b commit -qm base";

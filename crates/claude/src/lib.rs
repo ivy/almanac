@@ -30,7 +30,7 @@ const DEPENDENCIES_PATH: &str = ".dependencies.tar";
 const FETCH_SCRIPT: &str = "set -e; \
     if [ -f Cargo.lock ]; then cargo fetch --locked; fi; \
     find . -name go.sum -not -path './node_modules/*' -not -path './.cache/*' | while read -r sum; do \
-      (cd \"$(dirname \"$sum\")\" && go mod download); done; \
+      (cd \"$(dirname \"$sum\")\" && GOWORK=off go mod download); done; \
     if [ -f pnpm-lock.yaml ]; then pnpm fetch --ignore-scripts --store-dir /work/.cache/pnpm; fi; \
     mkdir -p .cargo .cache; \
     tar -cf .dependencies.tar .cargo .cache";
@@ -239,7 +239,10 @@ impl ClaudeHarness {
         }
         baseline(sandbox.as_ref(), id).await?;
         let tools = mcp::serve(sandbox.clone(), id.clone(), self.config.timeout).await?;
-        let (answer, usage) = self.conversation(prompt, input, Some(&tools)).await?;
+        let (text, usage) = self.conversation(prompt, input, Some(&tools)).await?;
+        // The patch is the result here, and the closing message only describes it, so prose
+        // costs nothing but the structure.
+        let answer = parse_answer(&text).unwrap_or(Value::String(text));
         // Read first: checks can leave files behind, and those are not the agent's change.
         let changes = changes(sandbox.as_ref(), id).await?;
         let diff = captured(sandbox.as_ref(), id, "git diff --cached --binary").await?;
@@ -306,9 +309,8 @@ impl ClaudeHarness {
         input: Value,
         tools: Option<&mcp::Tools>,
     ) -> Result<Value, StepError> {
-        self.conversation(prompt, input, tools)
-            .await
-            .map(|(answer, _)| answer)
+        let (text, _) = self.conversation(prompt, input, tools).await?;
+        parse_answer(&text)
     }
 
     async fn conversation(
@@ -316,7 +318,7 @@ impl ClaudeHarness {
         prompt: &str,
         input: Value,
         tools: Option<&mcp::Tools>,
-    ) -> Result<(Value, Value), StepError> {
+    ) -> Result<(String, Value), StepError> {
         let home = tempfile::tempdir().map_err(step)?;
         let home_path = home.path().to_string_lossy().into_owned();
         let mut child = self
@@ -337,10 +339,7 @@ impl ClaudeHarness {
                 "session killed: over its {}s time limit",
                 self.config.timeout.as_secs()
             ))),
-            Ok(finished) => {
-                let (text, usage) = finished?;
-                Ok((parse_answer(&text)?, usage))
-            }
+            Ok(finished) => finished,
         }
     }
 }
@@ -456,7 +455,10 @@ async fn read_result(child: &mut Child, budget: u64) -> Result<(String, Value), 
             Some("result") => {
                 if event["is_error"].as_bool().unwrap_or(false) {
                     let reason = event["subtype"].as_str().unwrap_or("unknown");
-                    return Err(step(format!("session failed: {reason}")));
+                    let cost = &event["total_cost_usd"];
+                    return Err(step(format!(
+                        "session failed: {reason}, costing {cost} USD"
+                    )));
                 }
                 let usage = json!({
                     "tokens": used,

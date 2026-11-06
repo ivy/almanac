@@ -176,11 +176,13 @@ async fn main() {
         let repo = target["repo"].as_str().unwrap();
         let number = target["number"].as_u64().unwrap();
         eprintln!("attempting {number}");
+        let started = std::time::Instant::now();
         let result = attempt(&client, &harness, repo, number, out).await;
-        let row = match result {
+        let mut row = match result {
             Ok(row) => row,
             Err(StepError(error)) => json!({"repo": repo, "number": number, "error": error}),
         };
+        row["seconds"] = json!(started.elapsed().as_secs());
         results.push(row);
         let text = serde_json::to_string_pretty(&results).unwrap();
         std::fs::write(format!("{out}/results.json"), text).unwrap();

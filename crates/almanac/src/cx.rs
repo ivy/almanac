@@ -18,6 +18,17 @@ use time::OffsetDateTime;
 pub trait Record: Serialize + DeserializeOwned + Send + Sync + 'static {}
 impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> Record for T {}
 
+/// How long a patch counts against a key. A branch is reused for later versions of a package, so
+/// old attempts must age out.
+const ATTEMPT_WINDOW: Duration = Duration::from_secs(14 * 86400);
+
+/// What has already been tried on a key.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Attempts {
+    pub used: u32,
+    pub asked: bool,
+}
+
 #[derive(Serialize, Deserialize)]
 struct CooldownCheck {
     published: Published,
@@ -71,12 +82,28 @@ impl<E: Into<StepError>> From<E> for Halt {
     }
 }
 
+/// What a run can reach, handed over by the runtime.
+pub(crate) struct World {
+    pub store: Arc<dyn Store>,
+    pub clock: Arc<dyn Clock>,
+    pub mode: Mode,
+    pub providers: Arc<Providers>,
+}
+
+/// What a workflow declared it may do.
+pub(crate) struct Declared {
+    pub may: &'static [EffectKind],
+    pub agents: Vec<&'static str>,
+}
+
 pub struct Cx {
     run_id: String,
     store: Arc<dyn Store>,
     clock: Arc<dyn Clock>,
     mode: Mode,
     may: &'static [EffectKind],
+    /// The workflow and key of this run.
+    slot: (String, String),
     counts: Mutex<HashMap<&'static str, usize>>,
     agents: Vec<&'static str>,
     providers: Arc<Providers>,
@@ -85,22 +112,20 @@ pub struct Cx {
 impl Cx {
     pub(crate) fn new(
         run_id: String,
-        store: Arc<dyn Store>,
-        clock: Arc<dyn Clock>,
-        mode: Mode,
-        may: &'static [EffectKind],
-        agents: Vec<&'static str>,
-        providers: Arc<Providers>,
+        slot: (String, String),
+        declared: Declared,
+        world: World,
     ) -> Self {
         Self {
             run_id,
-            store,
-            clock,
-            mode,
-            may,
+            store: world.store,
+            clock: world.clock,
+            mode: world.mode,
+            may: declared.may,
+            slot,
             counts: Mutex::default(),
-            agents,
-            providers,
+            agents: declared.agents,
+            providers: world.providers,
         }
     }
 
@@ -181,6 +206,22 @@ impl Cx {
             checked_at,
         } = self.record("cooldown", check).await?;
         Ok(Cooled::check(published, min_age, checked_at))
+    }
+
+    /// How many patches this key has had recently, and whether a person was already asked. A
+    /// cap on attempts is separate from chain depth: it decides when to stop and ask.
+    pub async fn attempts(&self) -> Result<Attempts, StepError> {
+        let (workflow, key) = &self.slot;
+        let since = self.clock.now() - ATTEMPT_WINDOW;
+        let count = async {
+            let traces = self.store.traces(workflow, key, since).await?;
+            let kind = |name: &str| traces.iter().filter(|t| t.kind == name).count();
+            Ok(Attempts {
+                used: kind("Push") as u32,
+                asked: kind("Ask") > 0,
+            })
+        };
+        self.record("attempts", count).await
     }
 
     /// Posts a `pending` status now, before an agent starts, so nothing can merge while the work

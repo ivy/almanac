@@ -1,11 +1,11 @@
 //! Routes events, runs workflows, and applies limits. What it must remember is in `store`.
 use crate::clock::{Clock, SystemClock};
-use crate::cx::{Cx, Halt, StepError};
+use crate::cx::{Cx, Declared, Halt, StepError, World};
 use crate::effect::{ActionSummary, Effect, EffectKind, Forge, Mode, Planned, Push, Tracker};
 use crate::providers::Providers;
 use crate::store::{
     Admission, Budget, Claim, ClaimRequest, Entry, EntryStatus, MemoryStore, Pending, Run, Store,
-    StoreError, Stored,
+    StoreError, Stored, Trace,
 };
 use crate::taint::{Slug, Untrusted};
 use crate::workflow::{Decided, Registered, Scanner, Subject};
@@ -17,6 +17,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub const MAX_CHAIN_DEPTH: u32 = 3;
+/// How long an effect can explain a later event on its key, such as a push and the CI after it.
+pub const LEDGER_WINDOW: Duration = Duration::from_secs(2 * 3600);
 /// `runs_per_hour` and every budget are measured over this.
 pub const BUDGET_WINDOW: Duration = Duration::from_secs(3600);
 const MAX_CONCURRENT_RUNS: usize = 4;
@@ -108,6 +110,8 @@ pub struct Envelope {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Ingest {
     Duplicate,
+    /// Almanac's own action coming back. It never starts a run.
+    Echo,
     ChainStopped,
     Unrouted,
     Rejected,
@@ -204,6 +208,8 @@ pub struct Runtime {
     alerts: Option<Slug>,
     /// Set on shutdown. An in-flight run finishes, and no new one starts.
     stopped: AtomicBool,
+    /// The logins Almanac acts as, so its own echoes can be recognised.
+    identity: Vec<String>,
 }
 
 impl Runtime {
@@ -218,6 +224,7 @@ impl Runtime {
             clock: Arc::new(SystemClock),
             alerts: None,
             stopped: AtomicBool::new(false),
+            identity: vec![],
         }
     }
 
@@ -234,6 +241,12 @@ impl Runtime {
     /// Files a question in `target` when a budget trips.
     pub fn alerting(mut self, target: Slug) -> Self {
         self.alerts = Some(target);
+        self
+    }
+
+    /// The logins Almanac acts as. An event sent by one of these is an echo.
+    pub fn acting_as(mut self, logins: &[&str]) -> Self {
+        self.identity = logins.iter().map(|l| l.to_string()).collect();
         self
     }
 
@@ -307,27 +320,53 @@ impl Runtime {
     /// Routes to the first matching workflow.
     /// A delivery is seen only once this returns `Ok`, so an error means it can be redelivered.
     pub async fn ingest(&self, e: Envelope) -> Stored<Ingest> {
-        let admission = self.admission(&e.kind, e.depth, e.origin, e.payload);
+        let admission = self.admission(&e).await?;
         self.store.admit(&e.source, &e.delivery_id, admission).await
     }
 
-    fn admission(&self, kind: &str, depth: u32, origin: Origin, payload: Value) -> Admission {
-        if depth > self.limits.max_depth {
-            return Admission::Drop(Ingest::ChainStopped);
+    /// Whether Almanac sent this. The comparison is exact, so hostile text cannot match by
+    /// accident, and only the login is read.
+    fn is_echo(&self, payload: &Value) -> bool {
+        let sender = payload.pointer("/sender/login").and_then(Value::as_str);
+        sender.is_some_and(|login| self.identity.iter().any(|mine| mine == login))
+    }
+
+    /// Webhooks do not say what caused them, so depth comes from what Almanac recently did to
+    /// this key. CI after a push inherits the push's depth, whoever sent the event.
+    async fn inferred_depth(&self, workflow: &str, key: &str, stated: u32) -> Stored<u32> {
+        let since = self.clock.now() - LEDGER_WINDOW;
+        let traces = self.store.traces(workflow, key, since).await?;
+        let caused = traces.iter().map(|t| t.depth + 1).max().unwrap_or(0);
+        Ok(stated.max(caused))
+    }
+
+    async fn admission(&self, e: &Envelope) -> Stored<Admission> {
+        if e.depth > self.limits.max_depth {
+            return Ok(Admission::Drop(Ingest::ChainStopped));
         }
-        let Some(workflow) = self.workflows.iter().find(|w| w.kind() == kind) else {
-            return Admission::Drop(Ingest::Unrouted);
+        if self.is_echo(&e.payload) {
+            return Ok(Admission::Drop(Ingest::Echo));
+        }
+        let Some(workflow) = self.workflows.iter().find(|w| w.kind() == e.kind) else {
+            return Ok(Admission::Drop(Ingest::Unrouted));
         };
-        let Ok(id) = workflow.identify(&payload) else {
-            return Admission::Drop(Ingest::Rejected);
+        let Ok(id) = workflow.identify(&e.payload) else {
+            return Ok(Admission::Drop(Ingest::Rejected));
         };
-        Admission::Queue(Pending {
+        let depth = self
+            .inferred_depth(workflow.name(), &id.key, e.depth)
+            .await?;
+        if depth > self.limits.max_depth {
+            return Ok(Admission::Drop(Ingest::ChainStopped));
+        }
+        Ok(Admission::Queue(Pending {
             workflow: workflow.name().to_string(),
             key: id.key,
-            payload,
+            payload: e.payload.clone(),
             subjects: id.subjects,
-            origin,
-        })
+            origin: e.origin,
+            depth,
+        }))
     }
 
     fn budgets(&self) -> Vec<Budget> {
@@ -357,12 +396,17 @@ impl Runtime {
     async fn execute(&self, w: &dyn Registered, run: &Run) -> (Outcome, Vec<Subject>) {
         let cx = Cx::new(
             run.id.clone(),
-            self.store.clone(),
-            self.clock.clone(),
-            self.mode,
-            w.may(),
-            w.agent_names(),
-            self.providers.clone(),
+            (run.workflow.clone(), run.key.clone()),
+            Declared {
+                may: w.may(),
+                agents: w.agent_names(),
+            },
+            World {
+                store: self.store.clone(),
+                clock: self.clock.clone(),
+                mode: self.mode,
+                providers: self.providers.clone(),
+            },
         );
         let (id, workflow) = (run.id.clone(), w.name());
         match w.execute(&cx, &run.payload).await {
@@ -448,16 +492,33 @@ impl Runtime {
                 Claim::Run(run) => {
                     let w = self.workflow(&run.workflow)?;
                     let (outcome, links) = self.execute(w, &run).await;
-                    let status = match self.mode {
-                        Mode::Live => EntryStatus::Pending,
-                        Mode::DryRun => EntryStatus::WouldApply,
-                    };
                     let planned = planned(&outcome)?;
+                    let status = self.entry_status();
                     self.store.release(&run.id, &links, planned, status).await?;
+                    self.remember_effects(&run, &outcome).await?;
                     out.lock().unwrap().push(outcome);
                 }
             }
         }
+    }
+
+    /// A dry run changes nothing, so it causes nothing and leaves no trace.
+    async fn remember_effects(&self, run: &Run, outcome: &Outcome) -> Stored<()> {
+        let (Mode::Live, Outcome::Ran { effects, .. }) = (self.mode, outcome) else {
+            return Ok(());
+        };
+        for effect in effects {
+            if effect.kind() == EffectKind::Await {
+                continue;
+            }
+            let trace = Trace {
+                kind: format!("{:?}", effect.kind()),
+                depth: run.depth,
+                at: self.clock.now(),
+            };
+            self.store.remember(&run.workflow, &run.key, trace).await?;
+        }
+        Ok(())
     }
 
     fn entry_status(&self) -> EntryStatus {

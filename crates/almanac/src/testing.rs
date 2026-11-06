@@ -187,7 +187,9 @@ impl Tracker for FakeTracker {
 pub mod conformance {
     use crate::runtime::Ingest;
     use crate::runtime::Origin;
-    use crate::store::{Admission, Budget, Claim, ClaimRequest, EntryStatus, Pending, Store};
+    use crate::store::{
+        Admission, Budget, Claim, ClaimRequest, EntryStatus, Pending, Store, Trace,
+    };
     use crate::taint::Slug;
     use crate::workflow::Subject;
     use serde_json::{Value, json};
@@ -222,6 +224,7 @@ pub mod conformance {
             payload,
             subjects: vec![subject()],
             origin: Origin::Webhook,
+            depth: 0,
         })
     }
 
@@ -232,6 +235,7 @@ pub mod conformance {
             payload,
             subjects: vec![],
             origin: Origin::Scan,
+            depth: 0,
         })
     }
 
@@ -268,6 +272,8 @@ pub mod conformance {
         a_live_event_runs_before_any_scanned_event(&open("lanes")).await;
         a_live_event_lifts_a_scanned_event_on_its_key(&open("lifted")).await;
         effects_no_run_produced_are_delivered_once(&open("noted")).await;
+        a_ledger_keeps_what_was_done_to_a_key(&open("ledger"), &open("ledger")).await;
+        depth_survives_a_restart(&open("depth")).await;
         oldest_work_runs_first(&open("order")).await;
         workflows_not_in_this_binary_are_left_alone(&open("unknown")).await;
         queued_work_and_the_log_survive_a_restart(&open("restart"), &open("restart")).await;
@@ -403,6 +409,40 @@ pub mod conformance {
             .unwrap();
         assert_eq!(admit(s, "w1", "shared", json!(2)).await, Ingest::Coalesced);
         assert_eq!(started(s).await.key, "shared");
+    }
+
+    async fn a_ledger_keeps_what_was_done_to_a_key(a: &Arc<dyn Store>, b: &Arc<dyn Store>) {
+        let trace = |kind: &str, depth, minutes: u64| Trace {
+            kind: kind.to_string(),
+            depth,
+            at: NOW + Duration::from_secs(minutes * 60),
+        };
+        a.remember(W, "k", trace("Push", 1, 0)).await.unwrap();
+        a.remember(W, "k", trace("Ask", 2, 10)).await.unwrap();
+        a.remember(W, "other", trace("Push", 9, 0)).await.unwrap();
+        let since = NOW - Duration::from_secs(60);
+        let found = b.traces(W, "k", since).await.unwrap();
+        assert_eq!(found, [trace("Push", 1, 0), trace("Ask", 2, 10)]);
+        let later = b
+            .traces(W, "k", NOW + Duration::from_secs(60))
+            .await
+            .unwrap();
+        assert_eq!(later, [trace("Ask", 2, 10)]);
+    }
+
+    async fn depth_survives_a_restart(s: &Arc<dyn Store>) {
+        let deep = Admission::Queue(Pending {
+            workflow: W.to_string(),
+            key: "k".to_string(),
+            payload: json!(1),
+            subjects: vec![],
+            origin: Origin::Webhook,
+            depth: 2,
+        });
+        s.admit("t", "d1", deep).await.unwrap();
+        assert_eq!(started(s).await.depth, 2);
+        s.recover().await.unwrap();
+        assert_eq!(started(s).await.depth, 2);
     }
 
     async fn effects_no_run_produced_are_delivered_once(s: &Arc<dyn Store>) {

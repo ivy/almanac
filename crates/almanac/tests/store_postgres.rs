@@ -25,6 +25,7 @@ fn queue(key: &str, payload: serde_json::Value) -> Admission {
         payload,
         subjects: vec![],
         origin: Origin::Webhook,
+        depth: 0,
     })
 }
 

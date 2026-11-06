@@ -1,5 +1,7 @@
 //! Durable state, shared by the almanacs of one deployment and separated by `almanac`.
-use super::{Admission, Claim, ClaimRequest, Entry, EntryStatus, Run, Store, StoreError, Stored};
+use super::{
+    Admission, Claim, ClaimRequest, Entry, EntryStatus, Run, Store, StoreError, Stored, Trace,
+};
 use crate::runtime::{Ingest, Origin};
 use crate::workflow::Subject;
 use futures::future::BoxFuture;
@@ -75,12 +77,13 @@ impl PostgresStore {
             Admission::Queue(pending) => {
                 let subjects: Vec<String> = pending.subjects.iter().map(texted).collect();
                 let inserted = sqlx::query!(
-                    r#"INSERT INTO pending (almanac, workflow, key, payload, subjects, lane, origin)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    r#"INSERT INTO pending (almanac, workflow, key, payload, subjects, lane, origin, depth)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                        ON CONFLICT (almanac, workflow, key)
                        DO UPDATE SET payload = EXCLUDED.payload, subjects = EXCLUDED.subjects,
                                      lane = LEAST(pending.lane, EXCLUDED.lane),
-                                     origin = EXCLUDED.origin
+                                     origin = EXCLUDED.origin,
+                                     depth = GREATEST(pending.depth, EXCLUDED.depth)
                        RETURNING (xmax = 0) AS "inserted!""#,
                     self.almanac,
                     pending.workflow,
@@ -89,6 +92,7 @@ impl PostgresStore {
                     &subjects,
                     i16::from(pending.origin.lane()),
                     pending.origin.as_str(),
+                    pending.depth as i32,
                 )
                 .fetch_one(&mut *tx)
                 .await?
@@ -191,7 +195,7 @@ impl PostgresStore {
             }
         }
         let candidate = sqlx::query!(
-            "SELECT p.workflow, p.key, p.payload, p.subjects, p.origin
+            "SELECT p.workflow, p.key, p.payload, p.subjects, p.origin, p.depth
              FROM pending p
              WHERE p.almanac = $1
                AND p.workflow = ANY($2)
@@ -212,8 +216,8 @@ impl PostgresStore {
             return Ok(Claim::Idle);
         };
         let id = sqlx::query_scalar!(
-            r#"INSERT INTO runs (id, seq, almanac, workflow, key, payload, status, started_at, origin)
-               SELECT 'run-' || n, n, $1, $2, $3, $4, 'running', $5, $6
+            r#"INSERT INTO runs (id, seq, almanac, workflow, key, payload, status, started_at, origin, depth)
+               SELECT 'run-' || n, n, $1, $2, $3, $4, 'running', $5, $6, $7
                FROM nextval('run_seq') AS n
                RETURNING id"#,
             self.almanac,
@@ -222,6 +226,7 @@ impl PostgresStore {
             next.payload,
             now,
             next.origin,
+            next.depth,
         )
         .fetch_one(&mut *tx)
         .await?;
@@ -241,6 +246,7 @@ impl PostgresStore {
             key: next.key,
             payload: next.payload,
             origin: Origin::parse(&next.origin)?,
+            depth: next.depth as u32,
         }))
     }
 
@@ -307,16 +313,16 @@ impl PostgresStore {
         let interrupted = sqlx::query!(
             "UPDATE runs SET status = 'interrupted', finished_at = now()
              WHERE almanac = $1 AND status = 'running'
-             RETURNING id, workflow, key, payload, origin",
+             RETURNING id, workflow, key, payload, origin, depth",
             self.almanac,
         )
         .fetch_all(&mut *tx)
         .await?;
         for run in &interrupted {
             sqlx::query!(
-                "INSERT INTO pending (almanac, workflow, key, payload, subjects, lane, origin)
+                "INSERT INTO pending (almanac, workflow, key, payload, subjects, lane, origin, depth)
                  SELECT $1, $2, $3, $4,
-                        coalesce(array_agg(subject), '{}'), $6, $7
+                        coalesce(array_agg(subject), '{}'), $6, $7, $8
                  FROM run_subjects WHERE run_id = $5
                  ON CONFLICT (almanac, workflow, key) DO NOTHING",
                 self.almanac,
@@ -326,6 +332,7 @@ impl PostgresStore {
                 run.id,
                 i16::from(Origin::parse(&run.origin)?.lane()),
                 run.origin,
+                run.depth,
             )
             .execute(&mut *tx)
             .await?;
@@ -404,6 +411,58 @@ impl Store for PostgresStore {
 
     fn claim<'a>(&'a self, request: ClaimRequest<'a>) -> BoxFuture<'a, Stored<Claim>> {
         Box::pin(self.claim_tx(request))
+    }
+
+    fn remember<'a>(
+        &'a self,
+        workflow: &'a str,
+        key: &'a str,
+        trace: Trace,
+    ) -> BoxFuture<'a, Stored<()>> {
+        Box::pin(async move {
+            sqlx::query!(
+                "INSERT INTO ledger (almanac, workflow, key, kind, depth, at)
+                 VALUES ($1, $2, $3, $4, $5, $6)",
+                self.almanac,
+                workflow,
+                key,
+                trace.kind,
+                trace.depth as i32,
+                trace.at,
+            )
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        })
+    }
+
+    fn traces<'a>(
+        &'a self,
+        workflow: &'a str,
+        key: &'a str,
+        since: OffsetDateTime,
+    ) -> BoxFuture<'a, Stored<Vec<Trace>>> {
+        Box::pin(async move {
+            let rows = sqlx::query!(
+                "SELECT kind, depth, at FROM ledger
+                 WHERE almanac = $1 AND workflow = $2 AND key = $3 AND at > $4
+                 ORDER BY at",
+                self.almanac,
+                workflow,
+                key,
+                since,
+            )
+            .fetch_all(&self.pool)
+            .await?;
+            Ok(rows
+                .into_iter()
+                .map(|r| Trace {
+                    kind: r.kind,
+                    depth: r.depth as u32,
+                    at: r.at,
+                })
+                .collect())
+        })
     }
 
     fn note<'a>(
@@ -516,7 +575,8 @@ impl Store for PostgresStore {
     fn run<'a>(&'a self, run_id: &'a str) -> BoxFuture<'a, Stored<Option<Run>>> {
         Box::pin(async move {
             let row = sqlx::query!(
-                "SELECT id, workflow, key, payload, origin FROM runs WHERE id = $1 AND almanac = $2",
+                "SELECT id, workflow, key, payload, origin, depth FROM runs
+                 WHERE id = $1 AND almanac = $2",
                 run_id,
                 self.almanac,
             )
@@ -529,6 +589,7 @@ impl Store for PostgresStore {
                     key: r.key,
                     payload: r.payload,
                     origin: Origin::parse(&r.origin)?,
+                    depth: r.depth as u32,
                 })
             })
             .transpose()

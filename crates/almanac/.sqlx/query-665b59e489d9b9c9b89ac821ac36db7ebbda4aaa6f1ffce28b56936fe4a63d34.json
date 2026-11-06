@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pending (almanac, workflow, key, payload, subjects, lane, origin, depth)\n                 SELECT $1, $2, $3, $4,\n                        coalesce(array_agg(subject), '{}'), $6, $7, $8\n                 FROM run_subjects WHERE run_id = $5\n                 ON CONFLICT (almanac, workflow, key) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Int2",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "665b59e489d9b9c9b89ac821ac36db7ebbda4aaa6f1ffce28b56936fe4a63d34"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, workflow, key, payload, origin FROM runs WHERE id = $1 AND almanac = $2",
+  "query": "SELECT id, workflow, key, payload, origin, depth FROM runs\n                 WHERE id = $1 AND almanac = $2",
   "describe": {
     "columns": [
       {
@@ -57,6 +57,17 @@
             "name": "origin"
           }
         }
+      },
+      {
+        "ordinal": 5,
+        "name": "depth",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "runs",
+            "name": "depth"
+          }
+        }
       }
     ],
     "parameters": {
@@ -70,8 +81,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "d8a149875415292d864ef0a170dfcf68230369ca4aad8b8524af812807e6e51a"
+  "hash": "735b1293cf3535000ac4125005748d55c978c922e91a767af7952a0f19ee93fb"
 }

@@ -1,5 +1,7 @@
 //! The store for tests and one-shot commands. It forgets everything when dropped.
-use super::{Admission, Claim, ClaimRequest, Entry, EntryStatus, Pending, Run, Store, Stored};
+use super::{
+    Admission, Claim, ClaimRequest, Entry, EntryStatus, Pending, Run, Store, Stored, Trace,
+};
 use crate::runtime::Ingest;
 use crate::workflow::Subject;
 use futures::future::BoxFuture;
@@ -27,6 +29,7 @@ struct State {
     subjects: HashMap<Subject, Vec<String>>,
     log: HashMap<(String, String, usize), Value>,
     outbox: Vec<Entry>,
+    ledger: HashMap<Slot, Vec<Trace>>,
     next_seq: u64,
     next_run: u64,
 }
@@ -160,6 +163,7 @@ impl MemoryStore {
             key: slot.1.clone(),
             payload: waiting.pending.payload,
             origin: waiting.pending.origin,
+            depth: waiting.pending.depth,
         };
         s.started.push((slot.0.clone(), now));
         s.running.insert(slot, run.id.clone());
@@ -179,6 +183,7 @@ impl MemoryStore {
             }
             let payload = s.runs[run_id].payload.clone();
             let origin = s.runs[run_id].origin;
+            let depth = s.runs[run_id].depth;
             let subjects = s
                 .subjects
                 .iter()
@@ -191,6 +196,7 @@ impl MemoryStore {
                 payload,
                 subjects,
                 origin,
+                depth,
             };
             s.enqueue(slot.clone(), pending);
         }
@@ -210,6 +216,34 @@ impl Store for MemoryStore {
 
     fn claim<'a>(&'a self, request: ClaimRequest<'a>) -> BoxFuture<'a, Stored<Claim>> {
         Box::pin(async move { Ok(self.claim_now(request)) })
+    }
+
+    fn remember<'a>(
+        &'a self,
+        workflow: &'a str,
+        key: &'a str,
+        trace: Trace,
+    ) -> BoxFuture<'a, Stored<()>> {
+        Box::pin(async move {
+            let slot = (workflow.to_string(), key.to_string());
+            let mut s = self.state.lock().unwrap();
+            s.ledger.entry(slot).or_default().push(trace);
+            Ok(())
+        })
+    }
+
+    fn traces<'a>(
+        &'a self,
+        workflow: &'a str,
+        key: &'a str,
+        since: OffsetDateTime,
+    ) -> BoxFuture<'a, Stored<Vec<Trace>>> {
+        Box::pin(async move {
+            let slot = (workflow.to_string(), key.to_string());
+            let s = self.state.lock().unwrap();
+            let all = s.ledger.get(&slot).into_iter().flatten();
+            Ok(all.filter(|t| t.at > since).cloned().collect())
+        })
     }
 
     fn note<'a>(

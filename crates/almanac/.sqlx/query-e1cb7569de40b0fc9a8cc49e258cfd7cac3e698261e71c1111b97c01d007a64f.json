@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pending (almanac, workflow, key, payload, subjects, lane, origin, depth)\n                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n                       ON CONFLICT (almanac, workflow, key)\n                       DO UPDATE SET payload = EXCLUDED.payload, subjects = EXCLUDED.subjects,\n                                     lane = LEAST(pending.lane, EXCLUDED.lane),\n                                     origin = EXCLUDED.origin,\n                                     depth = GREATEST(pending.depth, EXCLUDED.depth)\n                       RETURNING (xmax = 0) AS \"inserted!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inserted!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "TextArray",
+        "Int2",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e1cb7569de40b0fc9a8cc49e258cfd7cac3e698261e71c1111b97c01d007a64f"
+}

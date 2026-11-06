@@ -34,6 +34,7 @@ pub struct Pending {
     pub payload: Value,
     pub subjects: Vec<Subject>,
     pub origin: Origin,
+    pub depth: u32,
 }
 
 /// What to do with a delivery, decided before it reaches the store.
@@ -51,6 +52,15 @@ pub struct Run {
     pub key: String,
     pub payload: Value,
     pub origin: Origin,
+    pub depth: u32,
+}
+
+/// Something Almanac did to a key.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Trace {
+    pub kind: String,
+    pub depth: u32,
+    pub at: OffsetDateTime,
 }
 
 /// How many runs a workflow may start in a window.
@@ -138,6 +148,22 @@ pub trait Store: Send + Sync {
     /// Starts the next claimable event: live events before scanned ones, then oldest first.
     /// Only workflows in `budgets` are considered.
     fn claim<'a>(&'a self, request: ClaimRequest<'a>) -> BoxFuture<'a, Stored<Claim>>;
+
+    /// Notes something this run did to its key.
+    fn remember<'a>(
+        &'a self,
+        workflow: &'a str,
+        key: &'a str,
+        trace: Trace,
+    ) -> BoxFuture<'a, Stored<()>>;
+
+    /// What was done to a key since a moment, oldest first.
+    fn traces<'a>(
+        &'a self,
+        workflow: &'a str,
+        key: &'a str,
+        since: OffsetDateTime,
+    ) -> BoxFuture<'a, Stored<Vec<Trace>>>;
 
     /// Records an effect no run produced. A repeated `key` changes nothing.
     fn note<'a>(

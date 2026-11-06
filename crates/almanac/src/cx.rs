@@ -3,7 +3,7 @@
 use crate::agent::{AgentSpec, Bound, Classifier, Harness, Pass};
 use crate::providers::Providers;
 use crate::taint::{Observed, Untrusted};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
@@ -45,8 +45,19 @@ pub struct Cx {
 }
 
 impl Cx {
-    pub(crate) fn new(run_id: String, log: RunLog, agents: Vec<&'static str>, providers: Arc<Providers>) -> Self {
-        Self { run_id, log, counts: Mutex::default(), agents, providers }
+    pub(crate) fn new(
+        run_id: String,
+        log: RunLog,
+        agents: Vec<&'static str>,
+        providers: Arc<Providers>,
+    ) -> Self {
+        Self {
+            run_id,
+            log,
+            counts: Mutex::default(),
+            agents,
+            providers,
+        }
     }
 
     /// A provider set up in the binary. `#[workflow]` checks these at startup.
@@ -61,7 +72,9 @@ impl Cx {
     }
 
     pub(crate) fn harness_of(&self, agent: &str) -> Result<Arc<dyn Harness>, StepError> {
-        self.providers.harness_of(agent).ok_or_else(|| StepError(format!("no harness for agent `{agent}`")))
+        self.providers
+            .harness_of(agent)
+            .ok_or_else(|| StepError(format!("no harness for agent `{agent}`")))
     }
 
     /// Keyed by name and occurrence, so a branch in one place cannot shift another's result.
@@ -90,7 +103,9 @@ impl Cx {
     pub(crate) fn ensure_declared(&self, agent: &'static str) -> Result<(), StepError> {
         match self.agents.contains(&agent) {
             true => Ok(()),
-            false => Err(StepError(format!("agent `{agent}` is not declared by this workflow"))),
+            false => Err(StepError(format!(
+                "agent `{agent}` is not declared by this workflow"
+            ))),
         }
     }
 
@@ -113,7 +128,12 @@ impl Cx {
     ) -> Result<(), Halt> {
         let with = self.get::<dyn Classifier>()?;
         let state = serde_json::to_value(text).map_err(StepError::from)?;
-        let p: f64 = self.record("screen", with.yes_probability(&Pass::new(), question, state)).await?;
+        let p: f64 = self
+            .record(
+                "screen",
+                with.yes_probability(&Pass::new(), question, state),
+            )
+            .await?;
         if p > above {
             Ok(())
         } else {

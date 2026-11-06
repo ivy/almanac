@@ -19,7 +19,7 @@ error[E0277]: the trait bound `String: Clean` is not satisfied
 note: required by a bound in `almanac::agent::Bound::<'_, Worker, T>::act`
  --> $WORKSPACE/crates/almanac/src/agent.rs
   |
-  |     pub async fn act<I: Record + Clean, O: Record + Clean>(&self, prompt: T, input: &I) -> Result<O, Halt> {
+  |     pub async fn act<I: Record + Clean, O: Record + Clean>(
   |                                  ^^^^^ required by this bound in `Bound::<'_, Worker, T>::act`
 
 error[E0277]: the trait bound `String: Clean` is not satisfied
@@ -41,7 +41,7 @@ error[E0277]: the trait bound `String: Clean` is not satisfied
 note: required by a bound in `almanac::agent::Bound::<'_, Worker, T>::act`
  --> $WORKSPACE/crates/almanac/src/agent.rs
   |
-  |     pub async fn act<I: Record + Clean, O: Record + Clean>(&self, prompt: T, input: &I) -> Result<O, Halt> {
+  |     pub async fn act<I: Record + Clean, O: Record + Clean>(
   |                                  ^^^^^ required by this bound in `Bound::<'_, Worker, T>::act`
 
 error[E0277]: the trait bound `String: Clean` is not satisfied
@@ -63,5 +63,5 @@ error[E0277]: the trait bound `String: Clean` is not satisfied
 note: required by a bound in `almanac::agent::Bound::<'_, Worker, T>::act`
  --> $WORKSPACE/crates/almanac/src/agent.rs
   |
-  |     pub async fn act<I: Record + Clean, O: Record + Clean>(&self, prompt: T, input: &I) -> Result<O, Halt> {
+  |     pub async fn act<I: Record + Clean, O: Record + Clean>(
   |                                  ^^^^^ required by this bound in `Bound::<'_, Worker, T>::act`

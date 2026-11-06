@@ -7,7 +7,10 @@ use std::sync::Arc;
 pub struct DemoRegistry;
 
 impl Registry for DemoRegistry {
-    fn evidence<'a>(&'a self, pr: &'a PullRequestOpened) -> BoxFuture<'a, Result<UpdateEvidence, StepError>> {
+    fn evidence<'a>(
+        &'a self,
+        pr: &'a PullRequestOpened,
+    ) -> BoxFuture<'a, Result<UpdateEvidence, StepError>> {
         Box::pin(async move {
             let ci = match std::env::var("DEMO_CI").as_deref() {
                 Ok("red") => CiState::Red,
@@ -28,7 +31,9 @@ impl Registry for DemoRegistry {
 }
 
 pub fn all(_config: &Config) -> Providers {
-    let providers = Providers::new().harness(ScriptedHarness::replying(r#"{"verdict": "NoConcerns", "notes": "looks fine"}"#));
+    let providers = Providers::new().harness(ScriptedHarness::replying(
+        r#"{"verdict": "NoConcerns", "notes": "looks fine"}"#,
+    ));
     if std::env::var("DEMO_NO_REGISTRY").is_ok() {
         return providers;
     }

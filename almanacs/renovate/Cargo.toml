@@ -1,9 +1,14 @@
 [package]
 name = "renovate-triage"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+license = "ISC"
+publish = false
 
 [workspace]
+
+[lints.rust]
+unsafe_code = "forbid"
 
 [dependencies]
 almanac = { path = "../../crates/almanac" }

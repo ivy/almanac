@@ -1,9 +1,18 @@
 [package]
 name = "fails"
-version = "0.0.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
 [dependencies]
-almanac = { path = "../almanac" }
-serde_json = "1"
+almanac.workspace = true
+serde_json.workspace = true
+
 [dev-dependencies]
-trybuild = "1"
+trybuild.workspace = true

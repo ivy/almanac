@@ -16,5 +16,5 @@ help: the return type of this call is `fails::WritePrompt` due to the type of th
 note: method defined here
  --> $WORKSPACE/crates/almanac/src/agent.rs
   |
-  |     pub async fn read<I: Record, O: Record>(&self, prompt: T, input: &I) -> Result<Untrusted<O>, Halt> {
+  |     pub async fn read<I: Record, O: Record>(
   |                  ^^^^

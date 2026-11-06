@@ -45,7 +45,10 @@ pub struct Facts {
 
 /// Fetches both artifacts from the package registry and compares them.
 pub trait Registry: Send + Sync + 'static {
-    fn evidence<'a>(&'a self, pr: &'a PullRequestOpened) -> BoxFuture<'a, Result<UpdateEvidence, StepError>>;
+    fn evidence<'a>(
+        &'a self,
+        pr: &'a PullRequestOpened,
+    ) -> BoxFuture<'a, Result<UpdateEvidence, StepError>>;
 }
 
 #[workflow(
@@ -61,29 +64,51 @@ pub trait Registry: Send + Sync + 'static {
 pub async fn dependency_updates(cx: &Cx, pr: &PullRequestOpened) -> Result<Facts, Halt> {
     let registry = cx.get::<dyn Registry>()?;
     let evidence = cx.observe("registry", registry.evidence(pr)).await?;
-    let prompt = ReviewerPrompt { repo: pr.repo.clone() };
+    let prompt = ReviewerPrompt {
+        repo: pr.repo.clone(),
+    };
     let review = cx.agent(REVIEWER).read(prompt, &evidence).await?;
     Ok(Facts { evidence, review })
 }
 
 /// The model can only veto: it cannot pass an artifact that failed the deterministic checks.
 pub fn policy(Facts { evidence, review }: &Facts) -> Vec<Effect> {
-    let checks_pass = evidence.provenance_verified && !evidence.install_script_added && !evidence.publisher_changed;
+    let checks_pass = evidence.provenance_verified
+        && !evidence.install_script_added
+        && !evidence.publisher_changed;
     let no_concerns = review.narrow(|r| r.verdict) == Verdict::NoConcerns;
     let body = review.map(|r| r.notes.clone());
 
     if !checks_pass || !no_concerns {
         return vec![
-            Effect::Attest { context: "almanac/trust", passed: false },
-            Effect::Ask { question: "This dependency update failed trust checks", body },
+            Effect::Attest {
+                context: "almanac/trust",
+                passed: false,
+            },
+            Effect::Ask {
+                question: "This dependency update failed trust checks",
+                body,
+            },
         ];
     }
     match evidence.ci {
-        CiState::Pending => vec![Effect::Await { until: "CI to finish" }],
-        CiState::Green => vec![Effect::Attest { context: "almanac/trust", passed: true }],
+        CiState::Pending => vec![Effect::Await {
+            until: "CI to finish",
+        }],
+        CiState::Green => vec![Effect::Attest {
+            context: "almanac/trust",
+            passed: true,
+        }],
         CiState::Red => vec![
-            Effect::Attest { context: "almanac/trust", passed: true },
-            Effect::File { title: "Fix the build on this dependency update", target: evidence.repo.clone(), body },
+            Effect::Attest {
+                context: "almanac/trust",
+                passed: true,
+            },
+            Effect::File {
+                title: "Fix the build on this dependency update",
+                target: evidence.repo.clone(),
+                body,
+            },
         ],
     }
 }

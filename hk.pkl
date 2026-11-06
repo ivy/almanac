@@ -1,0 +1,34 @@
+amends "package://github.com/jdx/hk/releases/download/v2.11.0/hk@2.11.0#/Config.pkl"
+
+// A commit runs the same lint as `make check`, plus the tests quick enough to wait for.
+// A push checks that nothing private is being published.
+local secrets = new Step {
+  check = "gitleaks protect --staged --no-banner --redact"
+}
+
+hooks {
+  ["pre-commit"] {
+    fix = false
+    stash = "git"
+    steps {
+      ["gitleaks"] = secrets
+      ["lint"] {
+        glob = List("**/*.rs", "**/Cargo.toml", "Cargo.lock", "Makefile")
+        check = "make lint"
+      }
+      ["test-fast"] {
+        glob = List("**/*.rs", "**/Cargo.toml", "Cargo.lock", "Makefile")
+        check = "make test-fast"
+        depends = "lint"
+      }
+    }
+  }
+  ["pre-push"] {
+    fix = false
+    steps {
+      ["check-public"] {
+        check = "tools/check-public.sh"
+      }
+    }
+  }
+}

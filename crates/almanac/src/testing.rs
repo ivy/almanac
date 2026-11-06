@@ -23,7 +23,10 @@ impl ScriptedHarness {
     /// `reply` is the agent's answer, as JSON text.
     pub fn replying(reply: impl ToString) -> Self {
         let reply = serde_json::from_str(&reply.to_string()).expect("valid JSON");
-        Self { reply: Arc::new(Mutex::new(reply)), ..Self::default() }
+        Self {
+            reply: Arc::new(Mutex::new(reply)),
+            ..Self::default()
+        }
     }
     pub fn gated(mut self, gate: Arc<Notify>) -> Self {
         self.gate = Some(gate);
@@ -35,8 +38,13 @@ impl ScriptedHarness {
 }
 
 impl Harness for ScriptedHarness {
-    fn run<'a>(&'a self, _: &'a Pass, prompt: &'a str, grant: Grant, input: Value)
-        -> BoxFuture<'a, Result<Value, StepError>> {
+    fn run<'a>(
+        &'a self,
+        _: &'a Pass,
+        prompt: &'a str,
+        grant: Grant,
+        input: Value,
+    ) -> BoxFuture<'a, Result<Value, StepError>> {
         Box::pin(async move {
             self.prompts.lock().unwrap().push(prompt.to_string());
             self.grants.lock().unwrap().push(grant);
@@ -57,7 +65,10 @@ pub struct FixedClassifier {
 
 impl FixedClassifier {
     pub fn answering(probability: f64) -> Self {
-        Self { probability, ..Self::default() }
+        Self {
+            probability,
+            ..Self::default()
+        }
     }
     pub fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
@@ -65,7 +76,12 @@ impl FixedClassifier {
 }
 
 impl Classifier for FixedClassifier {
-    fn yes_probability<'a>(&'a self, _: &'a Pass, _: &'static str, _: Value) -> BoxFuture<'a, Result<f64, StepError>> {
+    fn yes_probability<'a>(
+        &'a self,
+        _: &'a Pass,
+        _: &'static str,
+        _: Value,
+    ) -> BoxFuture<'a, Result<f64, StepError>> {
         Box::pin(async move {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(self.probability)

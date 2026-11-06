@@ -1,7 +1,7 @@
 //! What an almanac's workflows depend on, set up once in the binary.
 use crate::agent::{AgentSpec, Classifier, Harness};
 use serde::Serialize;
-use std::any::{type_name, Any, TypeId};
+use std::any::{Any, TypeId, type_name};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -15,7 +15,10 @@ pub struct Requirement {
 
 impl Requirement {
     pub fn of<T: ?Sized + 'static>() -> Self {
-        Self { id: TypeId::of::<T>(), name: type_name::<T>() }
+        Self {
+            id: TypeId::of::<T>(),
+            name: type_name::<T>(),
+        }
     }
     pub fn name(&self) -> &'static str {
         self.name
@@ -57,7 +60,10 @@ impl Providers {
     }
 
     pub(crate) fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Option<Arc<T>> {
-        self.items.get(&TypeId::of::<T>())?.downcast_ref::<Arc<T>>().cloned()
+        self.items
+            .get(&TypeId::of::<T>())?
+            .downcast_ref::<Arc<T>>()
+            .cloned()
     }
 
     pub(crate) fn has(&self, requirement: &Requirement) -> bool {
@@ -65,6 +71,9 @@ impl Providers {
     }
 
     pub(crate) fn harness_of(&self, agent: &str) -> Option<Arc<dyn Harness>> {
-        self.agent_harnesses.get(agent).or(self.harness.as_ref()).cloned()
+        self.agent_harnesses
+            .get(agent)
+            .or(self.harness.as_ref())
+            .cloned()
     }
 }

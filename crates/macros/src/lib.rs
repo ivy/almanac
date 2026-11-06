@@ -1,7 +1,7 @@
 //! `#[workflow]`: turns an async function plus declared metadata into a `Workflow` impl.
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as Tokens};
-use quote::{format_ident, quote, quote_spanned, ToTokens};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::parse::Parser;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -9,19 +9,23 @@ use syn::visit::{self, Visit};
 use syn::{
     Error, Expr, ExprArray, ExprCall, ExprLit, ExprMethodCall, ExprPath, Field, Fields, FnArg,
     GenericArgument, Ident, ItemFn, ItemStruct, Lit, LitInt, LitStr, MetaNameValue, Pat,
-    PathArguments, ReturnType, Result, Token, Type,
+    PathArguments, Result, ReturnType, Token, Type,
 };
 
 #[proc_macro_attribute]
 pub fn workflow(attr: TokenStream, item: TokenStream) -> TokenStream {
-    expand(attr.into(), item.into()).unwrap_or_else(Error::into_compile_error).into()
+    expand(attr.into(), item.into())
+        .unwrap_or_else(Error::into_compile_error)
+        .into()
 }
 
 /// Binds a struct to a Markdown prompt in `prompts/`. Every `{{ variable }}` must be a field
 /// and every field must be used, checked at compile time. Fields must be `Clean + Display`.
 #[proc_macro_attribute]
 pub fn prompt(attr: TokenStream, item: TokenStream) -> TokenStream {
-    expand_prompt(attr.into(), item.into()).unwrap_or_else(Error::into_compile_error).into()
+    expand_prompt(attr.into(), item.into())
+        .unwrap_or_else(Error::into_compile_error)
+        .into()
 }
 
 enum Piece {
@@ -43,12 +47,21 @@ fn parse_template(text: &str) -> std::result::Result<Vec<Piece>, String> {
             continue;
         }
         literal.push_str(&text[at..open]);
-        let close = text[open..].find("}}").ok_or(format!("line {}: unclosed `{{{{`", line(open)))? + open;
+        let close = text[open..]
+            .find("}}")
+            .ok_or(format!("line {}: unclosed `{{{{`", line(open)))?
+            + open;
         let name = text[open + 2..close].trim();
-        let valid = name.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        let valid = name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
         if !valid {
-            return Err(format!("line {}: `{{{{ {name} }}}}` is not a variable name", line(open)));
+            return Err(format!(
+                "line {}: `{{{{ {name} }}}}` is not a variable name",
+                line(open)
+            ));
         }
         pieces.push(Piece::Text(std::mem::take(&mut literal)));
         pieces.push(Piece::Var(name.to_string()));
@@ -63,42 +76,85 @@ fn expand_prompt(attr: Tokens, item: Tokens) -> Result<Tokens> {
     let input: ItemStruct = syn::parse2(item)?;
     let entry: Expr = syn::parse2(attr)?;
     let (source, text, track) = match entry {
-        Expr::Lit(ExprLit { lit: Lit::Str(file), .. }) => {
+        Expr::Lit(ExprLit {
+            lit: Lit::Str(file),
+            ..
+        }) => {
             let name = file.value();
             if name.contains("..") || name.starts_with('/') {
-                return Err(Error::new(file.span(), "a prompt is a path inside `prompts/`"));
+                return Err(Error::new(
+                    file.span(),
+                    "a prompt is a path inside `prompts/`",
+                ));
             }
-            let root = std::env::var("CARGO_MANIFEST_DIR").map_err(|e| Error::new(file.span(), e))?;
+            let root =
+                std::env::var("CARGO_MANIFEST_DIR").map_err(|e| Error::new(file.span(), e))?;
             let path = format!("{root}/prompts/{name}");
             let text = std::fs::read_to_string(&path)
                 .map_err(|e| Error::new(file.span(), format!("cannot read prompts/{name}: {e}")))?;
-            (name, text, quote! { const _: &str = ::std::include_str!(#path); })
+            (
+                name,
+                text,
+                quote! { const _: &str = ::std::include_str!(#path); },
+            )
         }
         Expr::Assign(assign) if matches!(&*assign.left, Expr::Path(p) if p.path.is_ident("text")) => {
-            ("inline".to_string(), string(*assign.right)?.value(), quote! {})
+            (
+                "inline".to_string(),
+                string(*assign.right)?.value(),
+                quote! {},
+            )
         }
-        other => return Err(Error::new_spanned(other, "expected a file name, like `#[prompt(\"reviewer.md\")]`")),
+        other => {
+            return Err(Error::new_spanned(
+                other,
+                "expected a file name, like `#[prompt(\"reviewer.md\")]`",
+            ));
+        }
     };
-    let pieces = parse_template(&text).map_err(|e| Error::new(Span::call_site(), format!("prompts/{source}: {e}")))?;
+    let pieces = parse_template(&text)
+        .map_err(|e| Error::new(Span::call_site(), format!("prompts/{source}: {e}")))?;
 
     let fields: Vec<&Field> = match &input.fields {
         Fields::Named(named) => named.named.iter().collect(),
         Fields::Unit => vec![],
-        Fields::Unnamed(_) => return Err(Error::new_spanned(&input.fields, "a prompt has named fields")),
+        Fields::Unnamed(_) => {
+            return Err(Error::new_spanned(
+                &input.fields,
+                "a prompt has named fields",
+            ));
+        }
     };
-    let names: Vec<String> = fields.iter().filter_map(|f| f.ident.as_ref()).map(Ident::to_string).collect();
-    let vars: Vec<&String> = pieces.iter().filter_map(|p| if let Piece::Var(v) = p { Some(v) } else { None }).collect();
+    let names: Vec<String> = fields
+        .iter()
+        .filter_map(|f| f.ident.as_ref())
+        .map(Ident::to_string)
+        .collect();
+    let vars: Vec<&String> = pieces
+        .iter()
+        .filter_map(|p| if let Piece::Var(v) = p { Some(v) } else { None })
+        .collect();
 
     for var in &vars {
         if !names.contains(var) {
-            let message = format!("prompts/{source} uses `{{{{ {var} }}}}`, but `{}` has no field `{var}`", input.ident);
+            let message = format!(
+                "prompts/{source} uses `{{{{ {var} }}}}`, but `{}` has no field `{var}`",
+                input.ident
+            );
             return Err(Error::new_spanned(&input.ident, message));
         }
     }
     for field in &fields {
-        let name = field.ident.as_ref().map(Ident::to_string).unwrap_or_default();
+        let name = field
+            .ident
+            .as_ref()
+            .map(Ident::to_string)
+            .unwrap_or_default();
         if !vars.contains(&&name) {
-            return Err(Error::new_spanned(field, format!("prompts/{source} never uses `{{{{ {name} }}}}`")));
+            return Err(Error::new_spanned(
+                field,
+                format!("prompts/{source} never uses `{{{{ {name} }}}}`"),
+            ));
         }
     }
 
@@ -169,7 +225,9 @@ fn path(value: Expr) -> Result<ExprPath> {
 
 fn string(value: Expr) -> Result<LitStr> {
     match value {
-        Expr::Lit(ExprLit { lit: Lit::Str(s), .. }) => Ok(s),
+        Expr::Lit(ExprLit {
+            lit: Lit::Str(s), ..
+        }) => Ok(s),
         other => Err(Error::new_spanned(other, "expected a string")),
     }
 }
@@ -186,7 +244,10 @@ fn calls(value: Expr) -> Result<Vec<ExprCall>> {
         .into_iter()
         .map(|e| match e {
             Expr::Call(c) => Ok(c),
-            other => Err(Error::new_spanned(other, "expected a subject like `repo(repo)`")),
+            other => Err(Error::new_spanned(
+                other,
+                "expected a subject like `repo(repo)`",
+            )),
         })
         .collect()
 }
@@ -194,7 +255,11 @@ fn calls(value: Expr) -> Result<Vec<ExprCall>> {
 fn parse_args(attr: Tokens) -> Result<Args> {
     let mut args = Args::default();
     for entry in Punctuated::<MetaNameValue, Token![,]>::parse_terminated.parse2(attr)? {
-        let name = entry.path.get_ident().map(Ident::to_string).unwrap_or_default();
+        let name = entry
+            .path
+            .get_ident()
+            .map(Ident::to_string)
+            .unwrap_or_default();
         let value = entry.value;
         match name.as_str() {
             "on" => args.on = Some(path(value)?),
@@ -207,21 +272,35 @@ fn parse_args(attr: Tokens) -> Result<Args> {
                 for kind in list(value)? {
                     let p = path(kind)?;
                     let ident = p.path.get_ident().cloned();
-                    args.may.push(ident.ok_or_else(|| Error::new_spanned(p, "expected an effect kind"))?);
+                    args.may.push(
+                        ident.ok_or_else(|| Error::new_spanned(p, "expected an effect kind"))?,
+                    );
                 }
             }
             "runs_per_hour" => match value {
-                Expr::Lit(ExprLit { lit: Lit::Int(n), .. }) => args.runs_per_hour = Some(n),
+                Expr::Lit(ExprLit {
+                    lit: Lit::Int(n), ..
+                }) => args.runs_per_hour = Some(n),
                 other => return Err(Error::new_spanned(other, "expected a number")),
             },
-            _ => return Err(Error::new_spanned(entry.path, format!("unknown workflow option `{name}`"))),
+            _ => {
+                return Err(Error::new_spanned(
+                    entry.path,
+                    format!("unknown workflow option `{name}`"),
+                ));
+            }
         }
     }
     Ok(args)
 }
 
 fn required<T>(value: Option<T>, name: &str) -> Result<T> {
-    value.ok_or_else(|| Error::new(Span::call_site(), format!("`#[workflow]` needs `{name} = ...`")))
+    value.ok_or_else(|| {
+        Error::new(
+            Span::call_site(),
+            format!("`#[workflow]` needs `{name} = ...`"),
+        )
+    })
 }
 
 /// `"{repo}:{head_branch}"` becomes a format string plus field reads. A field that does not
@@ -231,8 +310,12 @@ fn key_expr(key: &LitStr) -> Result<Tokens> {
     let (mut format, mut fields, mut rest) = (String::new(), Vec::new(), text.as_str());
     while let Some(open) = rest.find('{') {
         format.push_str(&rest[..open]);
-        let close = rest[open..].find('}').ok_or_else(|| Error::new(key.span(), "unclosed `{` in key"))? + open;
-        let field: Expr = syn::parse_str(&rest[open + 1..close]).map_err(|_| Error::new(key.span(), "expected a field name in key"))?;
+        let close = rest[open..]
+            .find('}')
+            .ok_or_else(|| Error::new(key.span(), "unclosed `{` in key"))?
+            + open;
+        let field: Expr = syn::parse_str(&rest[open + 1..close])
+            .map_err(|_| Error::new(key.span(), "expected a field name in key"))?;
         fields.push(field);
         format.push_str("{}");
         rest = &rest[close + 1..];
@@ -273,7 +356,9 @@ impl<'ast> Visit<'ast> for Uses<'_> {
                 "agent" => self.agents.extend(call.args.first().cloned()),
                 "screen" => self.screens = true,
                 "get" => {
-                    if let Some(GenericArgument::Type(t)) = call.turbofish.as_ref().and_then(|g| g.args.first()) {
+                    if let Some(GenericArgument::Type(t)) =
+                        call.turbofish.as_ref().and_then(|g| g.args.first())
+                    {
                         self.needs.push(t.clone());
                     }
                 }
@@ -298,11 +383,22 @@ fn dedupe<T: ToTokens>(items: Vec<T>) -> Vec<T> {
 }
 
 fn facts_type(function: &ItemFn) -> Result<Type> {
-    let problem = || Error::new_spanned(&function.sig.output, "a workflow returns `Result<Facts, Halt>`");
-    let ReturnType::Type(_, output) = &function.sig.output else { return Err(problem()) };
-    let Type::Path(result) = &**output else { return Err(problem()) };
+    let problem = || {
+        Error::new_spanned(
+            &function.sig.output,
+            "a workflow returns `Result<Facts, Halt>`",
+        )
+    };
+    let ReturnType::Type(_, output) = &function.sig.output else {
+        return Err(problem());
+    };
+    let Type::Path(result) = &**output else {
+        return Err(problem());
+    };
     let segment = result.path.segments.last().ok_or_else(problem)?;
-    let PathArguments::AngleBracketed(generics) = &segment.arguments else { return Err(problem()) };
+    let PathArguments::AngleBracketed(generics) = &segment.arguments else {
+        return Err(problem());
+    };
     match generics.args.first() {
         Some(GenericArgument::Type(t)) => Ok(t.clone()),
         _ => Err(problem()),
@@ -310,7 +406,8 @@ fn facts_type(function: &ItemFn) -> Result<Type> {
 }
 
 fn cx_param(function: &ItemFn) -> Result<Ident> {
-    let problem = || Error::new_spanned(&function.sig, "a workflow takes `(cx: &Cx, event: &Event)`");
+    let problem =
+        || Error::new_spanned(&function.sig, "a workflow takes `(cx: &Cx, event: &Event)`");
     match function.sig.inputs.first() {
         Some(FnArg::Typed(arg)) => match &*arg.pat {
             Pat::Ident(p) => Ok(p.ident.clone()),
@@ -324,7 +421,9 @@ fn camel(name: &str) -> String {
     name.split('_')
         .map(|part| {
             let mut chars = part.chars();
-            chars.next().map_or(String::new(), |first| first.to_uppercase().chain(chars).collect())
+            chars.next().map_or(String::new(), |first| {
+                first.to_uppercase().chain(chars).collect()
+            })
         })
         .collect()
 }
@@ -332,7 +431,10 @@ fn camel(name: &str) -> String {
 fn expand(attr: Tokens, item: Tokens) -> Result<Tokens> {
     let function: ItemFn = syn::parse2(item)?;
     if function.sig.asyncness.is_none() {
-        return Err(Error::new_spanned(&function.sig, "a workflow must be an `async fn`"));
+        return Err(Error::new_spanned(
+            &function.sig,
+            "a workflow must be an `async fn`",
+        ));
     }
     let args = parse_args(attr)?;
     let on = required(args.on, "on")?;
@@ -341,18 +443,31 @@ fn expand(attr: Tokens, item: Tokens) -> Result<Tokens> {
     let runs_per_hour = required(args.runs_per_hour, "runs_per_hour")?;
     let decide = required(args.decide, "decide")?;
     if args.may.is_empty() {
-        return Err(Error::new(Span::call_site(), "`#[workflow]` needs `may = [...]`"));
+        return Err(Error::new(
+            Span::call_site(),
+            "`#[workflow]` needs `may = [...]`",
+        ));
     }
     let may = args.may;
 
     let facts = facts_type(&function)?;
     let cx = cx_param(&function)?;
-    let mut uses = Uses { cx: &cx, agents: vec![], needs: vec![], screens: false };
+    let mut uses = Uses {
+        cx: &cx,
+        agents: vec![],
+        needs: vec![],
+        screens: false,
+    };
     uses.visit_block(&function.block);
     let (agents, needs, screens) = (dedupe(uses.agents), dedupe(uses.needs), uses.screens);
-    let mut requirements: Vec<Tokens> = needs.iter().map(|t| quote! { ::almanac::providers::Requirement::of::<#t>() }).collect();
+    let mut requirements: Vec<Tokens> = needs
+        .iter()
+        .map(|t| quote! { ::almanac::providers::Requirement::of::<#t>() })
+        .collect();
     if screens {
-        requirements.push(quote! { ::almanac::providers::Requirement::of::<dyn ::almanac::agent::Classifier>() });
+        requirements.push(
+            quote! { ::almanac::providers::Requirement::of::<dyn ::almanac::agent::Classifier>() },
+        );
     }
 
     let (event, facts_arg) = (format_ident!("__event"), format_ident!("__facts"));

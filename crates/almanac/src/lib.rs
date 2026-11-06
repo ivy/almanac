@@ -19,14 +19,14 @@ pub use taint::__private;
 /// Everything a workflow author needs.
 pub mod prelude {
     pub use crate::agent::{AgentSpec, Classifier, Harness, Pass, Quarantined, Template, Worker};
-    pub use crate::providers::Providers;
-    pub use almanac_macros::{prompt, workflow};
-    pub use futures::future::BoxFuture;
     pub use crate::config::Config;
     pub use crate::cx::{Cx, Halt, StepError};
     pub use crate::effect::{Effect, EffectKind};
+    pub use crate::providers::Providers;
     pub use crate::taint::{Clean, Finite, Observed, Sha, Slug, Untrusted};
     pub use crate::wire::{Event, Payload};
     pub use crate::workflow::{Registered, Subject, Workflow};
     pub use crate::{clean, observed, output};
+    pub use almanac_macros::{prompt, workflow};
+    pub use futures::future::BoxFuture;
 }

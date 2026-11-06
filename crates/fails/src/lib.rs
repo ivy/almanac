@@ -25,7 +25,10 @@ observed! {
 impl Event for Opened {
     const KIND: &'static str = "opened";
     fn parse(p: &Payload<'_>) -> Result<Self, String> {
-        Ok(Self { repo: p.field("/repo")?, title: p.text("/title")? })
+        Ok(Self {
+            repo: p.field("/repo")?,
+            title: p.text("/title")?,
+        })
     }
 }
 

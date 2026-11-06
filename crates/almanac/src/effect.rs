@@ -12,9 +12,16 @@ pub enum Effect {
     /// Do nothing until a named fact changes.
     Await { until: &'static str },
     /// Hand work to a tracker. `body` keeps its taint all the way to the adapter.
-    File { title: &'static str, target: Slug, body: Untrusted<String> },
+    File {
+        title: &'static str,
+        target: Slug,
+        body: Untrusted<String>,
+    },
     /// Ask a person, and block agents until they answer.
-    Ask { question: &'static str, body: Untrusted<String> },
+    Ask {
+        question: &'static str,
+        body: Untrusted<String>,
+    },
 }
 
 crate::clean! {
@@ -37,6 +44,9 @@ impl Effect {
             Self::Attest { passed, .. } => Some(*passed),
             _ => None,
         };
-        ActionSummary { kind: self.kind(), passed }
+        ActionSummary {
+            kind: self.kind(),
+            passed,
+        }
     }
 }

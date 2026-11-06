@@ -4,7 +4,8 @@ use almanac::prelude::*;
 #[prompt("investigator.md")]
 pub struct InvestigatorPrompt;
 
-pub const INVESTIGATOR: AgentSpec<Quarantined, InvestigatorPrompt> = AgentSpec::quarantined("investigator");
+pub const INVESTIGATOR: AgentSpec<Quarantined, InvestigatorPrompt> =
+    AgentSpec::quarantined("investigator");
 
 observed! {
     pub struct IssueEvent {
@@ -17,7 +18,11 @@ observed! {
 impl Event for IssueEvent {
     const KIND: &'static str = "sentry.issue";
     fn parse(p: &Payload<'_>) -> Result<Self, String> {
-        Ok(Self { issue_id: p.field("/issue_id")?, repo: p.field("/repo")?, message: p.text("/message")? })
+        Ok(Self {
+            issue_id: p.field("/issue_id")?,
+            repo: p.field("/repo")?,
+            message: p.text("/message")?,
+        })
     }
 }
 
@@ -47,15 +52,33 @@ pub struct Facts {
     decide = triage,
 )]
 pub async fn error_triage(cx: &Cx, event: &IssueEvent) -> Result<Facts, Halt> {
-    cx.screen("Is this error worth an engineer's attention?", &event.message, 0.7).await?;
-    let findings = cx.agent(INVESTIGATOR).read(InvestigatorPrompt, &event.message).await?;
-    Ok(Facts { repo: event.repo.clone(), findings })
+    cx.screen(
+        "Is this error worth an engineer's attention?",
+        &event.message,
+        0.7,
+    )
+    .await?;
+    let findings = cx
+        .agent(INVESTIGATOR)
+        .read(InvestigatorPrompt, &event.message)
+        .await?;
+    Ok(Facts {
+        repo: event.repo.clone(),
+        findings,
+    })
 }
 
 pub fn triage(Facts { repo, findings }: &Facts) -> Vec<Effect> {
     let body = findings.map(|f| f.summary.clone());
     match findings.narrow(|f| f.confidence) {
-        Confidence::High => vec![Effect::File { title: "Fix this application error", target: repo.clone(), body }],
-        Confidence::Low => vec![Effect::Ask { question: "Is this error worth fixing?", body }],
+        Confidence::High => vec![Effect::File {
+            title: "Fix this application error",
+            target: repo.clone(),
+            body,
+        }],
+        Confidence::Low => vec![Effect::Ask {
+            question: "Is this error worth fixing?",
+            body,
+        }],
     }
 }

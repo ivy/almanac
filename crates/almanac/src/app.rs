@@ -26,13 +26,23 @@ fn run(name: &'static str, workflows: Workflows, setup: Setup) -> Result<(), Str
     let runtime = Runtime::new(workflows(), setup(&config)).tightened(config.limits());
     runtime.validate()?;
 
-    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
         ["synth"] => {
-            let manifest = serde_json::to_string_pretty(&runtime.manifest()).map_err(|e| e.to_string())?;
+            let manifest =
+                serde_json::to_string_pretty(&runtime.manifest()).map_err(|e| e.to_string())?;
             println!("{manifest}");
         }
         ["check"] => {
-            println!("{name}: ok, {} workflow(s), {:?}", runtime.manifest().len(), runtime.limits());
+            println!(
+                "{name}: ok, {} workflow(s), {:?}",
+                runtime.manifest().len(),
+                runtime.limits()
+            );
         }
         ["ingest", kind, file] => {
             let text = std::fs::read_to_string(file).map_err(|e| format!("{file}: {e}"))?;
@@ -45,7 +55,9 @@ fn run(name: &'static str, workflows: Workflows, setup: Setup) -> Result<(), Str
                 payload,
             };
             println!("ingest: {:?}", runtime.ingest(envelope));
-            let rt = tokio::runtime::Builder::new_current_thread().build().map_err(|e| e.to_string())?;
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .build()
+                .map_err(|e| e.to_string())?;
             for outcome in rt.block_on(runtime.drain()) {
                 println!("{outcome:?}");
             }

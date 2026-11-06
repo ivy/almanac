@@ -17,7 +17,7 @@ crates/cli/           the `almanac` scaffolding binary and its templates
 crates/github/        event types generated from specs/github by tools/gen_github.py
 crates/definitions/   sample workflows and the behaviour tests
 crates/fails/         trybuild compile-fail cases; these prove the safety rules
-examples/             standalone almanacs, each its own Cargo workspace
+almanacs/              standalone almanacs, each its own Cargo workspace
 specs/                pinned API specs for sources
 tools/                the throwaway generator and the publication check
 docs/                 vision, principles, requirements, roadmap
@@ -25,13 +25,11 @@ docs/                 vision, principles, requirements, roadmap
 
 ## How to work here
 
-- **Test everything:** `cargo test --workspace`, then `cargo test` inside `examples/renovate-triage`, which is outside the workspace.
-- **Lint:** `cargo clippy --workspace --all-targets`. It must report no warnings.
-- **Regenerate event types:** `python3 -I tools/gen_github.py specs/github/api.github.com.json crates/github/projection.toml > crates/github/src/lib.rs`.
+- **Set up:** `mise install`, then `hk install --mise`. If a global `core.hooksPath` is set, first run `git config --local core.hooksPath .git/hooks`.
+- **The gate:** `make check` runs lint, every test, the publication check, and `cargo deny`. A change is not done until it passes.
+- **Regenerate event types:** `make generate`.
 - **Accept compile-fail output:** `TRYBUILD=overwrite cargo test -p fails`, then read every changed `.stderr`. A case must fail for its intended reason, not for an unrelated error.
-- **Try an almanac:** `cargo run -- synth` or `cargo run -- ingest KIND FILE` inside `examples/renovate-triage`.
-
-When a `Makefile` exists, `make check` is the canonical gate and takes precedence over the commands above.
+- **Try an almanac:** `cargo run -- synth` or `cargo run -- ingest KIND FILE` inside `almanacs/renovate`.
 
 ## Working in the open
 
@@ -58,7 +56,7 @@ This repository is public, and everything pushed to it stays public.
 
 ## Where to look first
 
-- `examples/renovate-triage/src/workflows/dependency_updates.rs`: what authoring looks like.
+- `almanacs/renovate/src/workflows/dependency_updates.rs`: what authoring looks like.
 - `crates/almanac/src/taint.rs`: the taint rules, and `crates/fails/tests/ui/` for what they refuse.
 - `crates/almanac/src/runtime.rs`: dedupe, keys, budgets, and replay.
 - `crates/macros/src/lib.rs`: what `#[workflow]` and `#[prompt]` generate.

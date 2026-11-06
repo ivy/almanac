@@ -43,4 +43,3 @@ impl Event for PullRequestOpened {
         })
     }
 }
-

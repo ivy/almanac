@@ -33,8 +33,9 @@ pub async fn dependency_updates(cx: &Cx, pr: &PullRequestOpened) -> Result<Facts
 ## Try it
 
 ```bash
-cargo test --workspace
-cd examples/renovate-triage
+mise install
+make check
+cd almanacs/renovate
 cargo run -- synth
 cargo run -- ingest github.pull_request.opened fixtures/renovate-pr-opened.json
 ```

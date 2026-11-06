@@ -6,7 +6,7 @@ use crate::providers::Requirement;
 use crate::taint::Slug;
 use crate::wire::{Event, Payload};
 use futures::future::BoxFuture;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::future::Future;
 
 /// A durable link between runs, so a workflow can find what another one learned.
@@ -55,7 +55,11 @@ pub trait Workflow: Send + Sync + 'static {
         vec![]
     }
 
-    fn gather(&self, cx: &Cx, event: &Self::Event) -> impl Future<Output = Result<Self::Facts, Halt>> + Send;
+    fn gather(
+        &self,
+        cx: &Cx,
+        event: &Self::Event,
+    ) -> impl Future<Output = Result<Self::Facts, Halt>> + Send;
 
     fn decide(facts: &Self::Facts) -> Vec<Effect>;
 }
@@ -79,7 +83,11 @@ pub trait Registered: Send + Sync {
     fn agent_names(&self) -> Vec<&'static str>;
     fn requirements(&self) -> Vec<Requirement>;
     fn identify(&self, payload: &Value) -> Result<Identity, String>;
-    fn execute<'a>(&'a self, cx: &'a Cx, payload: &'a Value) -> BoxFuture<'a, Result<Decided, Halt>>;
+    fn execute<'a>(
+        &'a self,
+        cx: &'a Cx,
+        payload: &'a Value,
+    ) -> BoxFuture<'a, Result<Decided, Halt>>;
     /// The reviewable artifact: declared triggers, limits, effects, and capabilities.
     fn manifest(&self) -> Value;
 }
@@ -108,13 +116,23 @@ impl<W: Workflow> Registered for W {
     }
     fn identify(&self, payload: &Value) -> Result<Identity, String> {
         let event = W::Event::parse(&Payload::new(payload))?;
-        Ok(Identity { key: W::key(&event), subjects: W::subjects(&event) })
+        Ok(Identity {
+            key: W::key(&event),
+            subjects: W::subjects(&event),
+        })
     }
-    fn execute<'a>(&'a self, cx: &'a Cx, payload: &'a Value) -> BoxFuture<'a, Result<Decided, Halt>> {
+    fn execute<'a>(
+        &'a self,
+        cx: &'a Cx,
+        payload: &'a Value,
+    ) -> BoxFuture<'a, Result<Decided, Halt>> {
         Box::pin(async move {
             let event = W::Event::parse(&Payload::new(payload)).map_err(StepError)?;
             let facts = self.gather(cx, &event).await?;
-            Ok(Decided { effects: W::decide(&facts), links: W::links(&facts) })
+            Ok(Decided {
+                effects: W::decide(&facts),
+                links: W::links(&facts),
+            })
         })
     }
     fn manifest(&self) -> Value {

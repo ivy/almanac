@@ -1,6 +1,6 @@
+use EffectKind as K;
 use almanac::prelude::*;
 use renovate_triage::workflows::dependency_updates::{CiState::*, *};
-use EffectKind as K;
 
 fn effects(checks_pass: bool, verdict: Verdict, ci: CiState) -> Vec<EffectKind> {
     let evidence = UpdateEvidence {
@@ -12,7 +12,10 @@ fn effects(checks_pass: bool, verdict: Verdict, ci: CiState) -> Vec<EffectKind> 
         ci,
         diff: Untrusted::new(String::new()),
     };
-    let review = Untrusted::new(Review { verdict, notes: String::new() });
+    let review = Untrusted::new(Review {
+        verdict,
+        notes: String::new(),
+    });
     let facts = Facts { evidence, review };
     policy(&facts).iter().map(Effect::kind).collect()
 }
@@ -21,8 +24,14 @@ fn effects(checks_pass: bool, verdict: Verdict, ci: CiState) -> Vec<EffectKind> 
 fn the_policy_table() {
     assert_eq!(effects(true, Verdict::NoConcerns, Green), [K::Attest]);
     assert_eq!(effects(true, Verdict::NoConcerns, Pending), [K::Await]);
-    assert_eq!(effects(true, Verdict::NoConcerns, Red), [K::Attest, K::File]);
+    assert_eq!(
+        effects(true, Verdict::NoConcerns, Red),
+        [K::Attest, K::File]
+    );
     assert_eq!(effects(true, Verdict::Concerns, Green), [K::Attest, K::Ask]);
-    assert_eq!(effects(false, Verdict::NoConcerns, Green), [K::Attest, K::Ask]);
+    assert_eq!(
+        effects(false, Verdict::NoConcerns, Green),
+        [K::Attest, K::Ask]
+    );
     assert_eq!(effects(false, Verdict::Concerns, Red), [K::Attest, K::Ask]);
 }

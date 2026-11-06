@@ -48,7 +48,7 @@ Validates a Renovate security pull request and gets its build passing.
 
 ### Authoring
 
-- **R-15** A workflow is an async function under `#[workflow(...)]`, declaring its trigger, key, intent, allowed effects, budget, subjects, and policy. See `examples/renovate-triage`.
+- **R-15** A workflow is an async function under `#[workflow(...)]`, declaring its trigger, key, intent, allowed effects, budget, subjects, and policy. See `almanacs/renovate`.
 - **R-16** `gather` does I/O and inference through `Cx`. Policy is a plain function of gathered facts.
 - **R-17** Prompts are Markdown files in `prompts/`, bound to a struct with `#[prompt("file.md")]`, embedded at compile time, and checked against the struct at compile time.
 - **R-18** Agents are `const` specs carrying a capability profile and a prompt type. Agents and providers used in a workflow body are discovered by the macro for the manifest and the startup check.

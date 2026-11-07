@@ -9,7 +9,7 @@ use almanac_renovate::workflows::security_fixes::*;
 use github::client::{Auth, GithubClient};
 use github::forge::{CommitAuthor, GithubForge};
 use serde_json::json;
-use simforge::{Pull, RENOVATE, Repo, SimForge};
+use simforge::{Pull, RENOVATE, Repo, SimForge, Suite};
 use std::sync::{Arc, Mutex};
 
 const REPO: &str = "owner/repo";
@@ -22,6 +22,8 @@ struct Scenario {
     install_script: bool,
     hours_old: i64,
     verdict: &'static str,
+    /// Whether CI has reported on the pull request.
+    tested: bool,
 }
 
 const VALID: Scenario = Scenario {
@@ -30,6 +32,7 @@ const VALID: Scenario = Scenario {
     install_script: false,
     hours_old: 200,
     verdict: "NoConcerns",
+    tested: true,
 };
 
 struct Fake(Scenario);
@@ -99,7 +102,12 @@ async fn world(s: Scenario, mut pull: Pull) -> World {
     let sim = SimForge::start().await;
     sim.add_repo(Repo::public(REPO));
     pull.body = Some("| Package | Change |\n|---|---|\n".to_string());
+    let branch = pull.head_ref.clone();
     let number = sim.add_pull(REPO, pull);
+    if s.tested {
+        let sha = sim.pull(REPO, number).head_sha;
+        sim.add_suite(REPO, Suite::finished(&sha, &branch, "success", ""));
+    }
     let received = capture(&sim).await;
     let reply = json!({"verdict": s.verdict, "notes": "looked at it"});
     let reviewer = ScriptedHarness::replying(reply);
@@ -328,6 +336,8 @@ fn facts(names_the_fix: bool, install: bool, cooled: bool, verdict: Option<Verdi
         readable: true,
         install_script_added: install,
         cooled,
+        tested: true,
+        untestable: false,
         asked: false,
         review: verdict.map(|verdict| {
             Untrusted::new(Review {
@@ -383,4 +393,18 @@ fn a_model_can_never_approve_what_a_check_refused() {
             }
         }
     }
+}
+
+/// To Renovate a `success` is a passing check, so this would merge an update nothing tested.
+#[tokio::test]
+async fn a_repository_with_no_checks_is_never_attested_and_asks_a_person() {
+    let w = run(Scenario {
+        tested: false,
+        ..VALID
+    })
+    .await;
+    let states = w.states();
+    assert!(states.iter().all(|s| s != "success"), "{states:?}");
+    let filed = format!("{:?}", w.tracker.filed.lock().unwrap());
+    assert!(filed.contains("Nothing tests this repository"), "{filed}");
 }

@@ -169,6 +169,9 @@ pub fn derive(f: &PullFacts) -> Verdict {
         Checks::Pending => return verdict(State::Waiting, "CI to finish"),
         Checks::Green | Checks::None => {}
     }
+    if f.trust == Some(Trust::Pending) && f.checks == Checks::None {
+        return verdict(State::NeedsPerson, "nothing tests this repository");
+    }
     if f.trust == Some(Trust::Pending) {
         return verdict(State::InProgress, "Almanac is validating it");
     }
@@ -218,10 +221,12 @@ pub fn checks_of(suites: &Value, statuses: &Value) -> Checks {
         .filter(|s| s["latest_check_runs_count"] != json!(0))
         .collect();
     let statuses = statuses["statuses"].as_array().cloned().unwrap_or_default();
-    let statuses: Vec<&Value> = statuses
-        .iter()
-        .filter(|s| s["context"] != json!(TRUST_CONTEXT))
-        .collect();
+    // Neither of these tests anything. A cooldown or Almanac's own word is not a check.
+    let tests_something = |s: &&Value| {
+        let context = s["context"].as_str().unwrap_or_default();
+        context != TRUST_CONTEXT && !context.starts_with("renovate/")
+    };
+    let statuses: Vec<&Value> = statuses.iter().filter(tests_something).collect();
     let suite_failed = |s: &Value| s["conclusion"].as_str().is_some_and(is_failed);
     let status_failed = |s: &&Value| s["state"] == json!("failure") || s["state"] == json!("error");
     if suites.iter().any(suite_failed) || statuses.iter().any(status_failed) {
@@ -257,6 +262,18 @@ fn trust_of(statuses: &Value) -> Option<Trust> {
     }
 }
 
+impl RepoConfig {
+    /// This config, with what it leaves unset taken from `shared`.
+    fn or(self, shared: Self) -> Self {
+        Self {
+            automerge: self.automerge.or(shared.automerge),
+            platform_automerge: self.platform_automerge.or(shared.platform_automerge),
+            git_ignored_authors: self.git_ignored_authors.or(shared.git_ignored_authors),
+            trust_required: self.trust_required,
+        }
+    }
+}
+
 pub fn config_of(text: Option<&str>, trust_required: bool) -> RepoConfig {
     let parsed = text.and_then(|t| json5::from_str::<Value>(t).ok());
     let flag = |key: &str| parsed.as_ref().and_then(|c| c[key].as_bool());
@@ -281,7 +298,27 @@ async fn read_config(client: &GithubClient, repo: &str, branch: &str) -> Result<
     }
     let required = client.required_checks(repo, branch).await?;
     let trust_required = required.iter().any(|c| c == TRUST_CONTEXT);
-    Ok(config_of(text.as_deref(), trust_required))
+    let own = config_of(text.as_deref(), trust_required);
+    let mut shared = RepoConfig::default();
+    for preset in presets_of(text.as_deref()) {
+        let preset = client.file(&preset, "default.json").await?;
+        shared = shared.or(config_of(preset.as_deref(), trust_required));
+    }
+    Ok(own.or(shared))
+}
+
+/// The repositories a Renovate config extends with `github>owner/repo`, the form whose settings
+/// live in that repository's `default.json`.
+pub fn presets_of(text: Option<&str>) -> Vec<String> {
+    let parsed = text.and_then(|t| json5::from_str::<Value>(t).ok());
+    let extends = parsed.map(|c| c["extends"].clone()).unwrap_or_default();
+    let names = extends.as_array().cloned().unwrap_or_default();
+    let repo = |name: &Value| {
+        let repo = name.as_str()?.strip_prefix("github>")?;
+        (!repo.contains(['/', ':']) || repo.matches('/').count() == 1)
+            .then(|| repo.split(['#', ':']).next().unwrap_or(repo).to_string())
+    };
+    names.iter().filter_map(repo).collect()
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

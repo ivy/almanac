@@ -32,7 +32,8 @@ observed! {
         pub conflicted: bool,
         pub failed: bool,
         pub running: bool,
-        pub trust_pending: bool,
+        // A repair of ours is held, and its checks have passed.
+        pub repair_passed: bool,
         pub text: Untrusted<PullText>,
     }
 }
@@ -121,7 +122,7 @@ async fn read_pull(
             conflicted: false,
             failed: false,
             running: false,
-            trust_pending: false,
+            repair_passed: false,
             text: Untrusted::new(PullText::default()),
         });
     };
@@ -132,6 +133,11 @@ async fn read_pull(
     let suites = client.check_suites(&repo, &sha).await?;
     let statuses = client.combined_status(&repo, &sha).await?;
     let checks = checks_of(&suites, &statuses);
+    let cleared = trust_pending(&statuses) && checks == Checks::Green;
+    let messages = match cleared {
+        true => client.pull_commit_messages(&repo, number).await?,
+        false => vec![],
+    };
     Ok(PullView {
         found: true,
         number,
@@ -139,7 +145,7 @@ async fn read_pull(
         conflicted: pull["mergeable"] == json!(false),
         failed: checks == Checks::Red,
         running: checks == Checks::Pending,
-        trust_pending: trust_pending(&statuses),
+        repair_passed: messages.iter().any(|m| m.contains(PATCH_TRAILER)),
         text: Untrusted::new(PullText {
             body: pull["body"].as_str().map(str::to_string),
         }),
@@ -248,13 +254,19 @@ async fn needing_a_run(
     let statuses = client.combined_status(&name, sha_text).await?;
     let checks = checks_of(&suites, &statuses);
     let failed = checks == Checks::Red;
-    let held = trust_pending(&statuses) && matches!(checks, Checks::Green | Checks::None);
-    if !failed && !held {
+    let awaiting = trust_pending(&statuses) && checks == Checks::Green;
+    if !failed && !awaiting {
         return Ok(None);
     }
     let number = pull["number"].as_u64().unwrap_or_default();
     let messages = client.pull_commit_messages(&name, number).await?;
-    let patched = held || messages.iter().any(|m| m.contains(PATCH_TRAILER));
+    let patched = messages.iter().any(|m| m.contains(PATCH_TRAILER));
+    // Only a hold on a repair is this workflow's to clear. Any other was placed on purpose, such
+    // as `security_fixes` holding a fix that is too young.
+    let held = awaiting && patched;
+    if !failed && !held {
+        return Ok(None);
+    }
     let cooled = cooldown_of(ages, pull).await == Cooldown::Passed;
     let payload = suite_payload(repo, &branch, &sha, failed, patched);
     let id = format!("scan:{repo}#{number}@{sha}");
@@ -292,7 +304,7 @@ pub async fn build_failures(cx: &Cx, event: &BuildChanged) -> Result<Facts, Halt
     }
     let (repo, head) = (event.repo.clone(), pull.head.clone());
     if !pull.failed {
-        return Ok(match pull.trust_pending {
+        return Ok(match pull.repair_passed {
             true => Facts::Passed { repo, head },
             false => Facts::Nothing,
         });

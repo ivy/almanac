@@ -30,7 +30,7 @@ Repairs a Renovate pull request whose CI failed, after the update's cooldown has
 - **R-4** A fix agent receives the failure logs and the checkout as tainted input and returns a patch. It does not push.
 - **R-5** A patch must pass the patch policy (R-20), then Almanac pushes it to the pull request's branch. A patch that takes back what the update changed, outside a lockfile, is refused and asks a person, because green checks on the old version repair nothing.
 - **R-6** Attempts per key are capped. When the cap is reached the workflow asks a person.
-- **R-7** A patched pull request carries an `almanac/trust` status from the time the agent starts until checks finish, so Renovate cannot merge it midway.
+- **R-7** A patched pull request carries an `almanac/trust` status from the time the agent starts until checks finish, so Renovate cannot merge it midway. This workflow clears only a hold on its own repair, because a hold on anything else was placed on purpose.
 
 ### Workflow: security fixes
 
@@ -41,7 +41,7 @@ Validates a Renovate security pull request and gets its build passing.
 - **R-10** It checks deterministically that an advisory exists for the package, that the current version is affected, and that the pull request's target is the advisory's patched version.
 - **R-11** It checks that the target release is older than the declared cooldown. A younger release asks a person.
 - **R-12** A quarantined reviewer inspects the package diff from the registry. It can veto and never approve (principle 4).
-- **R-13** All checks passing posts `almanac/trust` as `success`, and a failing check posts `failure` and asks a person.
+- **R-13** All checks passing posts `almanac/trust` as `success`, and a failing check posts `failure` and asks a person. Renovate counts that status as a passing check, so it is never posted on a commit nothing else has tested. A repository with no workflows asks a person.
 - **R-14** If CI is red, repair follows the same route as R-4 to R-6.
 
 ## The library

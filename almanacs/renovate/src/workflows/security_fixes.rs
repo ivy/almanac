@@ -2,7 +2,7 @@
 //! scrutiny. The model can veto, never approve: it is asked only once the deterministic checks
 //! pass, and a `NoConcerns` cannot rescue a failed one.
 use crate::events::SecurityPull;
-use crate::fleet::{TRUST_CONTEXT, scanned_repositories, trust_of_statuses};
+use crate::fleet::{Checks, TRUST_CONTEXT, checks_of, scanned_repositories, trust_of_statuses};
 use crate::update::{Ages, PullText, update_of};
 use crate::vetting::Vetting;
 use crate::workflows::build_failures::{MIN_RELEASE_AGE, ScanTarget};
@@ -37,6 +37,10 @@ observed! {
     pub struct SecurityView {
         pub found: bool,
         pub head: Sha,
+        // Something other than Almanac or a cooldown has reported on this commit.
+        pub tested: bool,
+        // The repository has no workflows, so nothing is ever going to report.
+        pub untestable: bool,
         pub text: Untrusted<PullText>,
     }
 }
@@ -50,6 +54,8 @@ pub struct Facts {
     pub readable: bool,
     pub install_script_added: bool,
     pub cooled: bool,
+    pub tested: bool,
+    pub untestable: bool,
     pub asked: bool,
     pub review: Option<Untrusted<Review>>,
 }
@@ -69,10 +75,21 @@ async fn read_pull(
     let pull = client.pull(&event.repo.to_string(), event.number).await?;
     let open = pull["state"] == json!("open");
     let by_renovate = pull["user"]["login"] == json!(target.author);
-    let head = pull["head"]["sha"].as_str().unwrap_or_default().parse();
+    let head: Sha = pull["head"]["sha"]
+        .as_str()
+        .unwrap_or_default()
+        .parse()
+        .unwrap_or_else(|_| event.sha.clone());
+    let (repo, sha) = (event.repo.to_string(), head.to_string());
+    let suites = client.check_suites(&repo, &sha).await?;
+    let statuses = client.combined_status(&repo, &sha).await?;
+    let tested = checks_of(&suites, &statuses) != Checks::None;
+    let workflows = client.file(&repo, ".github/workflows").await?;
     Ok(SecurityView {
         found: open && by_renovate,
-        head: head.unwrap_or_else(|_| event.sha.clone()),
+        head,
+        tested,
+        untestable: !tested && workflows.is_none(),
         text: Untrusted::new(PullText {
             body: pull["body"].as_str().map(str::to_string),
         }),
@@ -120,8 +137,10 @@ pub async fn scan(scanner: &Scanner) -> Result<Vec<Scanned<SecurityPull>>, StepE
                 continue;
             }
             let cooled = crate::fleet::cooldown_of(ages.as_ref(), &pull).await;
+            let suites = client.check_suites(&name, &sha.to_string()).await?;
+            let tested = checks_of(&suites, &statuses) != Checks::None;
             let id = format!("scan:security:{repo}#{number}@{sha}");
-            found.push(Scanned::new(id, payload).at_state(format!("{cooled:?}")));
+            found.push(Scanned::new(id, payload).at_state(format!("{cooled:?},tested={tested}")));
         }
     }
     Ok(found)
@@ -156,6 +175,8 @@ pub async fn security_fixes(cx: &Cx, event: &SecurityPull) -> Result<Facts, Halt
         readable: false,
         install_script_added: false,
         cooled: false,
+        tested: pull.tested,
+        untestable: pull.untestable,
         asked: cx.attempts().await?.asked,
         review: None,
     };
@@ -251,7 +272,15 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
         return vec![];
     };
     match review.narrow(|r| r.verdict) {
-        Verdict::NoConcerns => vec![attest(facts, AttestState::Success)],
+        // A success here is a passing check to Renovate, so with nothing else reporting it would
+        // merge on Almanac's word alone. It stays held until something has tested it.
+        Verdict::NoConcerns if facts.tested => vec![attest(facts, AttestState::Success)],
+        Verdict::NoConcerns if facts.untestable => ask(
+            facts,
+            title!("Nothing tests this repository, so this security update cannot merge"),
+            empty(),
+        ),
+        Verdict::NoConcerns => vec![],
         Verdict::Concerns => refuse(
             facts,
             title!("A reviewer raised concerns about this security update"),

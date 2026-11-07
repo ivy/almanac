@@ -112,6 +112,15 @@ async fn world_updating(published: Published, reply: Value, diffs: &[(&str, &str
 }
 
 impl World {
+    /// `almanac/trust` set to `pending`, as a run does.
+    async fn hold(&self, sha: &str) {
+        let url = format!("{}/repos/{REPO}/statuses/{sha}", self.sim.base_url());
+        let status = json!({"state": "pending", "context": "almanac/trust"});
+        let client = reqwest::Client::new();
+        let request = client.post(url).bearer_auth("t").json(&status);
+        request.send().await.unwrap();
+    }
+
     fn head(&self) -> String {
         self.sim.pull(REPO, self.number).head_sha
     }
@@ -644,20 +653,28 @@ async fn a_cooldown_await_is_reconsidered_by_a_scan_once_it_passes() {
 #[tokio::test]
 async fn a_status_left_pending_by_a_dead_run_is_cleared_by_the_next_scan() {
     let w = world(hours_old(100), patch_reply("src/main.rs")).await;
-    let sha = w.head();
+    let sha = "c".repeat(40);
+    w.sim
+        .move_branch(REPO, w.number, &sha, "fix\n\nAlmanac-Key: k");
     w.sim
         .add_suite(REPO, Suite::finished(&sha, BRANCH, "success", ""));
-    let client = reqwest::Client::new();
-    client
-        .post(format!("{}/repos/{REPO}/statuses/{sha}", w.sim.base_url()))
-        .bearer_auth("t")
-        .json(&json!({"state": "pending", "context": "almanac/trust"}))
-        .send()
-        .await
-        .unwrap();
+    w.hold(&sha).await;
     assert_eq!(w.rt.backfill(None).await.unwrap().queued, 1);
     w.settle().await;
     assert_eq!(w.statuses().last().unwrap(), &(sha, "success".to_string()));
+}
+
+/// A security fix too young to validate is held on purpose, and green checks do not change that.
+#[tokio::test]
+async fn a_hold_on_a_commit_with_no_repair_is_left_alone() {
+    let w = world(hours_old(100), patch_reply("src/main.rs")).await;
+    let sha = w.head();
+    w.sim
+        .add_suite(REPO, Suite::finished(&sha, BRANCH, "success", ""));
+    w.hold(&sha).await;
+    assert_eq!(w.rt.backfill(None).await.unwrap().queued, 0);
+    w.settle().await;
+    assert_eq!(w.statuses().last().unwrap(), &(sha, "pending".to_string()));
 }
 
 #[tokio::test]

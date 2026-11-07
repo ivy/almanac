@@ -385,3 +385,20 @@ fn a_config_that_cannot_be_read_is_unknown() {
         RepoConfig::default()
     );
 }
+
+#[test]
+fn a_cooldown_or_almanacs_own_word_is_not_a_check() {
+    let statuses = serde_json::json!({"statuses": [
+        {"context": "renovate/stability-days", "state": "success"},
+        {"context": "almanac/trust", "state": "success"},
+    ]});
+    assert_eq!(checks_of(&Default::default(), &statuses), Checks::None);
+}
+
+#[test]
+fn a_shared_preset_is_found_by_the_repository_it_lives_in() {
+    let config = r#"{"extends": ["github>owner/config", "config:recommended"]}"#;
+    assert_eq!(presets_of(Some(config)), ["owner/config"]);
+    let elsewhere = r#"{"extends": ["github>owner/config//other"]}"#;
+    assert!(presets_of(Some(elsewhere)).is_empty());
+}

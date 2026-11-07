@@ -46,7 +46,7 @@ Write an exception down where it applies, with its reason, and keep the default 
 
 Trusting checks means taking care over what they are checking. Two cases show the limits.
 
-The first is a cooldown that counts as a pass. A cooldown proves a release is old, and proves nothing about whether it works. Configuration that treats it as a successful check lets a repository with no tests merge on a timer alone. Renovate refuses to automerge with no checks by default, so the default is the safe one, and a shared configuration must not override it.
+The first is a status that counts as a pass without testing anything. A cooldown proves a release is old, and proves nothing about whether it works. Configuration that treats it as a successful check lets a repository with no tests merge on a timer alone. Renovate refuses to automerge with no checks by default, so the default is the safe one, and a shared configuration must not override it. Almanac's own `almanac/trust` is the same trap: Renovate sees it as one more passing check, so Almanac never posts `success` on a commit nothing else has tested.
 
 The second is a change that no longer does its job. Almanac's first live pass met a TypeScript update that broke a build, and an agent made the checks pass by downgrading TypeScript. Every check was green, on a pull request that no longer updated anything. The checks answered correctly, and the question had changed underneath them. So the workflow owns a promise the checks cannot make, that a repair keeps the update, and [R-5](prd.md) enforces it in code.
 

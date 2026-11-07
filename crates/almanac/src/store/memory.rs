@@ -111,7 +111,9 @@ impl MemoryStore {
         let running = s.running.contains_key(&slot);
         if let Some(waiting) = s.pending.get_mut(&slot) {
             waiting.lane = waiting.lane.min(pending.origin.lane());
-            waiting.pending = pending;
+            // As in PostgreSQL: a fresh event must not reset the chain it joins.
+            let depth = waiting.pending.depth.max(pending.depth);
+            waiting.pending = Pending { depth, ..pending };
             return if running {
                 Ingest::MarkedDirty
             } else {

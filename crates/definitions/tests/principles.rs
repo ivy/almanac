@@ -294,6 +294,43 @@ fn principle_6_each_delivery_counts_once_and_a_key_runs_once_per_batch(tc: TestC
     });
 }
 
+/// Principle 6, R-26: events coalesced into one run keep the deepest chain among them, so a
+/// fresh event cannot reset a chain's depth.
+#[hegel::test]
+fn principle_6_a_coalesced_run_keeps_the_deepest_chain(tc: TestCase) {
+    let steps = tc.draw(schedules(SUBJECTS, MAX_CHAIN_DEPTH));
+    let world = World::new();
+    block_on(async {
+        let rt = world.runtime(Mode::DryRun, Limits::default());
+        let mut deepest: BTreeMap<String, u32> = BTreeMap::new();
+        let drain = async |deepest: &mut BTreeMap<String, u32>| {
+            world.clock.advance(HOUR);
+            let outcomes = rt.drain().await.unwrap();
+            let ran: BTreeMap<String, u32> = world
+                .runs(&outcomes)
+                .await
+                .into_iter()
+                .map(|run| (run.key, run.depth))
+                .collect();
+            assert_eq!(&ran, deepest, "a run's depth is its deepest event's");
+            deepest.clear();
+        };
+        for step in &steps {
+            match step {
+                Step::Arrive(sent) => {
+                    if rt.ingest(envelope(sent)).await.unwrap() != Ingest::Duplicate {
+                        let depth = deepest.entry(key(sent.subject)).or_default();
+                        *depth = (*depth).max(sent.depth);
+                    }
+                }
+                Step::Drain => drain(&mut deepest).await,
+                Step::Restart => {}
+            }
+        }
+        drain(&mut deepest).await;
+    });
+}
+
 /// What a dry-run runtime did with a drawn schedule whose arrivals land while runs are in
 /// flight.
 struct Concurrent {

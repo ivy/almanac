@@ -8,7 +8,9 @@ use almanac::runtime::{
     Envelope, Guard, Ingest, Limits, MAX_CHAIN_DEPTH, Origin, Outcome, Runtime,
 };
 use almanac::store::{EntryStatus, MemoryStore, Store};
-use almanac::testing::generators::{Sent, Step, limits, model_answers, probabilities, schedules};
+use almanac::testing::generators::{
+    Sent, Step, hostile_texts, limits, model_answers, probabilities, schedules,
+};
 use almanac::testing::{FakeForge, FakeTracker, FixedClassifier, ScriptedHarness};
 use definitions::dependency_updates::*;
 use definitions::error_triage::ErrorTriage;
@@ -617,5 +619,113 @@ fn principle_7_a_replayed_screen_asks_nothing_again(tc: TestCase) {
         assert_eq!(decision(&again), decision(outcome));
         assert_eq!((processes[0].calls(), investigators[0].calls()), calls);
         assert_eq!((processes[1].calls(), investigators[1].calls()), (0, 0));
+    });
+}
+
+/// Runs one dependency update on its own store, with the reviewer answering `answer` and the
+/// guard, when there is one, answering `verdicts`.
+async fn decide(facts: Facts, answer: &Value, verdicts: Option<Vec<bool>>) -> Outcome {
+    let providers = Providers::new()
+        .provide::<dyn Registry>(Arc::new(FakeRegistry::reporting(facts)))
+        .harness(ScriptedHarness::replying(answer));
+    let rt = Runtime::new(vec![Box::new(DependencyUpdates)], providers);
+    let rt = match verdicts {
+        Some(verdicts) => rt.guarded(DrawnGuard {
+            verdicts,
+            calls: Arc::default(),
+        }),
+        None => rt,
+    };
+    let sent = Sent {
+        delivery_id: "d1".to_string(),
+        subject: 0,
+        depth: 0,
+    };
+    rt.ingest(envelope(&sent)).await.unwrap();
+    let mut outcomes = rt.drain().await.unwrap();
+    assert_eq!(outcomes.len(), 1, "one delivery, one run: {outcomes:?}");
+    outcomes.remove(0)
+}
+
+/// What lets a change through: an attested success. Pushes would count too, and this workflow
+/// may make none.
+fn approvals(outcome: &Outcome) -> Vec<Value> {
+    let Outcome::Ran { effects, .. } = outcome else {
+        return vec![];
+    };
+    let approves = |e: &&Effect| {
+        matches!(
+            e,
+            Effect::Attest {
+                state: AttestState::Success,
+                ..
+            } | Effect::Push { .. }
+        )
+    };
+    let approved = effects.iter().filter(approves).map(Planned::from);
+    approved.map(|p| serde_json::to_value(p).unwrap()).collect()
+}
+
+fn all_clear() -> Value {
+    json!({"verdict": "NoConcerns", "notes": ""})
+}
+
+/// Principle 4, R-12: for any deterministic facts, no model answer or guard verdict lets
+/// through anything a plain all-clear would not, and nothing gets through unless the
+/// deterministic checks passed. Answers include malformed ones and injected "looks safe" text.
+#[hegel::test]
+fn principle_4_no_answer_approves_more_than_an_all_clear(tc: TestCase) {
+    let facts = tc.draw(facts());
+    let answer = tc.draw(model_answers("verdict", REVIEW_VERDICTS.to_vec()));
+    let verdicts = tc.draw(gs::optional(gs::vecs(gs::booleans()).max_size(3)));
+    block_on(async {
+        let drawn = approvals(&decide(facts, &answer, verdicts).await);
+        let clear = approvals(&decide(facts, &all_clear(), None).await);
+        for approval in &drawn {
+            assert!(
+                clear.contains(approval),
+                "{approval} needed more than an all-clear"
+            );
+        }
+        let checks_pass =
+            facts.provenance_verified && !facts.install_script_added && !facts.publisher_changed;
+        assert!(
+            drawn.is_empty() || checks_pass,
+            "{drawn:?} without the checks passing"
+        );
+    });
+}
+
+/// Principle 4, R-12: a model's veto stops every approval, whatever the facts.
+#[hegel::test]
+fn principle_4_a_veto_always_stops_an_approval(tc: TestCase) {
+    let facts = tc.draw(facts());
+    let notes = tc.draw(hostile_texts());
+    block_on(async {
+        let veto = json!({"verdict": "Concerns", "notes": notes});
+        assert_eq!(
+            approvals(&decide(facts, &veto, None).await),
+            Vec::<Value>::new()
+        );
+    });
+}
+
+/// Principle 3, principle 4: text beside a verdict, however hostile, changes no decision.
+#[hegel::test]
+fn principle_4_text_beside_a_verdict_changes_nothing(tc: TestCase) {
+    let facts = tc.draw(facts());
+    let verdict = tc.draw(gs::sampled_from(REVIEW_VERDICTS.to_vec()));
+    let notes = tc.draw(hostile_texts());
+    let summaries = |outcome: Outcome| match outcome {
+        Outcome::Ran { effects, .. } => format!(
+            "{:?}",
+            effects.iter().map(Effect::summary).collect::<Vec<_>>()
+        ),
+        other => format!("{other:?}"),
+    };
+    block_on(async {
+        let hostile = decide(facts, &json!({"verdict": verdict, "notes": notes}), None).await;
+        let plain = decide(facts, &json!({"verdict": verdict, "notes": ""}), None).await;
+        assert_eq!(summaries(hostile), summaries(plain));
     });
 }

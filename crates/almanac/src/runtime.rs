@@ -176,6 +176,35 @@ pub struct Delivery {
     pub error: Option<String>,
 }
 
+/// Each run in the journal, so an operator can follow a daemon without reading the store.
+fn log_finished(outcome: &Outcome) {
+    match outcome {
+        Outcome::Ran {
+            run_id,
+            workflow,
+            effects,
+            denied,
+        } => tracing::info!(
+            run = %run_id,
+            workflow,
+            effects = effects.len(),
+            denied = denied.len(),
+            "run finished"
+        ),
+        Outcome::Stopped {
+            run_id,
+            workflow,
+            reason,
+        } => tracing::info!(run = %run_id, workflow, %reason, "run stopped"),
+        Outcome::Failed {
+            run_id,
+            workflow,
+            error,
+        } => tracing::warn!(run = %run_id, workflow, %error, "run failed"),
+        _ => {}
+    }
+}
+
 fn planned(outcome: &Outcome) -> Stored<Vec<Value>> {
     let Outcome::Ran { effects, .. } = outcome else {
         return Ok(vec![]);
@@ -522,6 +551,7 @@ impl Runtime {
                     let status = self.entry_status();
                     self.store.release(&run.id, &links, planned, status).await?;
                     self.remember_effects(&run, &outcome).await?;
+                    log_finished(&outcome);
                     out.lock().unwrap().push(outcome);
                 }
             }

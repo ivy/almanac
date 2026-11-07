@@ -36,6 +36,10 @@ pub struct Patch {
     pub changes: Vec<Change>,
     /// The same changes as a diff, for people to read. Never applied.
     pub diff: String,
+    /// What the agent said it did, for people to read. An agent that changed nothing says why
+    /// here.
+    #[serde(default)]
+    pub answer: serde_json::Value,
 }
 
 crate::clean! {

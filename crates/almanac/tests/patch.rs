@@ -9,6 +9,7 @@ fn patch(changes: Vec<Change>) -> Untrusted<Patch> {
     Untrusted::new(Patch {
         changes,
         diff: String::new(),
+        answer: Default::default(),
     })
 }
 

@@ -241,6 +241,21 @@ async fn a_rejected_patch_asks_a_person_and_pushes_nothing() {
 }
 
 #[tokio::test]
+async fn an_agent_that_changes_nothing_hands_over_what_it_found() {
+    let reply =
+        json!({"answer": {"summary": "This needs a CI change."}, "diff": "", "changes": []});
+    let mut w = world(hours_old(100), reply).await;
+    let broken = w.head();
+    w.suite_finishes("failure").await;
+    w.settle().await;
+    assert_eq!(w.pushes(), 0);
+    let filed = format!("{:?}", w.tracker.filed.lock().unwrap());
+    assert!(filed.contains("no change to push"), "{filed}");
+    let statuses = w.statuses();
+    assert_eq!(statuses.last().unwrap(), &(broken, "failure".to_string()));
+}
+
+#[tokio::test]
 async fn several_check_suites_on_one_commit_start_one_run() {
     let mut w = world(hours_old(100), patch_reply("src/main.rs")).await;
     assert_eq!(w.suite_finishes("failure").await, Ingest::Queued);
@@ -368,8 +383,30 @@ fn repaired(path: &str) -> Facts {
         patch: Untrusted::new(Patch {
             changes,
             diff: String::new(),
+            answer: Default::default(),
         }),
     }
+}
+
+#[test]
+fn a_person_asked_about_an_empty_repair_reads_what_the_agent_found() {
+    let facts = Facts::Repaired {
+        repo: repo(),
+        number: 1,
+        branch: BRANCH.parse().unwrap(),
+        head: head(),
+        patch: Untrusted::new(Patch {
+            changes: vec![],
+            diff: String::new(),
+            answer: json!({"summary": "This needs a CI change."}),
+        }),
+    };
+    let effects = policy(&facts);
+    let asked = effects.iter().find_map(|effect| match effect {
+        Effect::Ask { body, .. } => Some(serde_json::to_string(body).unwrap()),
+        _ => None,
+    });
+    assert!(asked.unwrap().contains("This needs a CI change."));
 }
 
 #[test]

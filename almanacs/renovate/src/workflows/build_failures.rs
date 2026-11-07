@@ -283,6 +283,14 @@ pub async fn build_failures(cx: &Cx, event: &BuildChanged) -> Result<Facts, Halt
     })
 }
 
+/// What an agent said when it finished, for whoever is asked to take over.
+fn closing_words(patch: &Patch) -> String {
+    match patch.answer.get("summary").unwrap_or(&patch.answer) {
+        Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
+}
+
 fn stop_and_ask(repo: &Slug, head: &Sha, question: Title, body: Untrusted<String>) -> Vec<Effect> {
     vec![
         Effect::Attest {
@@ -332,6 +340,12 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
                 hold: Some(TRUST_CONTEXT),
                 patch,
             }],
+            Err(Rejection::Empty) => stop_and_ask(
+                repo,
+                head,
+                title!("A repair ended with no change to push"),
+                patch.map(closing_words),
+            ),
             Err(_) => stop_and_ask(
                 repo,
                 head,

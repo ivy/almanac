@@ -2,7 +2,7 @@
 //! request's own branch. Nothing here merges or closes: the repository's rules do that.
 use crate::cx::StepError;
 use crate::patch::{Checked, Patch};
-use crate::taint::{Sha, Slug, Untrusted};
+use crate::taint::{Sha, Slug, Title, Untrusted};
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
@@ -28,13 +28,13 @@ pub enum Effect {
     Await { until: &'static str },
     /// Hand work to a tracker. `body` keeps its taint all the way to the adapter.
     File {
-        title: &'static str,
+        title: Title,
         target: Slug,
         body: Untrusted<String>,
     },
     /// Ask a person, and block agents until they answer.
     Ask {
-        question: &'static str,
+        question: Title,
         target: Slug,
         body: Untrusted<String>,
     },

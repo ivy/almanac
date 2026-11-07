@@ -195,7 +195,7 @@ fn attest(facts: &Facts, state: AttestState) -> Effect {
     }
 }
 
-fn ask(facts: &Facts, question: &'static str, body: Untrusted<String>) -> Vec<Effect> {
+fn ask(facts: &Facts, question: Title, body: Untrusted<String>) -> Vec<Effect> {
     if facts.asked {
         return vec![];
     }
@@ -206,7 +206,7 @@ fn ask(facts: &Facts, question: &'static str, body: Untrusted<String>) -> Vec<Ef
     }]
 }
 
-fn refuse(facts: &Facts, question: &'static str, body: Untrusted<String>) -> Vec<Effect> {
+fn refuse(facts: &Facts, question: Title, body: Untrusted<String>) -> Vec<Effect> {
     let mut effects = vec![attest(facts, AttestState::Failure)];
     effects.extend(ask(facts, question, body));
     effects
@@ -221,27 +221,31 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
     if !facts.names_the_fix {
         return refuse(
             facts,
-            "This update is not the fix an advisory names",
+            title!("This update is not the fix an advisory names"),
             empty(),
         );
     }
     if !facts.readable {
         return refuse(
             facts,
-            "This security update's package could not be read",
+            title!("This security update's package could not be read"),
             empty(),
         );
     }
     if facts.install_script_added {
         return refuse(
             facts,
-            "This security update adds an install script",
+            title!("This security update adds an install script"),
             empty(),
         );
     }
     if !facts.cooled {
         // Stays pending: nothing is wrong yet, and the next scan looks again once it has aged.
-        return ask(facts, "This fix is younger than the cooldown", empty());
+        return ask(
+            facts,
+            title!("This fix is younger than the cooldown"),
+            empty(),
+        );
     }
     let Some(review) = &facts.review else {
         return vec![];
@@ -250,7 +254,7 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
         Verdict::NoConcerns => vec![attest(facts, AttestState::Success)],
         Verdict::Concerns => refuse(
             facts,
-            "A reviewer raised concerns about this security update",
+            title!("A reviewer raised concerns about this security update"),
             review.map(|r| r.notes.clone()),
         ),
     }

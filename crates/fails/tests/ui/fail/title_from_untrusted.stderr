@@ -1,0 +1,55 @@
+error[E0277]: the trait bound `fails::Untrusted<String>: Clean` is not satisfied
+ --> tests/ui/fail/title_from_untrusted.rs:5:13
+  |
+5 |     let _ = title!("{}", sample);
+  |             ^^^^^^^^^^^^^^^^^^^^
+  |             |
+  |             the trait `Clean` is not implemented for `fails::Untrusted<String>`
+  |             required by a bound introduced by this call
+  |
+  = help: the following other types implement trait `Clean`:
+            &T
+            AttestState
+            EffectKind
+            Option<T>
+            Rejection
+            Sha
+            Slug
+            Vec<T>
+          and $N others
+note: required by a bound in `almanac::taint::__clean`
+ --> $WORKSPACE/crates/almanac/src/taint.rs
+  |
+  | pub fn __clean<T: Clean + fmt::Display>(value: &T) -> &T {
+  |                   ^^^^^ required by this bound in `__clean`
+  = note: this error originates in the macro `title` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `fails::Untrusted<String>` doesn't implement `std::fmt::Display`
+ --> tests/ui/fail/title_from_untrusted.rs:5:13
+  |
+5 |     let _ = title!("{}", sample);
+  |             ^^^^^^^^^^^^^^^^^^^^
+  |             |
+  |             the trait `std::fmt::Display` is not implemented for `fails::Untrusted<String>`
+  |             required by a bound introduced by this call
+  |
+note: required by a bound in `almanac::taint::__clean`
+ --> $WORKSPACE/crates/almanac/src/taint.rs
+  |
+  | pub fn __clean<T: Clean + fmt::Display>(value: &T) -> &T {
+  |                           ^^^^^^^^^^^^ required by this bound in `__clean`
+  = note: this error originates in the macro `title` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `fails::Untrusted<String>` doesn't implement `std::fmt::Display`
+ --> tests/ui/fail/title_from_untrusted.rs:5:13
+  |
+5 |     let _ = title!("{}", sample);
+  |             ^^^^^^^^--^^^^^^^^^^
+  |             |       |
+  |             |       required by this formatting parameter
+  |             `fails::Untrusted<String>` cannot be formatted with the default formatter
+  |
+  = help: the trait `std::fmt::Display` is not implemented for `fails::Untrusted<String>`
+  = note: in format strings you may be able to use `{:?}` (or `{:#?}` for pretty-print) instead
+  = note: required for `&fails::Untrusted<String>` to implement `std::fmt::Display`
+  = note: this error originates in the macro `$crate::__export::format_args` which comes from the expansion of the macro `title` (in Nightly builds, run with -Z macro-backtrace for more info)

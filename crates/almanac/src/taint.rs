@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 
 /// Observed content. No `Display`, no accessor: the ways out are `narrow`, which must
-/// produce a `Finite` value, and `map`, which stays tainted.
+/// produce a `Finite` value, and `map` and `join`, which stay tainted.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Untrusted<T> {
     #[serde(rename = "$untrusted")]
@@ -28,6 +28,13 @@ impl<T> Untrusted<T> {
 
     pub fn map<U>(&self, f: fn(&T) -> U) -> Untrusted<U> {
         Untrusted::new(f(&self.inner))
+    }
+}
+
+impl Untrusted<String> {
+    /// `clean` followed by `tainted`. The whole is tainted, so this only widens taint.
+    pub fn join(clean: &str, tainted: &Untrusted<String>) -> Self {
+        Self::new(format!("{clean}{}", tainted.inner))
     }
 }
 
@@ -64,6 +71,8 @@ macro_rules! seal {
     ($($t:ty),*) => { $(impl __private::Sealed for $t {} impl Clean for $t {})* };
 }
 seal!(bool, u32, u64, f64, Slug, Sha);
+impl<T: Clean> __private::Sealed for &T {}
+impl<T: Clean> Clean for &T {}
 impl<T: Clean> __private::Sealed for Option<T> {}
 impl<T: Clean> Clean for Option<T> {}
 impl<T: Clean> __private::Sealed for Vec<T> {}
@@ -128,6 +137,62 @@ validated!(
     Sha, "sha",
     |s| s.len() == 40 && s.chars().all(|c| c.is_ascii_hexdigit())
 );
+
+/// Text a tracker shows as it is: an issue's title, or a question. Only `title!` builds one, so
+/// it holds nothing but a literal and `Clean` values.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Title(String);
+
+impl Title {
+    #[doc(hidden)]
+    pub fn __compose(text: String) -> Self {
+        Self(text)
+    }
+}
+
+impl fmt::Display for Title {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[doc(hidden)]
+pub fn __clean<T: Clean + fmt::Display>(value: &T) -> &T {
+    value
+}
+
+/// Whether every placeholder is a bare `{}`. A named one would read a variable that `title!`
+/// never sees, so it could not check it.
+#[doc(hidden)]
+pub const fn __bare_placeholders(format: &str) -> bool {
+    let bytes = format.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            if i + 1 >= bytes.len() || (bytes[i + 1] != b'}' && bytes[i + 1] != b'{') {
+                return false;
+            }
+            i += 1;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// Build a `Title` from a literal and `Clean` values, with each value passed as an argument:
+/// `title!("{} failed {} times", tool, count)`.
+#[macro_export]
+macro_rules! title {
+    ($format:literal $(, $value:expr)* $(,)?) => {{
+        const _: () = assert!(
+            $crate::taint::__bare_placeholders($format),
+            "title! takes each value as an argument, so that it can check it is Clean"
+        );
+        $crate::taint::Title::__compose(::std::format!(
+            $format $(, $crate::taint::__clean(&$value))*
+        ))
+    }};
+}
 
 /// Declare a struct or fieldless enum that is `Clean`. Each struct field must be too.
 #[macro_export]

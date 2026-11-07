@@ -966,7 +966,7 @@ fn push_if_safe(Repaired { pr, patch }: &Repaired) -> Vec<Effect> {
             patch,
         }],
         Err(_) => vec![Effect::Ask {
-            question: "A repair was refused by the patch policy",
+            question: title!("A repair was refused by the patch policy"),
             target: pr.repo.clone(),
             body: patch.map(|p| p.diff.clone()),
         }],

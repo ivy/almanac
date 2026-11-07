@@ -1,0 +1,5 @@
+error[E0308]: mismatched types
+ --> tests/ui/fail/file_title_is_a_string.rs:5:16
+  |
+5 |         title: String::from("x"),
+  |                ^^^^^^^^^^^^^^^^^ expected `Title`, found `String`

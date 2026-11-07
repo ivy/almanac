@@ -285,12 +285,7 @@ pub async fn build_failures(cx: &Cx, event: &BuildChanged) -> Result<Facts, Halt
     })
 }
 
-fn stop_and_ask(
-    repo: &Slug,
-    head: &Sha,
-    question: &'static str,
-    body: Untrusted<String>,
-) -> Vec<Effect> {
+fn stop_and_ask(repo: &Slug, head: &Sha, question: Title, body: Untrusted<String>) -> Vec<Effect> {
     vec![
         Effect::Attest {
             context: TRUST_CONTEXT,
@@ -321,7 +316,7 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
         Facts::Exhausted { repo, head, .. } => stop_and_ask(
             repo,
             head,
-            "Repairs did not fix this build",
+            title!("Repairs did not fix this build"),
             Untrusted::new(String::new()),
         ),
         Facts::Repaired {
@@ -342,7 +337,7 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
             Err(_) => stop_and_ask(
                 repo,
                 head,
-                "A repair was refused by the patch policy",
+                title!("A repair was refused by the patch policy"),
                 patch.map(|p| p.diff.clone()),
             ),
         },

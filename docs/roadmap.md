@@ -54,7 +54,7 @@ Almanac feeds the rest of the stack.
 - An IDS over the sandbox: blocked egress attempts raise alerts, and canary credentials detect exfiltration
 - A Daytona sandbox provider, generated from `specs/daytona/`. Per-sandbox network rules need Daytona Tier 3 or above, because lower tiers cannot override organization restrictions, and sandboxes depend on them
 - Stronger isolation for agents, such as a microVM tier
-- A seal on `Untrusted` serialization, and on `clean!`'s hidden traits
+- A seal on `Untrusted` serialization, on `clean!`'s hidden traits, and on `title!`'s hidden constructor
 - Prompt output sections generated from agent output types
 
 **Done when** a seeded malicious dependency is detected in the sandbox and raises an alert.

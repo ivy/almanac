@@ -72,12 +72,12 @@ pub fn triage(Facts { repo, findings }: &Facts) -> Vec<Effect> {
     let body = findings.map(|f| f.summary.clone());
     match findings.narrow(|f| f.confidence) {
         Confidence::High => vec![Effect::File {
-            title: "Fix this application error",
+            title: title!("Fix this application error"),
             target: repo.clone(),
             body,
         }],
         Confidence::Low => vec![Effect::Ask {
-            question: "Is this error worth fixing?",
+            question: title!("Is this error worth fixing?"),
             target: repo.clone(),
             body,
         }],

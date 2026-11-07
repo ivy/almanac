@@ -1,0 +1,7 @@
+error[E0080]: evaluation panicked: title! takes each value as an argument, so that it can check it is Clean
+ --> tests/ui/fail/title_names_a_variable.rs:5:13
+  |
+5 |     let _ = title!("{hostile}");
+  |             ^^^^^^^^^^^^^^^^^^^ evaluation of `main::_` failed here
+  |
+  = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `title` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -91,7 +91,7 @@ pub fn policy(Facts { evidence, review }: &Facts) -> Vec<Effect> {
         return vec![
             attest(AttestState::Failure),
             Effect::Ask {
-                question: "This dependency update failed trust checks",
+                question: title!("This dependency update failed trust checks"),
                 target: evidence.repo.clone(),
                 body,
             },
@@ -105,7 +105,7 @@ pub fn policy(Facts { evidence, review }: &Facts) -> Vec<Effect> {
         CiState::Red => vec![
             attest(AttestState::Success),
             Effect::File {
-                title: "Fix the build on this dependency update",
+                title: title!("Fix the build on this dependency update"),
                 target: evidence.repo.clone(),
                 body,
             },

@@ -48,7 +48,7 @@ fn repair_or_ask(r: &Repair) -> Vec<Effect> {
         },
         None if r.attempts.asked => vec![],
         None => vec![Effect::Ask {
-            question: "Repairs did not fix this build",
+            question: title!("Repairs did not fix this build"),
             target: r.repo.clone(),
             body: Untrusted::new(String::new()),
         }],

@@ -69,6 +69,12 @@ pub enum Facts {
     /// Nothing to do: the pull request is gone, conflicted, or not failing.
     Nothing,
     Cooling,
+    /// Nothing dates this update, so its cooldown can never pass.
+    Undated {
+        repo: Slug,
+        number: u64,
+        asked: bool,
+    },
     /// CI passed on a patched commit, so the hold can come off.
     Passed {
         repo: Slug,
@@ -77,6 +83,7 @@ pub enum Facts {
     /// The attempt cap is reached.
     Exhausted {
         repo: Slug,
+        number: u64,
         head: Sha,
         asked: bool,
     },
@@ -293,12 +300,27 @@ pub async fn build_failures(cx: &Cx, event: &BuildChanged) -> Result<Facts, Halt
     let attempts = cx.attempts().await?;
     if attempts.used >= ATTEMPT_CAP {
         let asked = attempts.asked;
-        return Ok(Facts::Exhausted { repo, head, asked });
+        let number = pull.number;
+        return Ok(Facts::Exhausted {
+            repo,
+            number,
+            head,
+            asked,
+        });
     }
     let update = pull.text.map(update_of);
     let ages = cx.get::<dyn Ages>()?;
-    let Some(cooled) = cx.cooled(MIN_RELEASE_AGE, ages.newest(&update)).await? else {
-        return Ok(Facts::Cooling);
+    let cooled = match cx.age(MIN_RELEASE_AGE, ages.newest(&update)).await? {
+        Age::Passed(cooled) => cooled,
+        Age::Young => return Ok(Facts::Cooling),
+        Age::Unknown => {
+            let (number, asked) = (pull.number, attempts.asked);
+            return Ok(Facts::Undated {
+                repo,
+                number,
+                asked,
+            });
+        }
     };
     cx.hold(TRUST_CONTEXT, &repo, &head).await?;
     let logs = cx.observe("logs", read_logs(&client, &repo, &head)).await?;
@@ -332,7 +354,13 @@ fn closing_words(patch: &Patch) -> String {
     }
 }
 
-fn stop_and_ask(repo: &Slug, head: &Sha, question: Title, body: Untrusted<String>) -> Vec<Effect> {
+fn stop_and_ask(
+    repo: &Slug,
+    pull: u64,
+    head: &Sha,
+    question: Title,
+    body: Untrusted<String>,
+) -> Vec<Effect> {
     vec![
         Effect::Attest {
             context: TRUST_CONTEXT,
@@ -343,6 +371,7 @@ fn stop_and_ask(repo: &Slug, head: &Sha, question: Title, body: Untrusted<String
         Effect::Ask {
             question,
             target: repo.clone(),
+            pull: Some(pull),
             body,
         },
     ]
@@ -354,14 +383,30 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
         Facts::Cooling => vec![Effect::Await {
             until: "the update's cooldown to pass",
         }],
+        Facts::Undated { asked: true, .. } => vec![Effect::Await {
+            until: "a person to look at this update",
+        }],
+        Facts::Undated { repo, number, .. } => vec![Effect::Ask {
+            question: title!("This update's build failed, and nothing says when it was published"),
+            target: repo.clone(),
+            pull: Some(*number),
+            body: Untrusted::new(
+                "No agent reads an update before its cooldown passes, and this one has no \
+                 publish time to measure from. It needs a person."
+                    .to_string(),
+            ),
+        }],
         Facts::Passed { repo, head } => vec![Effect::Attest {
             context: TRUST_CONTEXT,
             state: AttestState::Success,
             repo: repo.clone(),
             sha: head.clone(),
         }],
-        Facts::Exhausted { repo, head, .. } => stop_and_ask(
+        Facts::Exhausted {
+            repo, number, head, ..
+        } => stop_and_ask(
             repo,
+            *number,
             head,
             title!("Repairs did not fix this build"),
             Untrusted::new(String::new()),
@@ -376,6 +421,7 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
         } => match DEFAULT_POLICY.check(patch, head) {
             Ok(_) if patch.zip(updated).narrow(undoes_the_update) => stop_and_ask(
                 repo,
+                *number,
                 head,
                 title!("A repair took back the update"),
                 patch.map(|p| p.diff.clone()),
@@ -390,12 +436,14 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
             }],
             Err(Rejection::Empty) => stop_and_ask(
                 repo,
+                *number,
                 head,
                 title!("A repair ended with no change to push"),
                 patch.map(closing_words),
             ),
             Err(_) => stop_and_ask(
                 repo,
+                *number,
                 head,
                 title!("A repair was refused by the patch policy"),
                 patch.map(|p| p.diff.clone()),

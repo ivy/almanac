@@ -95,6 +95,12 @@ fn model_credential() -> Option<ClaudeConfig> {
     key.or_else(|| token().map(ClaudeConfig::oauth))
 }
 
+/// Who is asked when a person is needed: `ALMANAC_ASK`, or else the account the almanac serves.
+fn person() -> Option<String> {
+    let asked = env::var("ALMANAC_ASK").or_else(|_| env::var("ALMANAC_OWNER"));
+    asked.ok().filter(|login| !login.is_empty())
+}
+
 fn harness(checkouts: Arc<GithubClient>) -> Option<ClaudeHarness> {
     let mut config = model_credential()?;
     config.model = Some(MODEL.to_string());
@@ -194,7 +200,11 @@ pub fn all(_config: &Config) -> Providers {
     let reader = Arc::new(reader);
     let sweep: Arc<dyn Sweep> = reader.clone();
     let forge: Arc<dyn Forge> = Arc::new(GithubForge::new(writer, CommitAuthor::default()));
-    let tracker: Arc<dyn Tracker> = Arc::new(GithubIssues::using(tracker));
+    let tracker = GithubIssues::using(tracker);
+    let tracker: Arc<dyn Tracker> = Arc::new(match person() {
+        Some(person) => tracker.asking(person),
+        None => tracker,
+    });
     providers = providers
         .provide::<GithubClient>(reader.clone())
         .provide::<dyn Forge>(forge)

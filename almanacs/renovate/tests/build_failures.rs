@@ -210,11 +210,12 @@ async fn a_broken_update_inside_its_cooldown_reaches_no_agent_and_awaits() {
 }
 
 #[tokio::test]
-async fn an_update_with_no_publish_time_awaits() {
+async fn an_update_with_no_publish_time_reaches_no_agent_and_asks_a_person() {
     let mut w = world(Published::Unknown, patch_reply("src/main.rs")).await;
     w.suite_finishes("failure").await;
     w.settle().await;
     assert_eq!(w.harness.calls(), 0);
+    assert_eq!(w.tracker.filed.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -471,6 +472,29 @@ fn a_person_asked_about_an_empty_repair_reads_what_the_agent_found() {
 }
 
 #[test]
+fn every_question_names_the_pull_request_it_is_about() {
+    let undated = Facts::Undated {
+        repo: repo(),
+        number: 7,
+        asked: false,
+    };
+    let exhausted = Facts::Exhausted {
+        repo: repo(),
+        number: 7,
+        head: head(),
+        asked: false,
+    };
+    for facts in [undated, exhausted] {
+        let effects = policy(&facts);
+        let asked = effects.iter().find_map(|effect| match effect {
+            Effect::Ask { pull, .. } => Some(*pull),
+            _ => None,
+        });
+        assert_eq!(asked, Some(Some(7)));
+    }
+}
+
+#[test]
 fn the_policy_table() {
     let cases = [
         Case {
@@ -491,6 +515,7 @@ fn the_policy_table() {
         Case {
             facts: Facts::Exhausted {
                 repo: repo(),
+                number: 1,
                 head: head(),
                 asked: false,
             },
@@ -499,6 +524,7 @@ fn the_policy_table() {
         Case {
             facts: Facts::Exhausted {
                 repo: repo(),
+                number: 1,
                 head: head(),
                 asked: true,
             },

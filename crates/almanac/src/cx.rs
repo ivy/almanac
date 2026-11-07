@@ -2,7 +2,7 @@
 //! returns recorded results instead of doing the work again.
 use crate::agent::{AgentSpec, Bound, Classifier, Harness, Pass};
 use crate::clock::Clock;
-use crate::cooled::{Cooled, Published};
+use crate::cooled::{Age, Cooled, Published};
 use crate::effect::{AttestState, EffectKind, Forge, Mode};
 use crate::providers::Providers;
 use crate::store::{Store, StoreError};
@@ -205,6 +205,18 @@ impl Cx {
         min_age: Duration,
         read: impl Future<Output = Result<Published, StepError>> + Send,
     ) -> Result<Option<Cooled>, StepError> {
+        Ok(match self.age(min_age, read).await? {
+            Age::Passed(cooled) => Some(cooled),
+            Age::Young | Age::Unknown => None,
+        })
+    }
+
+    /// As `cooled`, for a caller that must tell a release to wait for from one nothing can date.
+    pub async fn age(
+        &self,
+        min_age: Duration,
+        read: impl Future<Output = Result<Published, StepError>> + Send,
+    ) -> Result<Age, StepError> {
         let check = async {
             Ok(CooldownCheck {
                 published: read.await?,
@@ -215,7 +227,12 @@ impl Cx {
             published,
             checked_at,
         } = self.record("cooldown", check).await?;
-        Ok(Cooled::check(published, min_age, checked_at))
+        let dated = matches!(published, Published::At(_));
+        Ok(match Cooled::check(published, min_age, checked_at) {
+            Some(cooled) => Age::Passed(cooled),
+            None if dated => Age::Young,
+            None => Age::Unknown,
+        })
     }
 
     /// How many patches this key has had recently, and whether a person was already asked. A

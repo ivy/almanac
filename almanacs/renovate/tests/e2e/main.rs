@@ -233,10 +233,19 @@ impl World {
         matching.count()
     }
 
-    fn issues(&self) -> usize {
+    /// Questions put to a person on a pull request.
+    fn questions(&self) -> Vec<String> {
         let writes = self.sim.writes();
-        let filed = writes.iter().filter(|w| w.path.ends_with("/issues"));
-        filed.count()
+        let asked = writes.iter().filter(|w| w.path.ends_with("/comments"));
+        asked
+            .map(|w| w.body["body"].as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    fn assigned(&self) -> Vec<Value> {
+        let writes = self.sim.writes();
+        let assigned = writes.iter().filter(|w| w.path.ends_with("/assignees"));
+        assigned.map(|w| w.body["assignees"].clone()).collect()
     }
 
     /// CI finishing on a pull request's current head.
@@ -365,7 +374,7 @@ async fn a_fleet_ends_with_every_pull_request_in_a_final_state() {
         Some(&28),
         "{report}"
     );
-    assert_eq!(w.issues(), 0, "no one needed to be asked");
+    assert!(w.questions().is_empty(), "no one needed to be asked");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -386,14 +395,20 @@ async fn a_bad_day_keeps_healthy_work_moving_and_asks_about_the_rest_once() {
     );
     let _daemon = w.daemon().await;
 
-    let asked_once = |w: &World| w.issues() >= 1;
+    let asked_once = |w: &World| !w.questions().is_empty();
     settle(&w, &mut reds, asked_once).await;
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(10) {
         run_ci(&w, &mut reds).await;
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    assert_eq!(w.issues(), 1, "the failing one asks a person once");
+    let questions = w.questions();
+    assert_eq!(questions.len(), 1, "the failing one asks a person once");
+    assert!(
+        questions[0].starts_with(&format!("@{OWNER} ")),
+        "{questions:?}"
+    );
+    assert_eq!(w.assigned(), [json!([OWNER])]);
     assert_eq!(w.pushes_to(&doomed), 3, "stopped at the attempt cap");
     let report = w.report().await;
     let counts = state_counts(&report);

@@ -36,6 +36,8 @@ pub enum Effect {
     Ask {
         question: Title,
         target: Slug,
+        /// The pull request this is about, so the question reaches a person there.
+        pull: Option<u64>,
         body: Untrusted<String>,
     },
     /// Commit a checked patch to a pull request's own branch. A forge refuses it unless
@@ -100,6 +102,8 @@ pub enum Planned {
     Ask {
         question: String,
         target: Slug,
+        #[serde(default)]
+        pull: Option<u64>,
         body: Untrusted<String>,
     },
     /// The patch stays tagged as tainted when stored. It was checked before it was recorded.
@@ -143,10 +147,12 @@ impl From<&Effect> for Planned {
             Effect::Ask {
                 question,
                 target,
+                pull,
                 body,
             } => Self::Ask {
                 question: question.to_string(),
                 target,
+                pull,
                 body,
             },
             Effect::Push {
@@ -234,10 +240,12 @@ pub trait Tracker: Send + Sync {
         body: &'a Untrusted<String>,
     ) -> BoxFuture<'a, Result<(), StepError>>;
 
+    /// `pull` is the pull request the question is about, if there is one.
     fn ask<'a>(
         &'a self,
         key: &'a str,
         target: &'a Slug,
+        pull: Option<u64>,
         question: &'a str,
         body: &'a Untrusted<String>,
     ) -> BoxFuture<'a, Result<(), StepError>>;

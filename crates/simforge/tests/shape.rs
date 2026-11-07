@@ -217,6 +217,16 @@ async fn writes_match_the_spec() {
             format!("/repos/{REPO}/issues"),
             serde_json::json!({"title": "t"}),
         ),
+        (
+            "/repos/{owner}/{repo}/issues/{issue_number}/comments",
+            format!("/repos/{REPO}/issues/1/comments"),
+            serde_json::json!({"body": "b"}),
+        ),
+        (
+            "/repos/{owner}/{repo}/issues/{issue_number}/assignees",
+            format!("/repos/{REPO}/issues/1/assignees"),
+            serde_json::json!({"assignees": ["a"]}),
+        ),
     ];
     let mut all = vec![];
     for (template, path, body) in writes {

@@ -26,7 +26,7 @@ Repairs a Renovate pull request whose CI failed, after the update's cooldown has
 
 - **R-1** It triggers when CI finishes red on a `renovate/` branch: `check_suite.completed` with conclusion `failure`, or a `status` event with state `failure` or `error`.
 - **R-2** No agent reads a pull request until the update has passed its cooldown. Almanac verifies this itself from the registry's publish time, using a minimum release age it declares. A `renovate/stability-days` status is not sufficient evidence.
-- **R-3** A cooldown that has not passed produces `Await`, and the condition is reconsidered later by a scan.
+- **R-3** A cooldown that has not passed produces `Await`, and the condition is reconsidered later by a scan. An update with no publish time can never cool, so it asks a person once.
 - **R-4** A fix agent receives the failure logs and the checkout as tainted input and returns a patch. It does not push.
 - **R-5** A patch must pass the patch policy (R-20), then Almanac pushes it to the pull request's branch. A patch that takes back what the update changed, outside a lockfile, is refused and asks a person, because green checks on the old version repair nothing.
 - **R-6** Attempts per key are capped. When the cap is reached the workflow asks a person.
@@ -90,7 +90,7 @@ Validates a Renovate security pull request and gets its build passing.
 - **R-38** Generated enums tolerate unknown values.
 - **R-39** A source with no spec uses a hand-written `observed!` type and `Payload`, which cannot produce a bare `String`.
 - **R-40** Providers are traits, supplied once in `providers.rs` and checked at startup. Harnesses and classifiers are swappable.
-- **R-41** A `Tracker` provider receives `File` and `Ask` effects. v0 ships a GitHub Issues tracker and a local fake.
+- **R-41** A `Tracker` provider receives `File` and `Ask` effects. v0 ships a GitHub tracker and a local fake. An `Ask` about a pull request comments on it, mentioning and assigning the person named by `ALMANAC_ASK`, or the owner. An `Ask` about no pull request files an issue that does the same.
 
 ### Operating
 

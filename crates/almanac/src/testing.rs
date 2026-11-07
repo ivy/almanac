@@ -172,6 +172,7 @@ impl Tracker for FakeTracker {
         &'a self,
         key: &'a str,
         target: &'a Slug,
+        _pull: Option<u64>,
         question: &'a str,
         _body: &'a Untrusted<String>,
     ) -> BoxFuture<'a, Result<(), StepError>> {

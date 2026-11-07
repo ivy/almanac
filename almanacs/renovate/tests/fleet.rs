@@ -75,7 +75,7 @@ fn red_ci_is_repaired_only_after_the_cooldown() {
     };
     assert_eq!(state(red(Cooldown::Passed)), State::InProgress);
     assert_eq!(state(red(Cooldown::Young)), State::Waiting);
-    assert_eq!(state(red(Cooldown::Unknown)), State::Waiting);
+    assert_eq!(state(red(Cooldown::Unknown)), State::NeedsPerson);
 }
 
 #[test]

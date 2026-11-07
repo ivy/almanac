@@ -173,6 +173,10 @@ pub struct World {
     pub suites: BTreeMap<String, Vec<Suite>>,
     pub statuses: BTreeMap<String, Vec<Status>>,
     pub issues: BTreeMap<String, Vec<Issue>>,
+    /// Comment bodies on an issue or pull request, by repository and number.
+    pub comments: BTreeMap<(String, u64), Vec<String>>,
+    /// Who is assigned to an issue or pull request.
+    pub assignees: BTreeMap<(String, u64), Vec<String>>,
     pub refs: BTreeMap<(String, String), String>,
     pub writes: Vec<Write>,
     pub failures: VecDeque<(String, Failure)>,
@@ -369,6 +373,17 @@ impl World {
             "description": s.description, "target_url": null, "avatar_url": null,
             "url": self.url(&format!("/statuses/{}", s.sha)),
             "created_at": TIME, "updated_at": TIME,
+        })
+    }
+
+    pub fn comment_json(&self, repo: &str, number: u64, body: &str) -> Value {
+        let path = format!("/repos/{repo}/issues/{number}");
+        json!({
+            "id": number, "node_id": "IC_1", "body": body, "user": null,
+            "url": self.url(&format!("{path}/comments/1")),
+            "html_url": self.url(&format!("/{repo}/issues/{number}#issuecomment-1")),
+            "issue_url": self.url(&path),
+            "created_at": TIME, "updated_at": TIME, "author_association": "NONE",
         })
     }
 

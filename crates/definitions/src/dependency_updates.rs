@@ -93,6 +93,7 @@ pub fn policy(Facts { evidence, review }: &Facts) -> Vec<Effect> {
             Effect::Ask {
                 question: title!("This dependency update failed trust checks"),
                 target: evidence.repo.clone(),
+                pull: None,
                 body,
             },
         ];

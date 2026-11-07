@@ -30,12 +30,12 @@ One App, one webhook URL, for every repository. Personal accounts have no accoun
 | Permission | Access | Why |
 |---|---|---|
 | Metadata | Read | Required by GitHub |
-| Pull requests | Read | Reads state, labels, and changed files |
+| Pull requests | Write | Reads state, labels, and changed files, and asks a person on the pull request |
 | Checks | Read | Reads check suites and runs |
 | Actions | Read | Reads failed job logs |
 | Commit statuses | Write | Posts `almanac/trust` |
 | Contents | Write | Reads the source and pushes a checked patch |
-| Issues | Write | Files questions for a person |
+| Issues | Write | Assigns a person, and files a question that has no pull request |
 
 **Do not grant Workflows.** Without it, GitHub itself refuses a push that changes `.github/workflows`, a second guard behind the patch policy.
 

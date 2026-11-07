@@ -6,7 +6,8 @@ expression: found
   "repositories_scanned": 3,
   "totals": {
     "mergeable": 2,
-    "waiting": 2
+    "waiting": 1,
+    "needs-person": 1
   },
   "unreadable": [],
   "repositories": [
@@ -28,8 +29,8 @@ expression: found
         {
           "number": 1,
           "branch": "renovate/tar-7.x",
-          "state": "waiting",
-          "reason": "a publish time for the update"
+          "state": "needs-person",
+          "reason": "nothing says when this update was published"
         },
         {
           "number": 2,

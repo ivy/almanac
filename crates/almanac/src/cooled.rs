@@ -11,6 +11,15 @@ pub enum Published {
     Unknown,
 }
 
+/// What is known about how old a release is.
+#[derive(Debug)]
+pub enum Age {
+    Passed(Cooled),
+    Young,
+    /// Nothing says when it was published, so waiting will not help.
+    Unknown,
+}
+
 /// Held only by code that passed `check`. It has no public constructor, and neither `Clone`
 /// nor `Deserialize`, so a recorded or forged value cannot stand in for it.
 #[derive(Debug)]

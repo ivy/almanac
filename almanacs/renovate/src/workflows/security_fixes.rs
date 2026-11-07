@@ -43,6 +43,7 @@ observed! {
 
 pub struct Facts {
     pub repo: Slug,
+    pub number: u64,
     pub head: Sha,
     pub found: bool,
     pub names_the_fix: bool,
@@ -148,6 +149,7 @@ pub async fn security_fixes(cx: &Cx, event: &SecurityPull) -> Result<Facts, Halt
         .await?;
     let mut facts = Facts {
         repo: event.repo.clone(),
+        number: event.number,
         head: pull.head.clone(),
         found: pull.found,
         names_the_fix: false,
@@ -199,6 +201,7 @@ fn ask(facts: &Facts, question: Title, body: Untrusted<String>) -> Vec<Effect> {
     vec![Effect::Ask {
         question,
         target: facts.repo.clone(),
+        pull: Some(facts.number),
         body,
     }]
 }

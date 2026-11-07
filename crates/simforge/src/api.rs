@@ -70,6 +70,14 @@ pub fn router(world: Shared) -> Router {
             "/repos/{owner}/{repo}/issues",
             get(issues).post(create_issue),
         )
+        .route(
+            "/repos/{owner}/{repo}/issues/{number}/comments",
+            get(comments).post(create_comment),
+        )
+        .route(
+            "/repos/{owner}/{repo}/issues/{number}/assignees",
+            axum::routing::post(add_assignees),
+        )
         .route("/app/hook/deliveries", get(deliveries))
         .route("/app/hook/deliveries/{id}/attempts", post(redeliver))
         .layer(middleware::from_fn_with_state(world.clone(), gatekeeper))
@@ -605,6 +613,57 @@ async fn create_issue(
             .collect(),
     };
     issues.push(issue.clone());
+    let json = world.issue_json(&name, &issue);
+    (StatusCode::CREATED, axum::Json(json)).into_response()
+}
+
+async fn comments(
+    State(world): State<Shared>,
+    Path((owner, repo, number)): Path<(String, String, u64)>,
+    Query(params): Params,
+) -> Response {
+    let world = world.lock().unwrap();
+    let name = format!("{owner}/{repo}");
+    let thread = world.comments.get(&(name.clone(), number));
+    let bodies = thread.into_iter().flatten();
+    let items = bodies.map(|body| world.comment_json(&name, number, body));
+    let path = format!("/repos/{name}/issues/{number}/comments");
+    paged(&world, &path, "page", &params, items.collect())
+}
+
+async fn create_comment(
+    State(world): State<Shared>,
+    Path((owner, repo, number)): Path<(String, String, u64)>,
+    axum::Json(body): axum::Json<Value>,
+) -> Response {
+    let mut world = world.lock().unwrap();
+    let name = format!("{owner}/{repo}");
+    let text = body["body"].as_str().unwrap_or_default().to_string();
+    let thread = world.comments.entry((name.clone(), number)).or_default();
+    thread.push(text.clone());
+    let json = world.comment_json(&name, number, &text);
+    (StatusCode::CREATED, axum::Json(json)).into_response()
+}
+
+async fn add_assignees(
+    State(world): State<Shared>,
+    Path((owner, repo, number)): Path<(String, String, u64)>,
+    axum::Json(body): axum::Json<Value>,
+) -> Response {
+    let mut world = world.lock().unwrap();
+    let name = format!("{owner}/{repo}");
+    let added = body["assignees"].as_array().into_iter().flatten();
+    let logins: Vec<String> = added
+        .filter_map(|l| l.as_str().map(str::to_string))
+        .collect();
+    let assigned = world.assignees.entry((name.clone(), number)).or_default();
+    assigned.extend(logins);
+    let issue = Issue {
+        number,
+        title: String::new(),
+        body: None,
+        labels: vec![],
+    };
     let json = world.issue_json(&name, &issue);
     (StatusCode::CREATED, axum::Json(json)).into_response()
 }

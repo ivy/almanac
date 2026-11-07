@@ -160,7 +160,10 @@ pub fn derive(f: &PullFacts) -> Verdict {
             return match f.cooldown {
                 Cooldown::Passed => verdict(State::InProgress, "a repair is due"),
                 Cooldown::Young => verdict(State::Waiting, "the update's cooldown to pass"),
-                Cooldown::Unknown => verdict(State::Waiting, "a publish time for the update"),
+                Cooldown::Unknown => verdict(
+                    State::NeedsPerson,
+                    "nothing says when this update was published",
+                ),
             };
         }
         Checks::Pending => return verdict(State::Waiting, "CI to finish"),

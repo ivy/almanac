@@ -321,6 +321,7 @@ async fn a_scan_leaves_a_decided_pull_request_alone() {
 fn facts(names_the_fix: bool, install: bool, cooled: bool, verdict: Option<Verdict>) -> Facts {
     Facts {
         repo: REPO.parse().unwrap(),
+        number: 1,
         head: "a".repeat(40).parse().unwrap(),
         found: true,
         names_the_fix,

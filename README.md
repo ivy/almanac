@@ -5,7 +5,7 @@ Event-driven workflows for one operator's software projects, deterministic up to
 An almanac is a self-contained binary. It receives events, deduplicates and correlates them, gathers facts through recorded calls, applies a pure policy, and produces a small closed set of effects. Agents are brought in only for work that needs judgment or repair, and the compiler keeps text an attacker could have written out of their instructions.
 
 > [!NOTE]
-> Early. `almanacs/renovate` works end to end against a simulated forge and has made a read-only pass over real repositories. It has not yet run live. Read [docs/vision.md](docs/vision.md) for why this exists.
+> Early. `almanacs/renovate` runs live, repairing real Renovate pull requests, and it is days old. Read [docs/vision.md](docs/vision.md) for why this exists.
 
 ## A workflow
 

@@ -29,7 +29,7 @@ pub mod prelude {
         AgentSpec, Classifier, Fixer, Harness, Pass, Quarantined, Template, Worker,
     };
     pub use crate::config::Config;
-    pub use crate::cooled::{Cooled, Published};
+    pub use crate::cooled::{Age, Cooled, Published};
     pub use crate::cx::{Attempts, Cx, Halt, StepError};
     pub use crate::effect::{AttestState, Effect, EffectKind, Forge, Mode, Push, Sweep, Tracker};
     pub use crate::patch::{Change, Checked, DEFAULT_POLICY, Patch, PatchPolicy, Rejection};

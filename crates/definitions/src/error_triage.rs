@@ -79,6 +79,7 @@ pub fn triage(Facts { repo, findings }: &Facts) -> Vec<Effect> {
         Confidence::Low => vec![Effect::Ask {
             question: title!("Is this error worth fixing?"),
             target: repo.clone(),
+            pull: None,
             body,
         }],
     }

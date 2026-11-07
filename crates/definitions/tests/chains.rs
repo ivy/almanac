@@ -50,6 +50,7 @@ fn repair_or_ask(r: &Repair) -> Vec<Effect> {
         None => vec![Effect::Ask {
             question: title!("Repairs did not fix this build"),
             target: r.repo.clone(),
+            pull: None,
             body: Untrusted::new(String::new()),
         }],
     }

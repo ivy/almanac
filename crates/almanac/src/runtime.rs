@@ -593,6 +593,7 @@ impl Runtime {
         let ask = Planned::Ask {
             question: format!("A run budget was reached for {scope}"),
             target,
+            pull: None,
             body: Untrusted::new(format!(
                 "{held} event(s) are held and will resume as the hourly window opens."
             )),
@@ -699,10 +700,11 @@ impl Runtime {
             Planned::Ask {
                 question,
                 target,
+                pull,
                 body,
             } => {
                 self.provider::<dyn Tracker>("Tracker")?
-                    .ask(key, target, question, body)
+                    .ask(key, target, *pull, question, body)
                     .await
             }
         }

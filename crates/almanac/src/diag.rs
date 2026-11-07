@@ -124,7 +124,7 @@ pub enum Error {
     #[error("{}", missing.join("; "))]
     #[diagnostic(
         code(almanac::provider::missing),
-        help("add what is missing in providers.rs")
+        help("set the credentials or settings it reads, or add it in providers.rs")
     )]
     MissingProviders { missing: Vec<String> },
 

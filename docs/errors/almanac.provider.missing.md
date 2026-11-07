@@ -10,4 +10,4 @@ Starting anyway would fail at the moment a real event needed it, or drop an effe
 
 ## What to do next
 
-Add the provider in `providers.rs`. For `Forge` and `Tracker`, which only a live run needs, you can also run in dry-run mode.
+If the almanac builds this provider from its environment, set what it reads: `contrib/` has an example for each almanac. Otherwise add the provider in `providers.rs`. For `Forge` and `Tracker`, which only a live run needs, you can also run in dry-run mode.

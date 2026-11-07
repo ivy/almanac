@@ -25,6 +25,8 @@ Each almanac, such as `almanac-renovate`, has these. Put `--format json` first f
 | `simulate KIND FILE [--dry-run]` | Sends a JSON file through the production path as an event of that kind. |
 | `explain CODE` | Prints the long form of an error. |
 
+`backfill` and `simulate` are safe beside a running daemon. Only `run` recovers interrupted work, when it starts.
+
 `almanac-renovate` adds:
 
 | Command | What it does |

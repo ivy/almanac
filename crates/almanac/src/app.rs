@@ -292,7 +292,6 @@ fn run(
                 None => None,
             };
             let (report, (shown, held)) = rt.block_on(async {
-                runtime.recover().await?;
                 let report = runtime.backfill(repo.as_ref()).await?;
                 Ok::<_, Error>((report, settle(&runtime).await?))
             })?;
@@ -327,7 +326,6 @@ fn run(
                 payload,
             };
             let (ingest, (shown, _)) = rt.block_on(async {
-                runtime.recover().await?;
                 let ingest = runtime.ingest(envelope).await?;
                 Ok::<_, Error>((ingest, settle(&runtime).await?))
             })?;

@@ -198,6 +198,22 @@ fn install_script_added(old: &Files, new: &Files) -> bool {
     hook_added || appeared
 }
 
+/// A change as a reviewer reads it. Binary content cannot be read as text, so it is named rather
+/// than shown, and a reviewer still sees that it changed.
+fn shown_change(name: &str, before: &[u8], after: &[u8]) -> String {
+    if before.contains(&0) || after.contains(&0) {
+        return format!("Binary file changed, and not shown: {name}\n");
+    }
+    let (a, b) = (
+        String::from_utf8_lossy(before),
+        String::from_utf8_lossy(after),
+    );
+    let diff = TextDiff::from_lines(a.as_ref(), b.as_ref());
+    diff.unified_diff()
+        .header(&format!("a/{name}"), &format!("b/{name}"))
+        .to_string()
+}
+
 /// Diffs two archives of a package, in memory.
 pub fn diff_archives(old: &[u8], new: &[u8], limits: Limits) -> Result<PackageDiff, StepError> {
     let old = without_top(read_archive(old, limits)?);
@@ -217,15 +233,7 @@ pub fn diff_archives(old: &[u8], new: &[u8], limits: Limits) -> Result<PackageDi
         if truncated {
             continue;
         }
-        let (a, b) = (
-            String::from_utf8_lossy(before),
-            String::from_utf8_lossy(after),
-        );
-        let diff = TextDiff::from_lines(a.as_ref(), b.as_ref());
-        let shown = diff
-            .unified_diff()
-            .header(&format!("a/{name}"), &format!("b/{name}"))
-            .to_string();
+        let shown = shown_change(name, before, after);
         if text.len() + shown.len() > limits.max_diff_bytes {
             truncated = true;
             continue;

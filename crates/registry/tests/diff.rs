@@ -199,3 +199,18 @@ fn a_go_modules_versioned_directory_does_not_read_as_a_rewrite() {
     assert_eq!(d.files_changed, 1);
     assert!(text(&d.diff).contains("a/b.go"), "{}", text(&d.diff));
 }
+
+#[test]
+fn a_binary_file_is_named_and_not_shown() {
+    let old = module_zip("v1.0.0", &[("data.bin", "old\0bytes"), ("a.go", "old")]);
+    let new = module_zip("v1.0.1", &[("data.bin", "new\0bytes"), ("a.go", "new")]);
+    let d = diff_archives(&old, &new, OK).unwrap();
+    let shown = text(&d.diff);
+    assert_eq!(d.files_changed, 2);
+    assert!(
+        shown.contains("Binary file changed, and not shown: data.bin"),
+        "{shown}"
+    );
+    assert!(!shown.contains("bytes"), "{shown}");
+    assert!(shown.contains("a/a.go"), "{shown}");
+}

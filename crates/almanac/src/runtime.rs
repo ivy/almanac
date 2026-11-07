@@ -788,7 +788,9 @@ impl Runtime {
         self.store.undelivered().await.map(|_| ())
     }
 
-    /// Requeues what a crash left running. Call this once before draining after a start.
+    /// Requeues everything marked running, so only a daemon starting up may call this. A
+    /// command beside a live daemon would requeue the runs it has in flight, and they would run
+    /// twice.
     pub async fn recover(&self) -> Stored<usize> {
         self.store.recover().await
     }

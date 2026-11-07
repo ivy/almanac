@@ -36,7 +36,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 | R-53 Durable cursors | `crates/definitions/tests/broker_flow.rs` |
 | R-54 Daemon | `crates/definitions/tests/daemon.rs`, `almanacs/renovate/tests/daemon.rs`, `tools/verify-units.sh` |
 | R-30 to R-33 Scan, backfill, simulate, origin | `crates/definitions/tests/origins.rs` |
-| R-34 Live and dry-run | `a_dry_run_records_what_would_apply_and_calls_no_provider`, `a_read_only_pass_writes_nothing_and_calls_no_model` |
+| R-34 Live and dry-run | `a_dry_run_records_what_would_apply_and_calls_no_provider`, `a_dry_run_leaves_a_live_run_everything_still_to_do`, `a_read_only_pass_writes_nothing_and_calls_no_model` |
 | R-35 Catch-up | `a_lost_webhook_is_found_by_the_next_scheduled_scan`, `a_sweep_redelivers_what_failed_and_only_once` |
 | R-36 `gather` reads current state | `all_three_origins_produce_identical_decisions_for_the_same_state` |
 | R-37, R-38 Projections | `xtask/tests/generate.rs`, `a_new_enum_value_from_github_does_not_break_ingest` |

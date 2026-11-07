@@ -173,9 +173,21 @@ impl From<&Effect> for Planned {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Mode {
     Live,
-    /// Records what would have happened and calls no provider.
+    /// Records what would have happened and applies no effect. Agents still run, so a dry run
+    /// spends like a live one and keeps its budgets.
     #[default]
     DryRun,
+}
+
+impl Mode {
+    /// What an almanac's rows are stored under. A dry run keeps its own, because what it has seen
+    /// and claimed must not stand in for work a live run still has to do.
+    pub fn scope(self, almanac: &str) -> String {
+        match self {
+            Self::Live => almanac.to_string(),
+            Self::DryRun => format!("{almanac}.dry-run"),
+        }
+    }
 }
 
 /// Where statuses go. `key` is stable across retries, so a repeat must change nothing.

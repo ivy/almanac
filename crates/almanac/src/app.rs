@@ -95,10 +95,15 @@ fn mode(dry_run: bool) -> Mode {
 }
 
 /// Runs what is queued and applies it, reporting what happened.
-async fn settle(runtime: &Runtime) -> Result<Vec<String>, Error> {
+/// Every outcome as a line, and how many events a budget is holding.
+async fn settle(runtime: &Runtime) -> Result<(Vec<String>, usize), Error> {
     let outcomes = runtime.settle().await?;
     let mut shown = vec![];
+    let mut held = 0;
     for outcome in &outcomes {
+        if let Outcome::BudgetTripped { held: waiting, .. } = outcome {
+            held += waiting;
+        }
         let line = match outcome {
             Outcome::Ran { run_id, .. } => {
                 let effects = runtime.effects_of(run_id).await?;
@@ -109,7 +114,7 @@ async fn settle(runtime: &Runtime) -> Result<Vec<String>, Error> {
         };
         shown.push(line);
     }
-    Ok(shown)
+    Ok((shown, held))
 }
 
 /// Finishes when the service manager asks this process to stop.
@@ -148,6 +153,7 @@ async fn daemon(name: &'static str, runtime: Runtime, config: &Config) -> Result
         name: "DATABASE_URL".to_string(),
         purpose: "the PostgreSQL database shared with the broker".to_string(),
     })?;
+    let scope = runtime.mode().scope(name);
     let health = Health::default();
     let address = config.listen.as_deref().unwrap_or(HEALTH_LISTEN);
     if let Ok(address) = address.parse() {
@@ -166,11 +172,11 @@ async fn daemon(name: &'static str, runtime: Runtime, config: &Config) -> Result
     tokio::pin!(stop);
     let connecting = async {
         let store = with_backoff("connecting to the store", stopped.clone(), || {
-            PostgresStore::connect(&url, name)
+            PostgresStore::connect(&url, &scope)
         })
         .await?;
         let consumer = with_backoff("connecting to the log", stopped.clone(), || {
-            Consumer::connect(&url, name)
+            Consumer::connect(&url, &scope)
         })
         .await?;
         Some((store, consumer))
@@ -244,7 +250,8 @@ fn run(
         return rt.block_on(daemon(name, runtime, &config));
     }
     if let Ok(url) = std::env::var("DATABASE_URL") {
-        let store = rt.block_on(PostgresStore::connect(&url, name))?;
+        let scope = runtime.mode().scope(name);
+        let store = rt.block_on(PostgresStore::connect(&url, &scope))?;
         runtime = runtime.with_store(Arc::new(store));
     }
 
@@ -266,15 +273,21 @@ fn run(
                 })?),
                 None => None,
             };
-            let (report, shown) = rt.block_on(async {
+            let (report, (shown, held)) = rt.block_on(async {
                 runtime.recover().await?;
                 let report = runtime.backfill(repo.as_ref()).await?;
                 Ok::<_, Error>((report, settle(&runtime).await?))
             })?;
+            let mut human = format!("backfill: {report:?}\n{}", shown.join("\n"));
+            if held > 0 {
+                human.push_str(&format!(
+                    "\n{held} event(s) held by a run budget, resuming as the hourly window opens"
+                ));
+            }
             print(
                 format,
-                format!("backfill: {report:?}\n{}", shown.join("\n")),
-                json!({"backfill": report, "outcomes": shown}),
+                human,
+                json!({"backfill": report, "held": held, "outcomes": shown}),
             );
         }
         ["simulate", kind, file] => {
@@ -295,7 +308,7 @@ fn run(
                 origin: Origin::Simulated,
                 payload,
             };
-            let (ingest, shown) = rt.block_on(async {
+            let (ingest, (shown, _)) = rt.block_on(async {
                 runtime.recover().await?;
                 let ingest = runtime.ingest(envelope).await?;
                 Ok::<_, Error>((ingest, settle(&runtime).await?))

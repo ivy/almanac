@@ -270,6 +270,10 @@ impl Runtime {
     }
 
     /// Effects are dry-run unless this says otherwise.
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
     pub fn in_mode(mut self, mode: Mode) -> Self {
         self.mode = mode;
         self

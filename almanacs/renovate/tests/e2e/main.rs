@@ -440,6 +440,36 @@ async fn killing_the_process_mid_run_loses_no_effect_and_duplicates_none() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_dry_run_leaves_a_live_run_everything_still_to_do() {
+    let w = world(StubModel::answering(agent).await).await;
+    let mut reds = build_fleet(&w.sim);
+    run_ci(&w, &mut reds).await;
+    let mut command = w.command(&["--format", "json", "backfill", "--dry-run"]);
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let out = command.output().await.unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    let dry: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(dry["backfill"]["queued"].as_u64().unwrap() > 0, "{dry}");
+    let seen_by = |name: &'static str| {
+        let pool = w.pool.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM seen WHERE almanac = $1")
+                .bind(name)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        }
+    };
+    assert!(seen_by("almanac-renovate.dry-run").await > 0);
+    assert_eq!(
+        seen_by("almanac-renovate").await,
+        0,
+        "live has seen nothing"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_second_reader_of_the_log_sees_every_delivery_and_disturbs_nothing() {
     let w = world(StubModel::answering(agent).await).await;
     let mut reds = build_fleet(&w.sim);

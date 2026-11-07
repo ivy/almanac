@@ -79,7 +79,7 @@ Validates a Renovate security pull request and gets its build passing.
 - **R-31** `backfill` runs a workflow's scan once. Scanned events carry stable delivery IDs such as `scan:ivy/thicket#159@<sha>`, so rerunning is idempotent.
 - **R-32** `simulate` injects a fixture through the production path.
 - **R-33** Every event records its origin: `webhook`, `scan`, or `simulated`.
-- **R-34** Effects are applied in `live` or `dry-run` mode, independently of an event's origin. A dry run records what would have happened.
+- **R-34** Effects are applied in `live` or `dry-run` mode, independently of an event's origin. A dry run records what would have happened, in state of its own: a live run on the same database still has everything to do. Agents still run, so a dry run keeps its budgets.
 - **R-35** A scheduled scan catches up on lost deliveries, because GitHub does not redeliver failures.
 - **R-36** `gather` reads current state rather than trusting a payload, so all origins behave the same.
 

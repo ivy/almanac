@@ -2,7 +2,7 @@
 //! scrutiny. The model can veto, never approve: it is asked only once the deterministic checks
 //! pass, and a `NoConcerns` cannot rescue a failed one.
 use crate::events::SecurityPull;
-use crate::fleet::{TRUST_CONTEXT, trust_of_statuses};
+use crate::fleet::{TRUST_CONTEXT, scanned_repositories, trust_of_statuses};
 use crate::update::{Ages, PullText, update_of};
 use crate::vetting::Vetting;
 use crate::workflows::build_failures::{MIN_RELEASE_AGE, ScanTarget};
@@ -94,13 +94,9 @@ pub async fn scan(scanner: &Scanner) -> Result<Vec<Scanned<SecurityPull>>, StepE
     let target = scanner.get::<ScanTarget>()?;
     let ages = scanner.get::<dyn Ages>()?;
     let mut found = vec![];
-    for repository in client.repositories(&target.owner).await? {
-        let name = repository["full_name"].as_str().unwrap_or_default();
-        let repo: Slug = name.parse()?;
-        if scanner.repo().is_some_and(|wanted| *wanted != repo) {
-            continue;
-        }
-        for pull in client.pulls_by(name, &target.author).await? {
+    for repo in scanned_repositories(scanner, &client, &target.owner).await? {
+        let name = repo.to_string();
+        for pull in client.pulls_by(&name, &target.author).await? {
             let branch = pull["head"]["ref"]
                 .as_str()
                 .unwrap_or_default()
@@ -118,7 +114,7 @@ pub async fn scan(scanner: &Scanner) -> Result<Vec<Scanned<SecurityPull>>, StepE
             if !is_security(&event) {
                 continue;
             }
-            let statuses = client.combined_status(name, &sha.to_string()).await?;
+            let statuses = client.combined_status(&name, &sha.to_string()).await?;
             if trust_of_statuses(&statuses).is_some_and(|t| t.is_final()) {
                 continue;
             }

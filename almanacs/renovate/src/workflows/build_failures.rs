@@ -1,7 +1,8 @@
 //! Repairs a Renovate pull request whose CI failed, once the update has cooled.
 use crate::events::{BuildChanged, PATCH_TRAILER, suite_payload};
 use crate::fleet::{
-    ATTEMPT_CAP, Checks, Cooldown, TRUST_CONTEXT, checks_of, cooldown_of, trust_pending,
+    ATTEMPT_CAP, Checks, Cooldown, TRUST_CONTEXT, checks_of, cooldown_of, scanned_repositories,
+    trust_pending,
 };
 use crate::update::{Ages, PullText, update_of};
 use almanac::prelude::*;
@@ -167,13 +168,9 @@ pub async fn scan(scanner: &Scanner) -> Result<Vec<Scanned<BuildChanged>>, StepE
     let target = scanner.get::<ScanTarget>()?;
     let ages = scanner.get::<dyn Ages>()?;
     let mut found = vec![];
-    for repository in client.repositories(&target.owner).await? {
-        let name = repository["full_name"].as_str().unwrap_or_default();
-        let repo: Slug = name.parse()?;
-        if scanner.repo().is_some_and(|wanted| *wanted != repo) {
-            continue;
-        }
-        for pull in client.pulls_by(name, &target.author).await? {
+    for repo in scanned_repositories(scanner, &client, &target.owner).await? {
+        let name = repo.to_string();
+        for pull in client.pulls_by(&name, &target.author).await? {
             if let Some(event) = needing_a_run(&client, ages.as_ref(), &repo, &pull).await? {
                 found.push(event);
             }

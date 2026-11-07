@@ -21,13 +21,16 @@ clean! {
 async fn list_open(scanner: &Scanner) -> Result<Vec<Scanned<PullRequestOpened>>, StepError> {
     let client = scanner.get::<GithubClient>()?;
     let mut found = vec![];
-    for repo in client.repositories(OWNER).await? {
-        let name = repo["full_name"].as_str().unwrap_or_default();
-        let slug: Slug = name.parse()?;
-        if scanner.repo().is_some_and(|wanted| *wanted != slug) {
-            continue;
-        }
-        for pull in client.pulls_by(name, RENOVATE).await? {
+    let listed = client.repositories(OWNER).await?;
+    let names = listed
+        .iter()
+        .map(|repo| repo["full_name"].as_str().unwrap_or_default());
+    let visible = names
+        .map(str::parse::<Slug>)
+        .collect::<Result<Vec<_>, _>>()?;
+    for slug in scanner.narrow(visible)? {
+        let name = slug.to_string();
+        for pull in client.pulls_by(&name, RENOVATE).await? {
             let head: Sha = pull["head"]["sha"].as_str().unwrap_or_default().parse()?;
             let number = pull["number"].as_u64().unwrap_or_default();
             found.push(Scanned::pull(&slug, number, &head, &pull));
@@ -149,6 +152,17 @@ async fn a_backfill_can_look_at_one_repository() {
     let rt = runtime(&sim, memory());
     let only: Slug = "owner/other".parse().unwrap();
     assert_eq!(rt.backfill(Some(&only)).await.unwrap().found, 1);
+}
+
+#[tokio::test]
+async fn a_backfill_refuses_a_repository_it_cannot_see() {
+    let sim = fleet(2).await;
+    let rt = runtime(&sim, memory());
+    let unseen: Slug = "owner/unseen".parse().unwrap();
+    let error = rt.backfill(Some(&unseen)).await.unwrap_err();
+    assert!(error.to_string().contains("`owner/unseen`"), "{error}");
+    assert!(error.to_string().contains("the 1 repositories"), "{error}");
+    assert!(rt.drain().await.unwrap().is_empty());
 }
 
 #[tokio::test]

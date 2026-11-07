@@ -103,10 +103,9 @@ fn backfill_refuses_a_repository_it_cannot_read() {
     assert_eq!(json["code"], "almanac::usage");
 }
 
-/// A read-only pass over a simulated fleet, through the binary, with a red pull request that
-/// would otherwise reach an agent and post statuses.
-#[tokio::test]
-async fn a_read_only_pass_writes_nothing_and_calls_no_model() {
+/// A simulated fleet of one repository, with a red pull request that would otherwise reach an
+/// agent and post statuses.
+async fn red_fleet() -> simforge::SimForge {
     let sim = simforge::SimForge::start().await;
     sim.add_repo(simforge::Repo::public("owner/repo"));
     let mut pull = simforge::Pull::renovate("renovate/tar-7.x", "Update tar");
@@ -115,8 +114,13 @@ async fn a_read_only_pass_writes_nothing_and_calls_no_model() {
     let sha = sim.pull("owner/repo", number).head_sha;
     let suite = simforge::Suite::finished(&sha, "renovate/tar-7.x", "failure", "boom");
     sim.add_suite("owner/repo", suite);
-    let out = tokio::process::Command::new(env!("CARGO_BIN_EXE_almanac-renovate"))
-        .args(["--format", "json", "backfill", "--dry-run"])
+    sim
+}
+
+async fn read_only(sim: &simforge::SimForge, args: &[&str]) -> Output {
+    tokio::process::Command::new(env!("CARGO_BIN_EXE_almanac-renovate"))
+        .args(["--format", "json"])
+        .args(args)
         .env_clear()
         .env("ALMANAC_READ_ONLY", "1")
         .env("GITHUB_TOKEN", "t")
@@ -127,13 +131,35 @@ async fn a_read_only_pass_writes_nothing_and_calls_no_model() {
         .env("ALMANAC_CONFIG", "/nonexistent/almanac.toml")
         .output()
         .await
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_read_only_pass_writes_nothing_and_calls_no_model() {
+    let sim = red_fleet().await;
+    let out = read_only(&sim, &["backfill", "--dry-run"]).await;
+    assert!(out.status.success(), "{}", stderr(&out));
     let json: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(json["backfill"]["found"], 1);
     assert_eq!(sim.writes(), vec![], "nothing reached the forge");
+}
+
+#[tokio::test]
+async fn a_backfill_of_a_repository_it_can_see_finds_its_pull_requests() {
+    let sim = red_fleet().await;
+    let out = read_only(&sim, &["backfill", "--repo", "owner/repo", "--dry-run"]).await;
+    assert!(out.status.success(), "{}", stderr(&out));
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["backfill"]["found"], 1);
+}
+
+/// Finding nothing would read as all clear, for a repository nobody looked at.
+#[tokio::test]
+async fn a_backfill_of_a_repository_it_cannot_see_fails() {
+    let sim = red_fleet().await;
+    let out = read_only(&sim, &["backfill", "--repo", "owner/unseen", "--dry-run"]).await;
+    assert!(!out.status.success());
+    let json: Value = serde_json::from_str(&stderr(&out)).unwrap();
+    assert_eq!(json["code"], "almanac::scan::failed");
+    assert!(stderr(&out).contains("owner/unseen"), "{}", stderr(&out));
 }

@@ -43,9 +43,22 @@ impl Scanner {
         self.providers.get::<T>().ok_or_else(missing)
     }
 
-    /// The one repository to look at, if a backfill named one.
-    pub fn repo(&self) -> Option<&Slug> {
-        self.repo.as_ref()
+    /// What to look at out of the repositories a scan can see: the one a backfill named, or all
+    /// of them. A named repository missing from `visible` is an error, because scanning nothing
+    /// would read as all clear.
+    pub fn narrow(&self, visible: Vec<Slug>) -> Result<Vec<Slug>, StepError> {
+        let Some(wanted) = &self.repo else {
+            return Ok(visible);
+        };
+        if visible.contains(wanted) {
+            return Ok(vec![wanted.clone()]);
+        }
+        Err(StepError(format!(
+            "`{wanted}` is not among the {} repositories this scan can see: check its name, that \
+             it is not archived, and that the credentials reach it, such as a GitHub App \
+             installed on it",
+            visible.len()
+        )))
     }
 }
 

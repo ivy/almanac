@@ -101,7 +101,7 @@ ALMANAC_READ_ONLY=1 almanac-renovate backfill --repo owner/repo --dry-run
 
 A read-only pass needs `ALMANAC_OWNER` and GitHub credentials: the App's, or `GITHUB_TOKEN`. It needs no `ANTHROPIC_API_KEY`, and with no `DATABASE_URL` it keeps its state in memory.
 
-`report` has no `--repo`. It covers what its credentials can see, so an App installed on one repository reports on that repository, and a token reports on all of yours.
+`report` has no `--repo`. It covers what its credentials can see, so an App installed on one repository reports on that repository, and a token reports on all of yours. `backfill --repo` fails if the credentials cannot see the repository you named.
 
 **Verify:** every open Renovate pull request has a state. A run that stops with `an agent would run here` is what a repair looks like at this stage.
 

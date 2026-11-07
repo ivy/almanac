@@ -449,6 +449,23 @@ fn required(name: &str, purpose: &str) -> Result<String, Error> {
 }
 
 /// Always read-only: a report has no reason to write.
+/// The repositories a scan looks at, which is every one `client` can see unless a backfill named
+/// one.
+pub async fn scanned_repositories(
+    scanner: &Scanner,
+    client: &GithubClient,
+    owner: &str,
+) -> Result<Vec<Slug>, StepError> {
+    let listed = client.repositories(owner).await?;
+    let names = listed
+        .iter()
+        .map(|repository| repository["full_name"].as_str().unwrap_or_default());
+    let visible = names
+        .map(str::parse::<Slug>)
+        .collect::<Result<Vec<_>, _>>()?;
+    scanner.narrow(visible)
+}
+
 fn report_verb<'a>(_args: &'a [String], _config: &'a Config) -> BoxFuture<'a, Result<Said, Error>> {
     Box::pin(async move {
         let owner = required(

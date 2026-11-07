@@ -30,6 +30,6 @@ toml.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
-proptest.workspace = true
+hegeltest.workspace = true
 testcontainers-modules.workspace = true
 tokio = { workspace = true, features = ["macros"] }

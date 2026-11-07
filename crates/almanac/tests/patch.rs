@@ -1,6 +1,7 @@
 use almanac::prelude::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use proptest::prelude::*;
+use hegel::TestCase;
+use hegel::generators as gs;
 
 fn sha() -> Sha {
     "a".repeat(40).parse().unwrap()
@@ -136,15 +137,16 @@ fn a_checked_patch_remembers_its_base() {
 }
 
 /// Ways of spelling a path so it reaches a denied file while looking like something else.
-fn evasion() -> impl Strategy<Value = String> {
-    let denied = prop::sample::select(vec![
+#[hegel::composite]
+fn evasion(tc: &TestCase) -> String {
+    let path = tc.draw(gs::sampled_from(vec![
         ".github/workflows/ci.yml",
         ".git/hooks/pre-commit",
         "renovate.json",
         "mise.toml",
         ".gitmodules",
-    ]);
-    let disguise = prop::sample::select(vec![
+    ]));
+    let disguise = tc.draw(gs::sampled_from(vec![
         "{}",
         "./{}",
         "src/../{}",
@@ -161,50 +163,53 @@ fn evasion() -> impl Strategy<Value = String> {
         "\n{}",
         "C:{}",
         "C:/{}",
-    ]);
-    let upper = any::<bool>();
-    (denied, disguise, upper).prop_map(|(path, disguise, upper)| {
-        let spelled = if upper {
-            path.to_uppercase()
-        } else {
-            path.to_string()
-        };
-        disguise.replace("{}", &spelled)
-    })
+    ]));
+    let spelled = if tc.draw(gs::booleans()) {
+        path.to_uppercase()
+    } else {
+        path.to_string()
+    };
+    disguise.replace("{}", &spelled)
 }
 
-proptest! {
-    #[test]
-    fn no_spelling_of_a_denied_path_is_accepted(path in evasion()) {
-        prop_assert!(verdict(vec![write(&path)]).is_err(), "{path:?} was accepted");
-    }
+fn safe_name() -> gs::RegexGenerator {
+    gs::from_regex("[a-z]{1,8}\\.rs")
+}
 
-    #[test]
-    fn a_rename_cannot_hide_either_of_its_paths(path in evasion(), safe in "[a-z]{1,8}\\.rs") {
-        let out = vec![delete(&path), write(&format!("src/{safe}"))];
-        let back = vec![delete(&format!("src/{safe}")), write(&path)];
-        prop_assert!(verdict(out).is_err());
-        prop_assert!(verdict(back).is_err());
-    }
+#[hegel::test]
+fn no_spelling_of_a_denied_path_is_accepted(tc: TestCase) {
+    let path = tc.draw(evasion());
+    assert!(
+        verdict(vec![write(&path)]).is_err(),
+        "{path:?} was accepted"
+    );
+}
 
-    #[test]
-    fn a_denied_path_hidden_among_safe_ones_is_found(
-        path in evasion(),
-        safe in prop::collection::vec("[a-z]{1,8}\\.rs", 0..10),
-        at in 0usize..10,
-    ) {
-        let mut changes: Vec<Change> = safe.iter().map(|s| write(&format!("src/{s}"))).collect();
-        changes.insert(at.min(changes.len()), write(&path));
-        prop_assert!(verdict(changes).is_err());
-    }
+#[hegel::test]
+fn a_rename_cannot_hide_either_of_its_paths(tc: TestCase) {
+    let path = tc.draw(evasion());
+    let safe = tc.draw(safe_name());
+    let out = vec![delete(&path), write(&format!("src/{safe}"))];
+    let back = vec![delete(&format!("src/{safe}")), write(&path)];
+    assert!(verdict(out).is_err());
+    assert!(verdict(back).is_err());
+}
 
-    #[test]
-    fn plain_source_paths_are_accepted(
-        dir in "[a-z]{1,8}",
-        name in "[a-z]{1,8}\\.(rs|go|ts|py)",
-    ) {
-        prop_assert_eq!(verdict(vec![write(&format!("{dir}/{name}"))]), Ok(()));
-    }
+#[hegel::test]
+fn a_denied_path_hidden_among_safe_ones_is_found(tc: TestCase) {
+    let path = tc.draw(evasion());
+    let safe = tc.draw(gs::vecs(safe_name()).max_size(9));
+    let at = tc.draw(gs::integers::<usize>().max_value(9));
+    let mut changes: Vec<Change> = safe.iter().map(|s| write(&format!("src/{s}"))).collect();
+    changes.insert(at.min(changes.len()), write(&path));
+    assert!(verdict(changes).is_err());
+}
+
+#[hegel::test]
+fn plain_source_paths_are_accepted(tc: TestCase) {
+    let dir = tc.draw(gs::from_regex("[a-z]{1,8}"));
+    let name = tc.draw(gs::from_regex("[a-z]{1,8}\\.(rs|go|ts|py)"));
+    assert_eq!(verdict(vec![write(&format!("{dir}/{name}"))]), Ok(()));
 }
 
 #[test]

@@ -1,0 +1,7 @@
+# 256 cases a property. HEGEL_TEST_CASES overrides it.
+
+[profiles.development]
+test_cases = 256
+
+[profiles.ci]
+test_cases = 256

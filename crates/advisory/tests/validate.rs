@@ -2,7 +2,8 @@ use advisory::{
     Advisories, Advisory, CveNow, FakeAdvisories, Severity, Validation, compare, validate,
 };
 use almanac::prelude::*;
-use proptest::prelude::*;
+use hegel::TestCase;
+use hegel::generators as gs;
 use std::cmp::Ordering;
 use wiremock::matchers::{path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -152,31 +153,37 @@ fn an_ecosystem_without_rules_only_knows_equality() {
     assert_eq!(compare("Maven", "1.0", "2.0"), None);
 }
 
-fn version() -> impl Strategy<Value = (u64, u64, u64)> {
-    (0u64..50, 0u64..50, 0u64..50)
+#[hegel::composite]
+fn version(tc: &TestCase) -> (u64, u64, u64) {
+    let part = || gs::integers::<u64>().max_value(49);
+    (tc.draw(part()), tc.draw(part()), tc.draw(part()))
 }
 
 fn text((a, b, c): (u64, u64, u64)) -> String {
     format!("{a}.{b}.{c}")
 }
 
-proptest! {
-    #[test]
-    fn semver_order_is_numeric_and_not_textual(x in version(), y in version()) {
-        prop_assert_eq!(compare("npm", &text(x), &text(y)), Some(x.cmp(&y)));
-    }
+#[hegel::test]
+fn semver_order_is_numeric_and_not_textual(tc: TestCase) {
+    let x = tc.draw(version());
+    let y = tc.draw(version());
+    assert_eq!(compare("npm", &text(x), &text(y)), Some(x.cmp(&y)));
+}
 
-    #[test]
-    fn order_reverses_when_the_versions_swap(x in version(), y in version()) {
-        let forward = compare("crates.io", &text(x), &text(y)).unwrap();
-        let backward = compare("crates.io", &text(y), &text(x)).unwrap();
-        prop_assert_eq!(forward, backward.reverse());
-    }
+#[hegel::test]
+fn order_reverses_when_the_versions_swap(tc: TestCase) {
+    let x = tc.draw(version());
+    let y = tc.draw(version());
+    let forward = compare("crates.io", &text(x), &text(y)).unwrap();
+    let backward = compare("crates.io", &text(y), &text(x)).unwrap();
+    assert_eq!(forward, backward.reverse());
+}
 
-    #[test]
-    fn a_v_prefix_never_changes_the_order(x in version(), y in version()) {
-        let plain = compare("go", &text(x), &text(y));
-        let prefixed = compare("go", &format!("v{}", text(x)), &format!("v{}", text(y)));
-        prop_assert_eq!(plain, prefixed);
-    }
+#[hegel::test]
+fn a_v_prefix_never_changes_the_order(tc: TestCase) {
+    let x = tc.draw(version());
+    let y = tc.draw(version());
+    let plain = compare("go", &text(x), &text(y));
+    let prefixed = compare("go", &format!("v{}", text(x)), &format!("v{}", text(y)));
+    assert_eq!(plain, prefixed);
 }

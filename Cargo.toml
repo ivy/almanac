@@ -23,13 +23,13 @@ axum = "0.8"
 base64 = "0.22"
 flate2 = "1"
 futures = "0.3"
+hegeltest = { version = "0.52", default-features = false, features = ["static-engine"] }
 hex = "0.4"
 hmac = "0.12"
 insta = "1"
 jsonwebtoken = { version = "11", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 miette = { version = "7", features = ["fancy"] }
 proc-macro2 = "1"
-proptest = "1"
 quote = "1"
 sandbox = { path = "crates/sandbox" }
 registry = { path = "crates/registry" }

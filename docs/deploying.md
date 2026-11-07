@@ -109,7 +109,9 @@ A read-only pass needs `ALMANAC_OWNER` and GitHub credentials: the App's, or `GI
 
 ## 7. Go live on one repository
 
-Set `ALMANAC_MODE=live` in the environment file, then:
+Live, the almanac acts on every repository its credentials can see, through both scans and webhooks, and `--repo` does not apply to the daemon. The App's installation is the only limit, so a read-only pass can cover more repositories but going live needs the installation narrowed to one. Use the App rather than `GITHUB_TOKEN`, which sees all of your repositories.
+
+Check that `almanac-renovate report` covers one repository. Then set `ALMANAC_MODE=live` in the environment file, and:
 
 ```bash
 systemctl --user enable --now almanac@almanac-renovate

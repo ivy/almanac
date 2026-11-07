@@ -55,6 +55,13 @@ fn version_of(p: &UpdatedPackage, version: &str) -> Option<Package> {
     Package::new(ecosystem(&p.datasource), name, version).ok()
 }
 
+/// Adds a package's unshown files to the list. It stays tainted, so that no step can lose it.
+pub fn with_unshown((all, names): &(String, Vec<String>)) -> String {
+    let mut lines: Vec<&str> = all.lines().collect();
+    lines.extend(names.iter().map(String::as_str));
+    lines.join("\n")
+}
+
 impl RealVetting {
     async fn fixed_by(&self, p: &UpdatedPackage) -> Result<bool, StepError> {
         let Some(feed) = feed_ecosystem(&p.datasource) else {
@@ -118,16 +125,14 @@ impl Vetting for RealVetting {
             let mut text = String::new();
             let mut install_script_added = false;
             let mut truncated = false;
-            let mut unshown = vec![];
+            let mut unshown = Untrusted::new(String::new());
             for package in &update.packages {
                 let Some(found) = self.one_diff(package).await? else {
                     return Ok(unreadable());
                 };
                 install_script_added |= found.install_script_added;
                 truncated |= found.truncated;
-                let names = serde_json::to_value(&found.unshown)?;
-                let names = names["$untrusted"].as_array().cloned().unwrap_or_default();
-                unshown.extend(names.iter().filter_map(|n| n.as_str().map(str::to_string)));
+                unshown = unshown.zip(&found.unshown).map(with_unshown);
                 let tagged = serde_json::to_value(&found.diff)?;
                 text.push_str(tagged["$untrusted"].as_str().unwrap_or_default());
             }
@@ -135,7 +140,7 @@ impl Vetting for RealVetting {
                 readable: !update.packages.is_empty(),
                 install_script_added,
                 truncated,
-                unshown: Untrusted::new(unshown.join("\n")),
+                unshown,
                 diff: Untrusted::new(text),
             })
         })

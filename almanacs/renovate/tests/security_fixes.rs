@@ -460,3 +460,12 @@ async fn a_file_no_reviewer_can_read_reaches_no_reviewer_and_asks() {
     let filed = format!("{:?}", w.tracker.filed.lock().unwrap());
     assert!(filed.contains("no reviewer can read"), "{filed}");
 }
+
+#[test]
+fn every_packages_unshown_files_are_kept() {
+    use almanac_renovate::vetting::with_unshown;
+    let first = with_unshown(&(String::new(), vec!["a.bin".to_string()]));
+    let both = with_unshown(&(first, vec!["b.bin".to_string()]));
+    assert_eq!(both, "a.bin\nb.bin");
+    assert_eq!(with_unshown(&(String::new(), vec![])), "");
+}

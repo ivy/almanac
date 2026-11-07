@@ -218,6 +218,10 @@ fn why_nothing_ran(ingest: &Ingest, kind: &str) -> Option<String> {
             "the file does not parse as `{kind}`; check it has every field the event declares"
         )),
         Ingest::Ignored => Some("the workflow's `when` filter turned this event away".to_string()),
+        Ingest::ChainStopped => Some(
+            "recent runs on this key reached the chain limit; it clears as they age past two hours"
+                .to_string(),
+        ),
         _ => None,
     }
 }

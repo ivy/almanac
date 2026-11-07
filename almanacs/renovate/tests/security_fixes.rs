@@ -468,7 +468,7 @@ fn approved(f: &Facts) -> bool {
 }
 
 /// Principle 4, R-12: whatever the reviewer answers, or injects beside its verdict, it can only
-/// take an approval away, and only the deterministic checks let a fix through.
+/// take an approval away.
 #[hegel::test]
 fn principle_4_a_reviewer_can_only_take_an_approval_away(tc: TestCase) {
     let d = tc.draw(drawn_facts());
@@ -481,6 +481,13 @@ fn principle_4_a_reviewer_can_only_take_an_approval_away(tc: TestCase) {
         !answered || all_clear,
         "an answer approved what an all-clear did not"
     );
+}
+
+/// Principle 4, R-12: even with an all-clear, only the deterministic checks let a fix through.
+#[hegel::test]
+fn principle_4_only_deterministic_checks_let_a_fix_through(tc: TestCase) {
+    let d = tc.draw(drawn_facts());
+    let all_clear = approved(&with_review(&d, Some((Verdict::NoConcerns, String::new()))));
     let checks = d.found && d.names_the_fix && d.readable && !d.truncated;
     let checks = checks && !d.install_script_added && d.cooled && d.tested;
     assert!(

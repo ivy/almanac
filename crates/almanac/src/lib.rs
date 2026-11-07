@@ -38,6 +38,6 @@ pub mod prelude {
     pub use crate::wire::{Event, FromRest, Malformed, Payload};
     pub use crate::workflow::{Registered, Scanned, Scanner, Subject, Workflow};
     pub use crate::{clean, observed, output, title};
-    pub use almanac_macros::{prompt, workflow};
+    pub use almanac_macros::{prompt, scan, workflow};
     pub use futures::future::BoxFuture;
 }

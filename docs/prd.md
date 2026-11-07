@@ -76,7 +76,7 @@ Validates a Renovate security pull request and gets its build passing.
 - **R-29** The broker is the single webhook ingress for every almanac. It verifies the signature in constant time, appends the raw delivery to a shared log, and acknowledges within GitHub's 10-second limit. It knows nothing about workflows, so adding one never touches GitHub.
 - **R-53** Each almanac consumes the log through its own durable cursor, woken by `LISTEN/NOTIFY` with polling as a fallback. Delivery to an almanac is at-least-once, an almanac that was down catches up from its cursor, and it ignores kinds it has no workflow for.
 - **R-54** An almanac runs as a long-lived daemon with `run`: graceful shutdown, health reporting, and systemd readiness, suitable for a lingering user service that can start rootless Podman.
-- **R-30** A workflow may declare `scan = ...`, a function that lists current subjects and returns the same event type as its trigger.
+- **R-30** A workflow may declare `scan = ...`, a `#[scan]` function that lists current subjects and returns the same event type as its trigger. What it needs is in the manifest and checked at startup, like what the workflow needs.
 - **R-31** `backfill` runs a workflow's scan once. Scanned events carry stable delivery IDs such as `scan:ivy/thicket#159@<sha>`, so rerunning is idempotent.
 - **R-32** `simulate` injects a fixture through the production path.
 - **R-33** Every event records its origin: `webhook`, `scan`, or `simulated`.

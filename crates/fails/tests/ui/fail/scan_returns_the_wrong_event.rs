@@ -11,6 +11,7 @@ impl Event for Other {
     }
 }
 
+#[scan]
 async fn lists_others(_: &Scanner) -> Result<Vec<Scanned<Other>>, StepError> {
     Ok(vec![])
 }

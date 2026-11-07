@@ -161,6 +161,7 @@ async fn read_logs(
 }
 
 /// Pull requests whose CI is red now, for backfill and catch-up.
+#[scan]
 pub async fn scan(scanner: &Scanner) -> Result<Vec<Scanned<BuildChanged>>, StepError> {
     let client = scanner.get::<GithubClient>()?;
     let target = scanner.get::<ScanTarget>()?;

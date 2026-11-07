@@ -21,6 +21,15 @@ pub fn workflow(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Binds a struct to a Markdown prompt in `prompts/`. Every `{{ variable }}` must be a field
 /// and every field must be used, checked at compile time. Fields must be `Clean + Display`.
+/// Marks a function a workflow names with `scan =`, so what it needs reaches the manifest and the
+/// startup check. Calls made in helpers are not seen: those fail at run time.
+#[proc_macro_attribute]
+pub fn scan(attr: TokenStream, item: TokenStream) -> TokenStream {
+    expand_scan(attr.into(), item.into())
+        .unwrap_or_else(Error::into_compile_error)
+        .into()
+}
+
 #[proc_macro_attribute]
 pub fn prompt(attr: TokenStream, item: TokenStream) -> TokenStream {
     expand_prompt(attr.into(), item.into())
@@ -409,9 +418,49 @@ fn facts_type(function: &ItemFn) -> Result<Type> {
     }
 }
 
+/// Named so that the compiler's complaint, when `scan =` names a plain function, says what to do.
+fn scan_marker(name: &Ident) -> Ident {
+    format_ident!("__mark_with_scan_attribute_{name}")
+}
+
+fn expand_scan(attr: Tokens, item: Tokens) -> Result<Tokens> {
+    if !attr.is_empty() {
+        return Err(Error::new_spanned(attr, "`#[scan]` takes no arguments"));
+    }
+    let function: ItemFn = syn::parse2(item)?;
+    let unused = matches!(
+        function.sig.inputs.first(),
+        Some(FnArg::Typed(arg)) if matches!(&*arg.pat, Pat::Wild(_))
+    );
+    let scanner = match unused {
+        true => format_ident!("_"),
+        false => first_param(&function, "a scan takes `(scanner: &Scanner)`")?,
+    };
+    let mut uses = Uses {
+        cx: &scanner,
+        agents: vec![],
+        needs: vec![],
+        screens: false,
+    };
+    uses.visit_block(&function.block);
+    let needs = dedupe(uses.needs);
+    let (vis, marker) = (&function.vis, scan_marker(&function.sig.ident));
+    Ok(quote! {
+        #function
+
+        #[doc(hidden)]
+        #vis fn #marker() -> ::std::vec::Vec<::almanac::providers::Requirement> {
+            ::std::vec![#(::almanac::providers::Requirement::of::<#needs>()),*]
+        }
+    })
+}
+
 fn cx_param(function: &ItemFn) -> Result<Ident> {
-    let problem =
-        || Error::new_spanned(&function.sig, "a workflow takes `(cx: &Cx, event: &Event)`");
+    first_param(function, "a workflow takes `(cx: &Cx, event: &Event)`")
+}
+
+fn first_param(function: &ItemFn, shape: &str) -> Result<Ident> {
+    let problem = || Error::new_spanned(&function.sig, shape);
     match function.sig.inputs.first() {
         Some(FnArg::Typed(arg)) => match &*arg.pat {
             Pat::Ident(p) => Ok(p.ident.clone()),
@@ -494,6 +543,21 @@ fn expand(attr: Tokens, item: Tokens) -> Result<Tokens> {
         }
     });
 
+    let scan_needs = args.scan.as_ref().map(|scan| {
+        let mut marker = scan.path.clone();
+        if let Some(last) = marker.segments.last_mut() {
+            last.ident = scan_marker(&last.ident);
+            last.arguments = syn::PathArguments::None;
+        }
+        quote! {
+            for need in #marker() {
+                if !needs.contains(&need) {
+                    needs.push(need);
+                }
+            }
+        }
+    });
+
     let when = args.when.as_ref().map(|when| {
         quote! {
             fn wanted(event: &#on) -> bool {
@@ -543,7 +607,10 @@ fn expand(attr: Tokens, item: Tokens) -> Result<Tokens> {
             }
 
             fn requires(&self) -> ::std::vec::Vec<::almanac::providers::Requirement> {
-                ::std::vec![#(#requirements),*]
+                #[allow(unused_mut)]
+                let mut needs = ::std::vec![#(#requirements),*];
+                #scan_needs
+                needs
             }
 
             async fn gather(

@@ -1,0 +1,13 @@
+error[E0425]: cannot find function `__mark_with_scan_attribute_plain` in this scope
+  --> tests/ui/fail/scan_without_attribute.rs:26:1
+   |
+26 | / #[workflow(
+27 | |     on = Thing,
+28 | |     key = "{id}",
+29 | |     intent = "Refused: its scan's needs would go unchecked.",
+...  |
+33 | |     decide = policy,
+34 | | )]
+   | |__^ not found in this scope
+   |
+   = note: this error originates in the attribute macro `workflow` (in Nightly builds, run with -Z macro-backtrace for more info)

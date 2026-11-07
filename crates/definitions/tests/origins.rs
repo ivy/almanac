@@ -17,6 +17,7 @@ clean! {
     pub struct Seen { pub labeled: bool, pub draft: bool }
 }
 
+#[scan]
 async fn list_open(scanner: &Scanner) -> Result<Vec<Scanned<PullRequestOpened>>, StepError> {
     let client = scanner.get::<GithubClient>()?;
     let mut found = vec![];
@@ -278,4 +279,51 @@ async fn config_can_lengthen_the_scan_interval_and_never_shorten_it() {
         ..Default::default()
     });
     assert_eq!(shorter.limits().scan_interval, longer);
+}
+
+struct LogDir;
+
+#[scan]
+async fn needs_a_directory(
+    scanner: &Scanner,
+) -> Result<Vec<Scanned<PullRequestOpened>>, StepError> {
+    let _dir = scanner.get::<LogDir>()?;
+    let _client = scanner.get::<GithubClient>()?;
+    Ok(vec![])
+}
+
+#[workflow(
+    on = PullRequestOpened,
+    key = "{repo}:{head_branch}",
+    intent = "Note what a pull request looks like.",
+    may = [Await],
+    runs_per_hour = 100,
+    scan = needs_a_directory,
+    decide = wait,
+)]
+async fn scan_only_needs(cx: &Cx, _pr: &PullRequestOpened) -> Result<Seen, Halt> {
+    let _client = cx.get::<GithubClient>()?;
+    Ok(Seen {
+        labeled: false,
+        draft: false,
+    })
+}
+
+fn wait(_: &Seen) -> Vec<Effect> {
+    vec![Effect::Await { until: "nothing" }]
+}
+
+#[test]
+fn what_a_scan_needs_is_in_the_manifest_once_and_checked_at_startup() {
+    let client = GithubClient::new("http://localhost", Auth::Token("t".to_string()));
+    let providers = Providers::new().provide::<GithubClient>(Arc::new(client));
+    let rt = Runtime::new(vec![Box::new(ScanOnlyNeeds)], providers);
+    let problem = rt.validate().unwrap_err().to_string();
+    assert!(
+        problem.contains("scan-only-needs needs a provider for") && problem.contains("LogDir"),
+        "{problem}"
+    );
+    let requires = serde_json::to_string(&rt.manifest()[0]["requires"]).unwrap();
+    assert_eq!(requires.matches("GithubClient").count(), 1, "{requires}");
+    assert_eq!(requires.matches("LogDir").count(), 1, "{requires}");
 }

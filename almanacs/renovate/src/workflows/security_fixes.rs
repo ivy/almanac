@@ -88,6 +88,7 @@ fn opened_payload(repo: &Slug, branch: &Slug, sha: &Sha, number: u64, pull: &Val
 
 /// Security pull requests with no final verdict, for backfill and catch-up. A fix that was too
 /// young gets a new delivery ID once it has cooled.
+#[scan]
 pub async fn scan(scanner: &Scanner) -> Result<Vec<Scanned<SecurityPull>>, StepError> {
     let client = scanner.get::<GithubClient>()?;
     let target = scanner.get::<ScanTarget>()?;

@@ -3,7 +3,8 @@
 //!
 //! `repair-eval LIST OUT [--stub]`, where LIST is a JSON array of `{"repo", "number"}`. Results and
 //! patches go under OUT, which must not be in the repository's tracked tree. With `--stub` no model
-//! is called, to prove the pipeline first.
+//! is called, to prove the pipeline first. `--stub-exec CMD` also runs CMD in the sandbox, and
+//! `--verify CMD` replaces the checks run at the end, so a known patch can be checked by itself.
 use almanac::agent::{Grant, Template};
 use almanac::prelude::*;
 use almanac_renovate::workflows::build_failures::FixerPrompt;
@@ -183,7 +184,9 @@ async fn main() {
     config.max_turns = 80;
     config.token_budget = 6_000_000;
     config.max_budget_usd = Some(6.0);
-    config.verify = Some(VERIFY.to_string());
+    let verify = args.iter().position(|a| a == "--verify");
+    let verify = verify.map_or(VERIFY, |i| args[i + 1].as_str());
+    config.verify = Some(verify.to_string());
     let harness = ClaudeHarness::new(config)
         .with_sandbox(Arc::new(PodmanSandbox), spec(SandboxSpec::agent(IMAGE)))
         .with_checkouts(Arc::new(Tarballs(client.clone())))

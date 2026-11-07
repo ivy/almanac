@@ -211,10 +211,10 @@ pub fn model_answers(tc: &TestCase, field: &'static str, values: Vec<&'static st
     }
 }
 
-/// A classifier's probability, including both ends.
+/// A classifier's probability, including both ends, and what a broken one might return.
 #[hegel::composite]
 pub fn probabilities(tc: &TestCase) -> f64 {
-    let ends = gs::sampled_from(vec![0.0, 1.0]);
+    let ends = gs::sampled_from(vec![0.0, -0.0, 1.0, f64::NAN, f64::INFINITY, -1.0]);
     tc.draw(gs::one_of(vec![
         ends.boxed(),
         gs::floats::<f64>().min_value(0.0).max_value(1.0).boxed(),

@@ -8,4 +8,6 @@ Make the smallest change that fixes the build, usually adapting code to the upda
 
 You cannot change CI configuration, Renovate configuration, or tool versions. If the fix needs one of those, or a new dependency, stop and say so.
 
+Never change the updated dependency's version, because a build that passes on the old version repairs nothing. If the update cannot work here, stop and say why.
+
 When you finish, reply with only this JSON: `{"summary": "what you changed and why"}`.

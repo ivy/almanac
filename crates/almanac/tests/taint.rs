@@ -25,3 +25,11 @@ fn a_title_is_built_from_clean_values() {
 fn a_title_may_be_only_a_literal() {
     assert_eq!(title!("Fix {{this}}").to_string(), "Fix {this}");
 }
+
+#[test]
+fn zipped_values_stay_tainted_and_can_be_compared() {
+    let left = Untrusted::new("same".to_string());
+    let right = Untrusted::new("same".to_string());
+    assert!(left.zip(&right).narrow(|(a, b)| a == b));
+    assert!(!format!("{:?}", left.zip(&right)).contains("same"));
+}

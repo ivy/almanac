@@ -334,7 +334,14 @@ async fn pull_files(
     let Some(pull) = world.pulls.get(&(name.clone(), number)) else {
         return missing();
     };
-    let items = pull.files.iter().map(|f| json!({"filename": f})).collect();
+    let file = |f: &String| {
+        let mut item = json!({"filename": f});
+        if let Some(diff) = pull.diffs.get(f) {
+            item["patch"] = json!(diff);
+        }
+        item
+    };
+    let items = pull.files.iter().map(file).collect();
     let path = format!("/repos/{name}/pulls/{number}/files");
     paged(&world, &path, "page", &params, items)
 }

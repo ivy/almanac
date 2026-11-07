@@ -8,7 +8,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 | R-2 No agent before cooldown | `a_broken_update_inside_its_cooldown_reaches_no_agent_and_awaits`, `an_update_with_no_publish_time_awaits` |
 | R-3 Cooldown reconsidered | `a_cooldown_await_is_reconsidered_by_a_scan_once_it_passes` |
 | R-4 Fixer gets tainted input, does not push | `the_logs_reach_the_agent_as_tainted_input_and_the_checkout_by_reference`, `crates/claude/tests/real_cli.rs` |
-| R-5 Policy before push | `a_rejected_patch_asks_a_person_and_pushes_nothing` |
+| R-5 Policy before push | `a_rejected_patch_asks_a_person_and_pushes_nothing`, `a_repair_that_takes_back_the_update_is_never_pushed` |
 | R-6 Attempt cap | `a_repair_that_keeps_failing_stops_at_the_cap_and_asks_once`, `crates/definitions/tests/chains.rs` |
 | R-7 Status held during a repair | `a_red_pull_request_past_its_cooldown_is_patched_and_goes_pending_then_success` |
 | R-8 Security trigger | `almanacs/renovate/tests/security_fixes.rs`: `the_label_also_triggers_it`, `an_ordinary_update_is_ignored` |

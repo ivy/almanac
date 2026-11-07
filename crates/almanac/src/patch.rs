@@ -122,6 +122,27 @@ fn components(path: &str) -> Option<Vec<String>> {
     Some(parts.iter().map(|p| p.to_lowercase()).collect())
 }
 
+/// A line as a comparison sees it. Indentation and a trailing comma move with the lines around it.
+fn bare_line(line: &str) -> &str {
+    line.trim().trim_end_matches(',')
+}
+
+impl Patch {
+    /// Whether `line` is still in `path` after this patch. A path it leaves alone keeps its lines.
+    pub fn keeps(&self, path: &str, line: &str) -> bool {
+        self.changes
+            .iter()
+            .filter(|change| change.path() == path)
+            .all(|change| match change {
+                Change::Write { content, .. } => STANDARD.decode(content).is_ok_and(|bytes| {
+                    let text = String::from_utf8_lossy(&bytes);
+                    text.lines().any(|kept| bare_line(kept) == bare_line(line))
+                }),
+                _ => false,
+            })
+    }
+}
+
 /// A pushed patch runs in CI, and nobody can review bytes. Git's own test: a NUL means binary.
 fn is_binary(content: &str) -> bool {
     STANDARD

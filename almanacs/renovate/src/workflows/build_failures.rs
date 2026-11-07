@@ -43,6 +43,13 @@ observed! {
     }
 }
 
+observed! {
+    /// What the update itself added, as `(path, line)`.
+    pub struct UpdatedLines {
+        pub lines: Untrusted<Vec<(String, String)>>,
+    }
+}
+
 /// A commit for the harness to check out. It is taken out before the model sees the input.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Checkout {
@@ -79,6 +86,7 @@ pub enum Facts {
         branch: Slug,
         head: Sha,
         patch: Untrusted<Patch>,
+        updated: Untrusted<Vec<(String, String)>>,
     },
 }
 
@@ -159,6 +167,35 @@ async fn read_logs(
     Ok(FailureLogs {
         text: Untrusted::new(text),
     })
+}
+
+async fn read_updated(
+    client: &GithubClient,
+    repo: &Slug,
+    number: u64,
+) -> Result<UpdatedLines, StepError> {
+    let lines = client.pull_added_lines(&repo.to_string(), number).await?;
+    Ok(UpdatedLines {
+        lines: Untrusted::new(lines),
+    })
+}
+
+/// A repair can regenerate a lockfile, so only what declares a version has to survive.
+fn is_lockfile(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name == "go.sum"
+        || name.ends_with(".lock")
+        || name.contains("-lock.")
+        || name.contains(".lock.")
+}
+
+/// Whether a patch takes back what the update changed. Green checks prove nothing then, because
+/// the pull request no longer updates anything.
+fn undoes_the_update((patch, updated): &(Patch, Vec<(String, String)>)) -> bool {
+    let declared = updated.iter().filter(|(path, _)| !is_lockfile(path));
+    declared
+        .into_iter()
+        .any(|(path, line)| !patch.keeps(path, line))
 }
 
 /// Pull requests whose CI is red now, for backfill and catch-up.
@@ -265,6 +302,9 @@ pub async fn build_failures(cx: &Cx, event: &BuildChanged) -> Result<Facts, Halt
     };
     cx.hold(TRUST_CONTEXT, &repo, &head).await?;
     let logs = cx.observe("logs", read_logs(&client, &repo, &head)).await?;
+    let updated = cx
+        .observe("updated", read_updated(&client, &repo, pull.number))
+        .await?;
     let input = FixerInput {
         logs: logs.text,
         checkout: Checkout {
@@ -280,6 +320,7 @@ pub async fn build_failures(cx: &Cx, event: &BuildChanged) -> Result<Facts, Halt
         branch: event.branch.clone(),
         head,
         patch,
+        updated: updated.lines,
     })
 }
 
@@ -331,7 +372,14 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
             branch,
             head,
             patch,
+            updated,
         } => match DEFAULT_POLICY.check(patch, head) {
+            Ok(_) if patch.zip(updated).narrow(undoes_the_update) => stop_and_ask(
+                repo,
+                head,
+                title!("A repair took back the update"),
+                patch.map(|p| p.diff.clone()),
+            ),
             Ok(patch) => vec![Effect::Push {
                 repo: repo.clone(),
                 pull: *number,

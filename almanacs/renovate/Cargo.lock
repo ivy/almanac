@@ -81,6 +81,7 @@ dependencies = [
  "advisory",
  "almanac",
  "axum",
+ "base64 0.22.1",
  "claude",
  "deliveries",
  "flate2",

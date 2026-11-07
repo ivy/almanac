@@ -422,6 +422,26 @@ impl GithubClient {
         Ok(files.iter().filter_map(path).collect())
     }
 
+    /// The lines a pull request adds, as `(path, line)`. GitHub leaves out the diff of a large
+    /// file, so such a file has none here.
+    pub async fn pull_added_lines(
+        &self,
+        repo: &str,
+        number: u64,
+    ) -> Result<Vec<(String, String)>, Error> {
+        let files = self
+            .get_all(&format!("/repos/{repo}/pulls/{number}/files"))
+            .await?;
+        let mut added = vec![];
+        for file in &files {
+            let path = file["filename"].as_str().unwrap_or_default();
+            let diff = file["patch"].as_str().unwrap_or_default();
+            let lines = diff.lines().filter_map(|l| l.strip_prefix('+'));
+            added.extend(lines.map(|line| (path.to_string(), line.to_string())));
+        }
+        Ok(added)
+    }
+
     /// A commit's source as a gzipped tar, with one top directory.
     pub async fn tarball(&self, repo: &str, sha: &str) -> Result<Vec<u8>, Error> {
         let path = format!("/repos/{repo}/tarball/{sha}");

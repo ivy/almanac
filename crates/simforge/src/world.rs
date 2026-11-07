@@ -55,6 +55,8 @@ pub struct Pull {
     pub commits: Vec<String>,
     /// The paths the pull request changes.
     pub files: Vec<String>,
+    /// The diff of a file in `files`, where GitHub would give one.
+    pub diffs: std::collections::HashMap<String, String>,
 }
 
 impl Pull {
@@ -75,6 +77,7 @@ impl Pull {
             head_repo: None,
             commits: vec!["Update".to_string()],
             files: vec![],
+            diffs: Default::default(),
         }
     }
 }

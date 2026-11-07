@@ -1,4 +1,5 @@
 use almanac::prelude::*;
+use base64::{Engine, engine::general_purpose::STANDARD};
 use proptest::prelude::*;
 
 fn sha() -> Sha {
@@ -203,4 +204,35 @@ proptest! {
     ) {
         prop_assert_eq!(verdict(vec![write(&format!("{dir}/{name}"))]), Ok(()));
     }
+}
+
+#[test]
+fn a_patch_keeps_a_line_it_leaves_alone_or_only_moves() {
+    let content = STANDARD.encode("  \"tar\": \"7.0.0\"\n");
+    let changes = vec![Change::Write {
+        path: "package.json".to_string(),
+        content,
+        executable: false,
+    }];
+    let patch = Patch {
+        changes,
+        diff: String::new(),
+        answer: Default::default(),
+    };
+    assert!(patch.keeps("package.json", "    \"tar\": \"7.0.0\","));
+    assert!(patch.keeps("other.json", "anything"));
+    assert!(!patch.keeps("package.json", "\"tar\": \"6.0.0\""));
+}
+
+#[test]
+fn a_patch_deleting_a_file_keeps_none_of_it() {
+    let changes = vec![Change::Delete {
+        path: "package.json".to_string(),
+    }];
+    let patch = Patch {
+        changes,
+        diff: String::new(),
+        answer: Default::default(),
+    };
+    assert!(!patch.keeps("package.json", "\"tar\": \"7.0.0\""));
 }

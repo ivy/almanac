@@ -30,6 +30,14 @@ impl<T> Untrusted<T> {
     pub fn map<U>(&self, f: fn(&T) -> U) -> Untrusted<U> {
         Untrusted::new(f(&self.inner))
     }
+
+    /// Both values together, for a `narrow` that has to compare them. The pair stays tainted.
+    pub fn zip<U: Clone>(&self, other: &Untrusted<U>) -> Untrusted<(T, U)>
+    where
+        T: Clone,
+    {
+        Untrusted::new((self.inner.clone(), other.inner.clone()))
+    }
 }
 
 impl Untrusted<String> {

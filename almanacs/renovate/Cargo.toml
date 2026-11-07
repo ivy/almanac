@@ -30,6 +30,7 @@ path = "tests/e2e/main.rs"
 
 [dev-dependencies]
 axum = "0.8"
+base64 = "0.22"
 deliveries = { path = "../../crates/deliveries" }
 flate2 = "1"
 insta = { version = "1", features = ["json"] }

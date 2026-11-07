@@ -399,3 +399,17 @@ async fn a_retry_after_a_crash_recognises_its_own_commit() {
     f.push("run-1:0", &push).await.unwrap();
     assert_eq!(sim.writes().len(), writes, "applying twice is a no-op");
 }
+
+#[tokio::test]
+async fn a_pull_requests_added_lines_are_read_from_its_diffs() {
+    let sim = SimForge::start().await;
+    sim.add_repo(Repo::public("owner/repo"));
+    let mut pull = Pull::renovate("renovate/x", "Update");
+    pull.files = vec!["package.json".to_string(), "big.lock".to_string()];
+    let diff = "@@ -1 +1 @@\n-old\n+new".to_string();
+    pull.diffs.insert("package.json".to_string(), diff);
+    let number = sim.add_pull("owner/repo", pull);
+    let client = GithubClient::new(sim.base_url(), Auth::Token("t".to_string()));
+    let added = client.pull_added_lines("owner/repo", number).await.unwrap();
+    assert_eq!(added, [("package.json".to_string(), "new".to_string())]);
+}

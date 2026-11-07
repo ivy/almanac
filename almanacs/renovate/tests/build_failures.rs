@@ -6,6 +6,7 @@ use almanac_renovate::events::BuildChanged;
 use almanac_renovate::fleet::{self, ATTEMPT_CAP, State, derive};
 use almanac_renovate::update::{Ages, Update};
 use almanac_renovate::workflows::build_failures::*;
+use base64::Engine;
 use github::client::{Auth, GithubClient};
 use github::forge::{CommitAuthor, GithubForge};
 use serde_json::{Value, json};
@@ -65,10 +66,19 @@ async fn capture(sim: &SimForge) -> Arc<Mutex<Vec<axum::body::Bytes>>> {
 }
 
 async fn world(published: Published, reply: Value) -> World {
+    world_updating(published, reply, &[]).await
+}
+
+/// A world whose update changed these files, each with its diff.
+async fn world_updating(published: Published, reply: Value, diffs: &[(&str, &str)]) -> World {
     let sim = SimForge::start().await;
     sim.add_repo(Repo::public(REPO));
     let mut pull = Pull::renovate(BRANCH, "Update tar");
     pull.body = Some(BODY.to_string());
+    for (file, diff) in diffs {
+        pull.files.push((*file).to_string());
+        pull.diffs.insert((*file).to_string(), (*diff).to_string());
+    }
     let number = sim.add_pull(REPO, pull);
     let received = capture(&sim).await;
     let harness = ScriptedHarness::replying(reply);
@@ -240,6 +250,55 @@ async fn a_rejected_patch_asks_a_person_and_pushes_nothing() {
     assert_eq!(statuses.last().unwrap(), &(broken, "failure".to_string()));
 }
 
+const MANIFEST_DIFF: &str =
+    "@@ -1,3 +1,3 @@\n {\n-  \"tar\": \"6.0.0\",\n+  \"tar\": \"7.0.0\",\n }";
+
+fn writing(path: &str, text: &str) -> Value {
+    let content = base64::engine::general_purpose::STANDARD.encode(text);
+    json!({"answer": {"summary": "fixed"}, "diff": "the diff", "changes": [
+        {"Write": {"path": path, "content": content, "executable": false}},
+    ]})
+}
+
+/// Green checks on the old version are not a repair: the pull request no longer updates anything.
+#[tokio::test]
+async fn a_repair_that_takes_back_the_update_is_never_pushed() {
+    let reply = writing("package.json", "{\n  \"tar\": \"6.0.0\"\n}\n");
+    let diffs = [("package.json", MANIFEST_DIFF)];
+    let mut w = world_updating(hours_old(100), reply, &diffs).await;
+    let broken = w.head();
+    w.suite_finishes("failure").await;
+    w.settle().await;
+    assert_eq!(w.pushes(), 0);
+    let filed = format!("{:?}", w.tracker.filed.lock().unwrap());
+    assert!(filed.contains("took back the update"), "{filed}");
+    let statuses = w.statuses();
+    assert_eq!(statuses.last().unwrap(), &(broken, "failure".to_string()));
+}
+
+#[tokio::test]
+async fn a_repair_of_the_same_manifest_that_keeps_the_update_is_pushed() {
+    let reply = writing(
+        "package.json",
+        "{\n    \"tar\": \"7.0.0\",\n    \"added\": \"1.0.0\"\n}\n",
+    );
+    let diffs = [("package.json", MANIFEST_DIFF)];
+    let mut w = world_updating(hours_old(100), reply, &diffs).await;
+    w.suite_finishes("failure").await;
+    w.settle().await;
+    assert_eq!(w.pushes(), 1);
+}
+
+#[tokio::test]
+async fn a_repair_may_regenerate_a_lockfile() {
+    let reply = writing("pnpm-lock.yaml", "regenerated\n");
+    let diffs = [("pnpm-lock.yaml", "@@ -1 +1 @@\n-old\n+tar@7.0.0")];
+    let mut w = world_updating(hours_old(100), reply, &diffs).await;
+    w.suite_finishes("failure").await;
+    w.settle().await;
+    assert_eq!(w.pushes(), 1);
+}
+
 #[tokio::test]
 async fn an_agent_that_changes_nothing_hands_over_what_it_found() {
     let reply =
@@ -385,6 +444,7 @@ fn repaired(path: &str) -> Facts {
             diff: String::new(),
             answer: Default::default(),
         }),
+        updated: Untrusted::new(vec![]),
     }
 }
 
@@ -400,6 +460,7 @@ fn a_person_asked_about_an_empty_repair_reads_what_the_agent_found() {
             diff: String::new(),
             answer: json!({"summary": "This needs a CI change."}),
         }),
+        updated: Untrusted::new(vec![]),
     };
     let effects = policy(&facts);
     let asked = effects.iter().find_map(|effect| match effect {

@@ -6,7 +6,7 @@ This runs the broker and `almanac-renovate` as systemd user services on one host
 
 - A host with Podman, PostgreSQL, the `claude` CLI, and a user with linger enabled: `loginctl enable-linger $USER`. Linger keeps user services running with no login session, which rootless Podman needs.
 - A public HTTPS ingress that forwards to `127.0.0.1:8787`. The broker listens only on loopback. Any reverse proxy or tunnel works, and the signature covers the body, so a path rewrite is safe.
-- An `ANTHROPIC_API_KEY`. The harness runs in `--bare` mode, which takes only an API key, not a subscription login.
+- A credential for the model: an `ANTHROPIC_API_KEY`, or a token from `claude setup-token` as `CLAUDE_CODE_OAUTH_TOKEN`. If both are set the key is used. [ADR 1](adrs/0001-agent-sandbox.md) says how the two differ.
 
 ## 1. Build
 
@@ -99,7 +99,7 @@ ALMANAC_READ_ONLY=1 almanac-renovate report
 ALMANAC_READ_ONLY=1 almanac-renovate backfill --repo owner/repo --dry-run
 ```
 
-A read-only pass needs `ALMANAC_OWNER` and GitHub credentials: the App's, or `GITHUB_TOKEN`. It needs no `ANTHROPIC_API_KEY`, and with no `DATABASE_URL` it keeps its state in memory.
+A read-only pass needs `ALMANAC_OWNER` and GitHub credentials: the App's, or `GITHUB_TOKEN`. It needs no model credential, and with no `DATABASE_URL` it keeps its state in memory.
 
 `report` has no `--repo`. It covers what its credentials can see, so an App installed on one repository reports on that repository, and a token reports on all of yours. `backfill --repo` fails if the credentials cannot see the repository you named.
 

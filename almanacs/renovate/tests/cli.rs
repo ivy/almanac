@@ -58,6 +58,19 @@ fn every_verb_answers_in_json_when_asked() {
 }
 
 #[test]
+fn an_oauth_token_is_enough_to_start() {
+    let out = Command::new(env!("CARGO_BIN_EXE_almanac-renovate"))
+        .args(["--format", "json", "check"])
+        .env_clear()
+        .env("ALMANAC_CONFIG", "/nonexistent/almanac.toml")
+        .env("GITHUB_TOKEN", "t")
+        .env("CLAUDE_CODE_OAUTH_TOKEN", "o")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+}
+
+#[test]
 fn an_unknown_verb_says_what_exists() {
     let out = run(None, &["frobnicate"]);
     assert!(!out.status.success());

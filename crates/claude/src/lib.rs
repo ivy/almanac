@@ -44,6 +44,8 @@ const EXECUTABLE_MODE: &str = "100755";
 pub struct ClaudeConfig {
     pub binary: String,
     pub api_key: String,
+    /// A `claude setup-token`, used in place of `api_key`.
+    pub oauth_token: Option<String>,
     /// Overrides the API endpoint. Tests point this at a stub.
     pub base_url: Option<String>,
     pub model: Option<String>,
@@ -59,15 +61,24 @@ pub struct ClaudeConfig {
     pub verify: Option<String>,
     /// Uses the CLI's own login from this home, for local evaluation with no API key.
     pub home: Option<String>,
-    /// Replaces `--bare`, for local evaluation only. See the ADR.
+    /// Replaces `--bare`, which refuses an OAuth token. See the ADR.
     pub isolation_flags: Vec<String>,
 }
+
+/// What stands in for `--bare`, with [`UNBARE_ENV`].
+const UNBARE_FLAGS: [&str; 2] = ["--setting-sources=", "--disable-slash-commands"];
+const UNBARE_ENV: [(&str, &str); 3] = [
+    ("ENABLE_TOOL_SEARCH", "false"),
+    ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
+    ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
+];
 
 impl ClaudeConfig {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             binary: "claude".to_string(),
             api_key: api_key.into(),
+            oauth_token: None,
             base_url: None,
             model: None,
             token_budget: 2_000_000,
@@ -77,6 +88,15 @@ impl ClaudeConfig {
             verify: None,
             home: None,
             isolation_flags: vec!["--bare".to_string()],
+        }
+    }
+
+    /// Authenticates with a `claude setup-token` rather than an API key.
+    pub fn oauth(token: impl Into<String>) -> Self {
+        Self {
+            oauth_token: Some(token.into()),
+            isolation_flags: UNBARE_FLAGS.map(str::to_string).to_vec(),
+            ..Self::new("")
         }
     }
 }
@@ -295,6 +315,11 @@ impl ClaudeHarness {
             .kill_on_drop(true);
         if !c.api_key.is_empty() {
             command.env("ANTHROPIC_API_KEY", &c.api_key);
+        }
+        if let Some(token) = &c.oauth_token {
+            command
+                .env("CLAUDE_CODE_OAUTH_TOKEN", token)
+                .envs(UNBARE_ENV);
         }
         if let Some(budget) = c.max_budget_usd {
             command.args(["--max-budget-usd", &budget.to_string()]);

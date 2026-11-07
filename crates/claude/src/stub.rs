@@ -1,7 +1,7 @@
 //! A stand-in for the Messages API. It replays scripted turns and records every request, so a
 //! test sees exactly which tools and text reach the model, with no credential and no spend.
 use axum::extract::State;
-use axum::http::header;
+use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
@@ -31,6 +31,8 @@ type Responder = Box<dyn Fn(&Value) -> Turn + Send + Sync>;
 struct Script {
     turns: VecDeque<Turn>,
     requests: Vec<Value>,
+    /// How each request authenticated, as `header: value`.
+    credentials: Vec<String>,
     tokens_per_turn: u64,
     /// Answers from the request, for sessions that interleave.
     responder: Option<Responder>,
@@ -96,6 +98,14 @@ impl StubModel {
         self.script.lock().unwrap().requests.clone()
     }
 
+    /// How requests authenticated, as `header: value`, with no repeats.
+    pub fn credentials(&self) -> Vec<String> {
+        let mut seen = self.script.lock().unwrap().credentials.clone();
+        seen.sort();
+        seen.dedup();
+        seen
+    }
+
     /// Names of the tools offered across every request.
     pub fn tools_offered(&self) -> Vec<String> {
         let mut names: Vec<String> = self
@@ -120,11 +130,17 @@ fn sse(name: &str, data: &Value) -> String {
 
 async fn messages(
     State((script, held)): State<(Arc<Mutex<Script>>, Arc<AtomicBool>)>,
+    headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
     let (turn, tokens, number) = {
         let mut s = script.lock().unwrap();
         s.requests.push(body.clone());
+        for name in ["authorization", "x-api-key"] {
+            if let Some(value) = headers.get(name).and_then(|v| v.to_str().ok()) {
+                s.credentials.push(format!("{name}: {value}"));
+            }
+        }
         let turn = match &s.responder {
             Some(responder) => responder(&body),
             None => s.turns.pop_front().unwrap_or(Turn::Text("{}".to_string())),

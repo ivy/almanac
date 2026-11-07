@@ -86,6 +86,50 @@ async fn a_quarantined_session_has_no_tools_at_all() {
     );
 }
 
+fn oauth(model: &StubModel) -> ClaudeConfig {
+    let mut config = ClaudeConfig::oauth("oauth-stub");
+    config.base_url = Some(model.url.clone());
+    config
+}
+
+#[tokio::test]
+async fn an_oauth_session_is_as_bare_as_an_api_key_session() {
+    let model = StubModel::start(vec![
+        tool("Bash", json!({"command": "touch /tmp/ran"})),
+        Turn::Text(r#"{"verdict": "ok"}"#.to_string()),
+    ])
+    .await;
+    let out = ClaudeHarness::new(oauth(&model))
+        .session("Review this.", READ, json!({"diff": "text"}))
+        .await
+        .unwrap();
+    assert_eq!(out, json!({"verdict": "ok"}));
+    assert_eq!(model.tools_offered(), Vec::<String>::new());
+    assert_eq!(model.credentials(), ["authorization: Bearer oauth-stub"]);
+    assert!(results(&model).iter().all(|r| r.contains("No such tool")));
+    let system = model.requests().last().unwrap()["system"].to_string();
+    assert!(system.contains("Review this."), "{system}");
+}
+
+#[tokio::test]
+async fn an_oauth_fixer_is_offered_only_the_sandbox() {
+    let model = StubModel::start(vec![
+        tool(
+            "mcp__sandbox__write_file",
+            json!({"path": "fixed.txt", "content": "yes\n"}),
+        ),
+        Turn::Text(r#"{"summary": "fixed"}"#.to_string()),
+    ])
+    .await;
+    let out = ClaudeHarness::new(oauth(&model))
+        .with_sandbox(Arc::new(PodmanSandbox), SandboxSpec::agent(IMAGE))
+        .session("Fix this.", WRITE, json!({"logs": "red"}))
+        .await
+        .unwrap();
+    assert_eq!(model.tools_offered(), SANDBOX_TOOLS);
+    assert_eq!(out["answer"]["summary"], "fixed");
+}
+
 #[tokio::test]
 async fn hostile_input_arrives_as_data_and_the_prompt_as_instructions() {
     let model = StubModel::start(vec![Turn::Text("{}".to_string())]).await;

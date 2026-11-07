@@ -84,8 +84,8 @@ Adopting Daytona needs one new `Sandbox` implementation, generated from `specs/d
 
 ## Consequences
 
-- `--bare` accepts only `ANTHROPIC_API_KEY` or a key helper, so a deployment needs an API key. It cannot use a subscription login.
-- Without `--bare`, `--setting-sources=` with `--disable-slash-commands` passed the same checks except one: requests also carried a `DeferredToolPlaceholder` tool. Treat that mode as for local evaluation only.
+- `--bare` accepts only `ANTHROPIC_API_KEY` or a key helper, so a token from `claude setup-token` cannot use it. A session with a token replaces it with `--setting-sources=`, `--disable-slash-commands`, `ENABLE_TOOL_SEARCH=false`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, in the same empty home and environment. Tool search has to be off, because otherwise requests carry a `DeferredToolPlaceholder` tool. `crates/claude/tests/real_cli.rs` proves such a session is offered only the sandbox tools.
+- A session with a token is looser than `--bare` in one known way: its requests also carry an environment block naming the temporary directory, shell, and OS version. Prefer an API key where both are available.
 - The `claude` process runs on the host and parses hostile text. A bug in it is the remaining path from hostile text to the host, so run it with an empty working directory and a minimal environment, and revisit under M5.
 - The MCP server is part of the trust boundary and must expose nothing but sandbox calls.
 - Every `Sandbox` needs a wall-clock limit and resource limits, because hostile code runs there by design.

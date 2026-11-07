@@ -20,6 +20,8 @@ const DEFAULT_AUTHOR: &str = "ivy-s-renovate-bot[bot]";
 const SANDBOX_IMAGE: &str = "localhost/almanac-fixer:latest";
 /// Stops a runaway session. It is a ceiling, not a target.
 const MAX_SESSION_USD: f64 = 6.0;
+/// The model repairs were evaluated on, so a subscription's default cannot change it.
+const MODEL: &str = "sonnet";
 
 /// Reads commits for the harness.
 struct GithubCheckouts(Arc<GithubClient>);
@@ -86,8 +88,16 @@ impl Harness for NoAgent {
     }
 }
 
+/// An API key if there is one, because `--bare` is the tighter mode, or else an OAuth token.
+fn model_credential() -> Option<ClaudeConfig> {
+    let key = env::var("ANTHROPIC_API_KEY").ok().map(ClaudeConfig::new);
+    let token = || env::var("CLAUDE_CODE_OAUTH_TOKEN").ok();
+    key.or_else(|| token().map(ClaudeConfig::oauth))
+}
+
 fn harness(checkouts: Arc<GithubClient>) -> Option<ClaudeHarness> {
-    let mut config = ClaudeConfig::new(env::var("ANTHROPIC_API_KEY").ok()?);
+    let mut config = model_credential()?;
+    config.model = Some(MODEL.to_string());
     config.base_url = env::var("ANTHROPIC_BASE_URL").ok();
     config.max_budget_usd = Some(MAX_SESSION_USD);
     let sandbox: Arc<dyn Sandbox> = Arc::new(PodmanSandbox);

@@ -57,6 +57,7 @@ cd my-almanac
 |---|---|
 | [docs/vision.md](docs/vision.md) | Why this exists, and what it is not |
 | [docs/core-principles.md](docs/core-principles.md) | The decision filters |
+| [docs/responsibilities.md](docs/responsibilities.md) | Who owns what in a workflow, with Renovate as the example |
 | [docs/prd.md](docs/prd.md) | The requirements, numbered, and the stack |
 | [docs/roadmap.md](docs/roadmap.md) | What is deferred, and to which milestone |
 | [docs/deploying.md](docs/deploying.md) | How to run it, stage by stage |

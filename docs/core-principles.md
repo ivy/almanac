@@ -67,3 +67,9 @@ Integrations stay cheap. Types come from published specs where they exist, proje
 Every behaviour runs against fakes and a simulated forge, with no live service, model, or network. Backfill, simulation, and catch-up share the production path.
 
 **Says no to:** a test that needs a real GitHub account, a code path that exists only for tests, and a feature with no dry run.
+
+## 12. Checks decide, and a gap in them belongs to the repository
+
+If a repository's checks pass, the change is good enough to merge. If nothing can attest that it is, the fix is a better workflow, not a person reading it. Every workflow says what it promises, what it relies on, and what it hands to a person, and a person is asked only for a judgment no check can make. [responsibilities.md](responsibilities.md) works through this with Renovate.
+
+**Says no to:** holding a change for review because it feels risky, a person doing what a check could do, counting a cooldown as proof of tests, and green checks on a change that no longer does what it was for.

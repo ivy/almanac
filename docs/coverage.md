@@ -54,6 +54,15 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 | R-50 Conflicts | `a_conflict_waits_for_renovate_unless_the_branch_carries_a_patch` |
 | R-51 No CI | `a_repository_with_no_ci_is_reported_as_having_no_checks` |
 
+## Principles
+
+Properties in `crates/definitions/tests/principles.rs` state some of the [core principles](core-principles.md) directly, through the runtime's public seams, and draw their inputs from `almanac::testing::generators`.
+
+| Principle | Proved by |
+|---|---|
+| 6 One thing, one run | `principle_6_each_delivery_counts_once_and_a_key_runs_once_per_batch`, `principle_6_events_during_runs_never_overlap_a_key_or_get_lost`, `principle_6_chains_budgets_and_effects_stay_within_their_limits` |
+| 7 Record everything a run depends on | `principle_7_a_replay_decides_the_same_and_calls_nothing`, `principle_7_a_replayed_screen_asks_nothing_again` |
+
 ## Not met
 
 - **R-14** has no single end-to-end test of a security pull request going red, being repaired, and passing. Each half is tested alone.

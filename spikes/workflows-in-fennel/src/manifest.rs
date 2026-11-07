@@ -148,7 +148,10 @@ fn clean_field(event: &EventDef, field: &str, used_in: &str) -> Result<(), LoadE
         )),
         Some((_, Field::Tainted)) => Err(LoadError::new(
             "load/tainted-field",
-            format!("`{field}` of {} is tainted, and a {used_in} holds it", event.name),
+            format!(
+                "`{field}` of {} is tainted, and a {used_in} holds it",
+                event.name
+            ),
             "text an attacker wrote must not decide how work is grouped",
             "use a validated field",
         )),
@@ -301,12 +304,19 @@ fn used_agents(
         if verb != allowed {
             return Err(LoadError::new(
                 "load/wrong-verb",
-                format!("agent `{name}` is {:?} and can only `{allowed}`", agent.profile),
+                format!(
+                    "agent `{name}` is {:?} and can only `{allowed}`",
+                    agent.profile
+                ),
                 "an agent's profile decides what it may do with what it reads",
                 "use the verb its profile allows",
             ));
         }
-        if agent.profile == Kind::Fixer && call.get("cooled").is_none_or(|c| !matches!(c, Script::Bool(true))) {
+        if agent.profile == Kind::Fixer
+            && call
+                .get("cooled")
+                .is_none_or(|c| !matches!(c, Script::Bool(true)))
+        {
             return Err(LoadError::new(
                 "load/fixer-needs-cooled",
                 format!("`cx.repair :{name}` is not given `:cooled`"),

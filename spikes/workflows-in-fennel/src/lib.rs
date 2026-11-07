@@ -1,4 +1,4 @@
-//! A spike: Almanac workflows written in Fennel, hosted by Rust. See `FINDINGS.md`.
+//! A spike: Almanac workflows written in Fennel, hosted by Rust.
 //!
 //! Rust stays the trusted host. `compile` reads and compiles a workflow once. `gather` runs its
 //! I/O half through `Cx` in a VM of its own, and `pure` runs its policy in another, so the two share

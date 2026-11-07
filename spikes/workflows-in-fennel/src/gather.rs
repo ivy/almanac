@@ -2,8 +2,8 @@
 //! performs it through `Cx` and resumes the script with the answer. `Cx` never enters Lua, so a
 //! script has no reference to hold on to, and a failed step ends the run instead of reaching a
 //! `pcall`.
-use crate::pure;
 use crate::manifest::{AgentDecl, Kind, Piece};
+use crate::pure;
 use crate::sandbox::Vm;
 use crate::value::{AgeRead, Proof, Script, Tainted, intern, reveal};
 use crate::workflow::FennelWorkflow;
@@ -108,12 +108,16 @@ fn prompt_value(value: &Script) -> Result<String, Halt> {
     match value {
         Script::Text(text) => match text.parse::<Slug>() {
             Ok(slug) => Ok(slug.to_string()),
-            Err(_) => Err(failed("a prompt variable must be a slug, a number, or a bool")),
+            Err(_) => Err(failed(
+                "a prompt variable must be a slug, a number, or a bool",
+            )),
         },
         Script::Int(n) => Ok(n.to_string()),
         Script::Bool(b) => Ok(b.to_string()),
         Script::Tainted(_) => Err(failed("hostile text never reaches a prompt's instructions")),
-        _ => Err(failed("a prompt variable must be a slug, a number, or a bool")),
+        _ => Err(failed(
+            "a prompt variable must be a slug, a number, or a bool",
+        )),
     }
 }
 
@@ -123,7 +127,10 @@ fn render(agent: &AgentDecl, values: &Script) -> Result<Rendered, Halt> {
         return Err(failed("`:prompt` must be a table of its variables"));
     };
     if let Some(extra) = values.keys().find(|key| !agent.vars.contains(key)) {
-        return Err(failed(format!("`{}` has no prompt variable `{extra}`", agent.name)));
+        return Err(failed(format!(
+            "`{}` has no prompt variable `{extra}`",
+            agent.name
+        )));
     }
     let mut out = String::new();
     for piece in &agent.template {
@@ -166,7 +173,13 @@ impl Session<'_> {
     /// The read runs on a coroutine of its own inside `Cx::observe`, so on a replay it is skipped
     /// and the recorded value comes back by the same path.
     async fn observe(&self, name: &str, read: Function) -> Result<MultiValue, Halt> {
-        if !self.workflow.declaration().reads.iter().any(|read| read == name) {
+        if !self
+            .workflow
+            .declaration()
+            .reads
+            .iter()
+            .any(|read| read == name)
+        {
             return Err(failed(format!(
                 "`{name}` is not an observation this workflow declares: name it literally in \
                  `cx.observe`, because the run log is keyed by it"
@@ -359,7 +372,11 @@ pub async fn run(workflow: &FennelWorkflow, cx: &Cx, event: &Script) -> Result<S
     let thread = vm.lua.create_thread(gather).map_err(failed)?;
     let event = pure::event_table(&vm, workflow, event).map_err(failed)?;
     let args = MultiValue::from_vec(vec![LuaValue::Table(vm.cx.clone()), event]);
-    let session = Session { workflow, cx, vm: &vm };
+    let session = Session {
+        workflow,
+        cx,
+        vm: &vm,
+    };
     drive(&session, thread, args, false).await
 }
 

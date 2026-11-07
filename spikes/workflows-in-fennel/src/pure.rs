@@ -29,14 +29,15 @@ fn text(options: &Table, key: &str) -> mlua::Result<String> {
 
 fn parsed<T: std::str::FromStr>(options: &Table, key: &str) -> mlua::Result<T> {
     let value = text(options, key)?;
-    value.parse().map_err(|_| refused(format!("`:{key}` is not valid")))
+    value
+        .parse()
+        .map_err(|_| refused(format!("`:{key}` is not valid")))
 }
 
 fn body(options: &Table) -> mlua::Result<Untrusted<String>> {
-    match tainted(&options.get("body")?, "`:body`")? {
-        Tainted::Text(body) => Ok(body),
-        _ => Err(refused("`:body` must be tainted text")),
-    }
+    let body = tainted(&options.get("body")?, "`:body`")?;
+    let text = body.text().cloned();
+    text.ok_or_else(|| refused("`:body` must be tainted text"))
 }
 
 fn state(options: &Table) -> mlua::Result<AttestState> {
@@ -141,23 +142,45 @@ pub fn patches_table(lua: &Lua) -> mlua::Result<Table> {
 fn text_of(value: &LuaValue) -> mlua::Result<String> {
     match value {
         LuaValue::String(text) => Ok(text.to_string_lossy()),
-        other => match tainted(other, "a piece of text")? {
-            Tainted::Text(text) => reveal(&text).map_err(|StepError(e)| refused(e)),
-            _ => Err(refused("only text can be joined")),
+        other => match tainted(other, "a piece of text")?.text() {
+            Some(text) => reveal(text).map_err(|StepError(e)| refused(e)),
+            None => Err(refused("only text can be joined")),
         },
     }
 }
 
+/// A pattern match is one C call, so the instruction limit cannot stop it, and a backtracking
+/// pattern over hostile text can run for hours. A narrower gets literal search only.
+const LITERAL_SEARCH_ONLY: &str = r#"
+local find = string.find
+string.find = function(text, literal, from) return find(text, literal, from, true) end
+string.match, string.gmatch, string.gsub = nil, nil, nil
+"#;
+
 /// Runs a narrower in a VM of its own, on the raw text. It holds nothing else and returns only a
 /// bool, so like a `fn` passed to `Untrusted::narrow`, it has nowhere to put the text. Its errors
 /// are replaced, because a script can write the text into one.
-fn narrow(workflow_narrowers: &[(String, String)], content: &Tainted, name: &str) -> mlua::Result<bool> {
+fn narrow(
+    workflow_narrowers: &[(String, String)],
+    content: &Tainted,
+    name: &str,
+) -> mlua::Result<bool> {
+    if matches!(content, Tainted::Reshaped(_)) {
+        return Err(refused(
+            "a narrower reads text as it was observed, not text a script reshaped: reshaping \
+             would let a fixed narrower read any part of it",
+        ));
+    }
     let found = workflow_narrowers.iter().find(|(key, _)| key == name);
     let Some((_, code)) = found else {
         return Err(refused(format!("no narrower named `{name}`")));
     };
     let hidden = || refused(format!("narrower `{name}` failed"));
     let vm = Vm::new().map_err(|_| hidden())?;
+    vm.lua
+        .load(LITERAL_SEARCH_ONLY)
+        .exec()
+        .map_err(|_| hidden())?;
     let function: Function = vm.load(name, code).map_err(|_| hidden())?;
     let raw = content.raw().map_err(|_| hidden())?;
     let raw = raw_into_lua(&vm.lua, &raw).map_err(|_| hidden())?;
@@ -181,7 +204,7 @@ pub fn taint_table(lua: &Lua, narrowers: Vec<(String, String)>) -> mlua::Result<
         for piece in pieces.iter() {
             joined.push_str(&text_of(piece)?);
         }
-        Ok(Tainted::Text(Untrusted::new(joined)))
+        Ok(Tainted::Reshaped(Untrusted::new(joined)))
     })?;
     let tail = lua.create_function(|_, (content, limit): (LuaValue, usize)| {
         let full = text_of(&content)?;
@@ -189,10 +212,14 @@ pub fn taint_table(lua: &Lua, narrowers: Vec<(String, String)>) -> mlua::Result<
         let start = (start..full.len())
             .find(|at| full.is_char_boundary(*at))
             .unwrap_or(0);
-        Ok(Tainted::Text(Untrusted::new(full[start..].to_string())))
+        Ok(Tainted::Reshaped(Untrusted::new(full[start..].to_string())))
     })?;
     let narrower = lua.create_function(move |_, (content, name): (LuaValue, String)| {
-        narrow(&narrowers, &tainted(&content, "`taint.narrow`'s first argument")?, &name)
+        narrow(
+            &narrowers,
+            &tainted(&content, "`taint.narrow`'s first argument")?,
+            &name,
+        )
     })?;
     table.set("wrap", wrap)?;
     table.set("map", map)?;
@@ -203,7 +230,12 @@ pub fn taint_table(lua: &Lua, narrowers: Vec<(String, String)>) -> mlua::Result<
 }
 
 pub fn install_taint(vm: &Vm, workflow: &FennelWorkflow) -> mlua::Result<()> {
-    let narrowers = workflow.declaration().narrowers.clone().into_iter().collect();
+    let narrowers = workflow
+        .declaration()
+        .narrowers
+        .clone()
+        .into_iter()
+        .collect();
     vm.env.set("taint", taint_table(&vm.lua, narrowers)?)
 }
 
@@ -254,7 +286,8 @@ pub fn decide(workflow: &FennelWorkflow, facts: &Script) -> mlua::Result<Vec<Eff
             return Err(refused("policy returned something that is not an effect"));
         };
         let effect = data.borrow::<Planned>();
-        let effect = effect.map_err(|_| refused("policy returned something that is not an effect"))?;
+        let effect =
+            effect.map_err(|_| refused("policy returned something that is not an effect"))?;
         effects.push(effect.0.clone());
     }
     Ok(effects)

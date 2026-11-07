@@ -57,7 +57,6 @@
 
 (fn gather [cx event]
   (let [github (cx.get :github)
-        ages (cx.get :ages)
         target (cx.get :scan-target)
         pull (cx.observe :pull #(read-pull github target.author event))
         repo event.repo
@@ -73,7 +72,8 @@
         (let [attempts (cx.attempts)]
           (if (>= attempts.used attempt-cap)
               {:kind :exhausted : repo : head :asked attempts.asked}
-              (let [update (taint.map pull.text :update-of)]
+              (let [update (taint.map pull.text :update-of)
+                    ages (cx.get :ages)]
                 (case (cx.cooled min-release-age (ages.newest update))
                   cooled (repair cx github event pull cooled)
                   _ {:kind :cooling})))))))

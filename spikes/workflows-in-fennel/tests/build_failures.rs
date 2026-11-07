@@ -175,12 +175,18 @@ impl World {
 
     fn filed(&self) -> Vec<String> {
         let filed = self.tracker.filed.lock().unwrap();
-        filed.iter().map(|(_, _, question)| question.clone()).collect()
+        filed
+            .iter()
+            .map(|(_, _, question)| question.clone())
+            .collect()
     }
 }
 
 fn kinds(outcomes: &[Outcome]) -> Vec<EffectKind> {
-    let Outcome::Ran { effects, denied, .. } = &outcomes[0] else {
+    let Outcome::Ran {
+        effects, denied, ..
+    } = &outcomes[0]
+    else {
         panic!("{outcomes:?}");
     };
     assert!(denied.is_empty(), "{denied:?}");
@@ -201,8 +207,16 @@ async fn a_red_pull_request_past_its_cooldown_is_patched_then_goes_green() {
         assert_ne!(patched, broken);
         let statuses = w.statuses();
         let pending = "pending".to_string();
-        assert_eq!(statuses[0], (broken, pending.clone()), "held before the agent ran");
-        assert_eq!(statuses[1], (patched.clone(), pending), "held on the new commit");
+        assert_eq!(
+            statuses[0],
+            (broken, pending.clone()),
+            "held before the agent ran"
+        );
+        assert_eq!(
+            statuses[1],
+            (patched.clone(), pending),
+            "held on the new commit"
+        );
 
         assert_eq!(w.suite_finishes("success").await, Ingest::Queued);
         w.settle().await;
@@ -220,7 +234,11 @@ async fn a_pull_request_inside_its_cooldown_reaches_no_agent_and_awaits() {
         let outcomes = w.settle().await;
         assert_eq!(kinds(&outcomes), [EffectKind::Await], "{written:?}");
         assert_eq!(w.harness.calls(), 0, "no agent reads it");
-        assert_eq!(w.statuses(), vec![], "nothing is held for a run that does nothing");
+        assert_eq!(
+            w.statuses(),
+            vec![],
+            "nothing is held for a run that does nothing"
+        );
     }
 }
 
@@ -238,7 +256,12 @@ async fn an_update_with_no_publish_time_awaits() {
 #[tokio::test]
 async fn a_rejected_patch_pushes_nothing_and_asks_a_person() {
     for written in BOTH {
-        let mut w = world(written, hours_old(100), patch_reply(".github/workflows/ci.yml")).await;
+        let mut w = world(
+            written,
+            hours_old(100),
+            patch_reply(".github/workflows/ci.yml"),
+        )
+        .await;
         let broken = w.head();
         w.suite_finishes("failure").await;
         let outcomes = w.settle().await;
@@ -255,7 +278,11 @@ async fn a_rejected_patch_pushes_nothing_and_asks_a_person() {
 async fn green_builds_and_other_branches_produce_no_run() {
     for written in BOTH {
         let mut w = world(written, hours_old(100), patch_reply("src/main.rs")).await;
-        assert_eq!(w.suite_finishes("success").await, Ingest::Ignored, "{written:?}");
+        assert_eq!(
+            w.suite_finishes("success").await,
+            Ingest::Ignored,
+            "{written:?}"
+        );
         let sha = w.head();
         let suite = Suite::finished(&sha, "feature", "failure", "x");
         let id = w.sim.add_suite(REPO, suite);
@@ -281,10 +308,22 @@ async fn a_status_works_like_a_check_suite_and_almanacs_own_status_does_not() {
     for written in BOTH {
         let mut w = world(written, hours_old(100), patch_reply("src/main.rs")).await;
         let sha = w.head();
-        w.sim.status_changed(REPO, &sha, "almanac/trust", "failure").await;
-        assert_eq!(w.deliver("github.status").await, Ingest::Ignored, "{written:?}");
-        w.sim.status_changed(REPO, &sha, "ci/build", "failure").await;
-        assert_eq!(w.deliver("github.status").await, Ingest::Queued, "{written:?}");
+        w.sim
+            .status_changed(REPO, &sha, "almanac/trust", "failure")
+            .await;
+        assert_eq!(
+            w.deliver("github.status").await,
+            Ingest::Ignored,
+            "{written:?}"
+        );
+        w.sim
+            .status_changed(REPO, &sha, "ci/build", "failure")
+            .await;
+        assert_eq!(
+            w.deliver("github.status").await,
+            Ingest::Queued,
+            "{written:?}"
+        );
     }
 }
 
@@ -321,11 +360,17 @@ async fn the_logs_reach_the_agent_tainted_and_the_checkout_by_reference() {
         w.settle().await;
         let inputs = w.harness.inputs.lock().unwrap();
         let logs = &inputs[0]["logs"]["$untrusted"];
-        assert!(logs.as_str().unwrap().contains("mismatched types"), "{logs}");
+        assert!(
+            logs.as_str().unwrap().contains("mismatched types"),
+            "{logs}"
+        );
         assert_eq!(inputs[0]["$checkout"]["repo"], REPO);
         let prompts = w.harness.prompts.lock().unwrap();
         assert!(prompts[0].contains(REPO), "{written:?}");
-        assert!(!prompts[0].contains("mismatched"), "logs are never prompt text");
+        assert!(
+            !prompts[0].contains("mismatched"),
+            "logs are never prompt text"
+        );
         let grants = w.harness.grants.lock().unwrap();
         assert!(grants[0].write && !grants[0].egress && !grants[0].secrets);
     }
@@ -348,10 +393,18 @@ async fn both_workflows_send_an_agent_the_same_request() {
 
 #[tokio::test]
 async fn a_replay_repeats_the_decision_without_calling_anything_again() {
-    let mut w = world(Written::InFennel, hours_old(100), patch_reply("src/main.rs")).await;
+    let mut w = world(
+        Written::InFennel,
+        hours_old(100),
+        patch_reply("src/main.rs"),
+    )
+    .await;
     w.suite_finishes("failure").await;
     let outcomes = w.settle().await;
-    let Outcome::Ran { run_id, effects, .. } = &outcomes[0] else {
+    let Outcome::Ran {
+        run_id, effects, ..
+    } = &outcomes[0]
+    else {
         panic!("{outcomes:?}");
     };
     let requests = w.sim.writes().len();

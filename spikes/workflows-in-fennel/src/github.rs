@@ -24,7 +24,9 @@ fn sha(args: &[Script], at: usize) -> Result<String, StepError> {
 fn number(args: &[Script], at: usize) -> Result<u64, StepError> {
     match args.get(at) {
         Some(Script::Int(n)) if *n >= 0 => Ok(*n as u64),
-        _ => Err(StepError(format!("argument {at} of a read must be a number"))),
+        _ => Err(StepError(format!(
+            "argument {at} of a read must be a number"
+        ))),
     }
 }
 
@@ -52,7 +54,10 @@ async fn pull_for_branch(client: &GithubClient, args: &[Script]) -> Result<Scrip
         Err(_) => Script::Nil,
     };
     Ok(Script::map([
-        ("number", Script::Int(listed["number"].as_i64().unwrap_or_default())),
+        (
+            "number",
+            Script::Int(listed["number"].as_i64().unwrap_or_default()),
+        ),
         ("author", author),
     ]))
 }
@@ -79,7 +84,10 @@ async fn checks(client: &GithubClient, args: &[Script]) -> Result<Script, StepEr
     let suites = client.check_suites(&repo, &head).await?;
     let statuses = client.combined_status(&repo, &head).await?;
     Ok(Script::map([
-        ("state", Script::text(state_of(checks_of(&suites, &statuses)))),
+        (
+            "state",
+            Script::text(state_of(checks_of(&suites, &statuses))),
+        ),
         ("trust-pending", Script::Bool(trust_pending(&statuses))),
     ]))
 }
@@ -91,7 +99,10 @@ async fn check_runs(client: &GithubClient, args: &[Script]) -> Result<Script, St
         let id = run["id"].as_i64()?;
         Some(Script::map([
             ("id", Script::Int(id)),
-            ("failed", Script::Bool(run["conclusion"] == json!("failure"))),
+            (
+                "failed",
+                Script::Bool(run["conclusion"] == json!("failure")),
+            ),
         ]))
     });
     Ok(Script::List(projected.collect()))

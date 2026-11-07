@@ -28,6 +28,9 @@ pub fn intern(text: &str) -> &'static str {
 #[derive(Clone)]
 pub enum Tainted {
     Text(Untrusted<String>),
+    /// Text a script reshaped. A narrower refuses it: if a script could choose what a narrower
+    /// sees, one fixed narrower would read any byte it liked.
+    Reshaped(Untrusted<String>),
     Pull(Untrusted<PullText>),
     Update(Untrusted<Update>),
     Patch(Untrusted<Patch>),
@@ -50,6 +53,7 @@ impl Tainted {
     fn kind(&self) -> &'static str {
         match self {
             Self::Text(_) => "text",
+            Self::Reshaped(_) => "reshaped",
             Self::Pull(_) => "pull",
             Self::Update(_) => "update",
             Self::Patch(_) => "patch",
@@ -60,7 +64,7 @@ impl Tainted {
     /// The `{"$untrusted": ...}` form agents and stored records use.
     fn tagged(&self) -> Value {
         let tagged = match self {
-            Self::Text(t) => serde_json::to_value(t),
+            Self::Text(t) | Self::Reshaped(t) => serde_json::to_value(t),
             Self::Pull(t) => serde_json::to_value(t),
             Self::Update(t) => serde_json::to_value(t),
             Self::Patch(t) => serde_json::to_value(t),
@@ -73,6 +77,7 @@ impl Tainted {
         let value = value.clone();
         let kind = value["$kind"].as_str().unwrap_or_default().to_string();
         Ok(match kind.as_str() {
+            "reshaped" => Self::Reshaped(serde_json::from_value(value)?),
             "pull" => Self::Pull(serde_json::from_value(value)?),
             "update" => Self::Update(serde_json::from_value(value)?),
             "patch" => Self::Patch(serde_json::from_value(value)?),
@@ -84,6 +89,13 @@ impl Tainted {
     /// The content as plain Lua values, for a narrower's own VM and nowhere else.
     pub fn raw(&self) -> Result<Value, StepError> {
         Ok(self.tagged()["$untrusted"].clone())
+    }
+
+    pub fn text(&self) -> Option<&Untrusted<String>> {
+        match self {
+            Self::Text(text) | Self::Reshaped(text) => Some(text),
+            _ => None,
+        }
     }
 }
 
@@ -206,7 +218,9 @@ impl Script {
             LuaValue::Integer(i) => Self::Int(*i),
             LuaValue::Number(f) => Self::Float(*f),
             LuaValue::String(s) => {
-                let text = s.to_str().map_err(|_| "a string is not UTF-8".to_string())?;
+                let text = s
+                    .to_str()
+                    .map_err(|_| "a string is not UTF-8".to_string())?;
                 Self::Text(text.to_string())
             }
             LuaValue::Table(table) => Self::read_table(table, depth)?,
@@ -234,6 +248,10 @@ impl Script {
                 }
                 LuaValue::String(key) => {
                     let key = key.to_str().map_err(|_| "a key is not UTF-8".to_string())?;
+                    // The run log's markers. A script that wrote these could relabel what it holds.
+                    if key.starts_with('$') {
+                        return Err("a key starting with `$` is reserved".to_string());
+                    }
                     map.insert(key.to_string(), value);
                 }
                 _ => return Err("a table key must be a string or a list index".to_string()),

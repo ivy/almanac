@@ -5,7 +5,7 @@ use crate::daemon::{GRACE, Health, serve_health, with_backoff};
 use crate::diag::{Error, Format, explain, render};
 use crate::effect::Mode;
 use crate::providers::Providers;
-use crate::runtime::{Envelope, Origin, Outcome, Runtime};
+use crate::runtime::{Envelope, Ingest, Origin, Outcome, Runtime};
 use crate::store::PostgresStore;
 use crate::workflow::Registered;
 use futures::future::BoxFuture;
@@ -62,6 +62,10 @@ pub fn main_with(
 ) -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let format = format_of(&mut args);
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{USAGE}");
+        return ExitCode::SUCCESS;
+    }
     match run(name, args, format, workflows, setup, verbs) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -204,6 +208,20 @@ fn print(format: Format, human: String, json: serde_json::Value) {
     }
 }
 
+/// Why a simulated event started nothing, for the outcomes a mistake usually causes.
+fn why_nothing_ran(ingest: &Ingest, kind: &str) -> Option<String> {
+    match ingest {
+        Ingest::Unrouted => Some(format!(
+            "no workflow is triggered by `{kind}`; `synth` lists each workflow's trigger"
+        )),
+        Ingest::Rejected => Some(format!(
+            "the file does not parse as `{kind}`; check it has every field the event declares"
+        )),
+        Ingest::Ignored => Some("the workflow's `when` filter turned this event away".to_string()),
+        _ => None,
+    }
+}
+
 fn run(
     name: &'static str,
     mut args: Vec<String>,
@@ -313,10 +331,15 @@ fn run(
                 let ingest = runtime.ingest(envelope).await?;
                 Ok::<_, Error>((ingest, settle(&runtime).await?))
             })?;
+            let why = why_nothing_ran(&ingest, kind);
+            let mut human = format!("simulate: {ingest:?}\n{}", shown.join("\n"));
+            if let Some(why) = &why {
+                human = format!("simulate: {ingest:?}: {why}");
+            }
             print(
                 format,
-                format!("simulate: {ingest:?}\n{}", shown.join("\n")),
-                json!({"simulate": format!("{ingest:?}"), "outcomes": shown}),
+                human,
+                json!({"simulate": format!("{ingest:?}"), "why": why, "outcomes": shown}),
             );
         }
         _ => {

@@ -19,7 +19,7 @@ if [[ -f private/denylist.txt ]]; then
     found=1
   fi
 else
-  echo "check-public: private/denylist.txt is missing, so private names were not checked" >&2
+  echo "check-public: no private/denylist.txt, which only the maintainer has, so this checked machine details only" >&2
 fi
 
 if [[ $found -ne 0 ]]; then

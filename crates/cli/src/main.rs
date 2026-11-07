@@ -4,6 +4,9 @@ use std::{env, fs, path::Path, process::ExitCode};
 
 const CRATE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../almanac");
 
+const USAGE: &str =
+    "usage: almanac new NAME | almanac generate workflow|prompt|source NAME | almanac explain CODE";
+
 fn snake(s: &str) -> String {
     s.replace('-', "_")
 }
@@ -146,10 +149,11 @@ fn main() -> ExitCode {
         ["explain", code] => almanac::diag::explain(code)
             .map(|page| println!("{page}"))
             .map_err(|e| almanac::diag::render(&e, Format::Human)),
-        _ => Err(
-            "usage: almanac new NAME | almanac generate workflow|prompt|source NAME | almanac explain CODE"
-                .to_string(),
-        ),
+        ["--help" | "-h"] => {
+            println!("{USAGE}");
+            Ok(())
+        }
+        _ => Err(USAGE.to_string()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

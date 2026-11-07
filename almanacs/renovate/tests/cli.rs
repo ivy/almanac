@@ -176,3 +176,17 @@ async fn a_backfill_of_a_repository_it_cannot_see_fails() {
     assert_eq!(json["code"], "almanac::scan::failed");
     assert!(stderr(&out).contains("owner/unseen"), "{}", stderr(&out));
 }
+
+#[test]
+fn help_is_not_an_error() {
+    let out = run(None, &["--help"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("usage:"));
+}
+
+#[test]
+fn simulating_a_kind_nothing_handles_says_so() {
+    let out = run(None, &["simulate", "no.such.kind", FIXTURE, "--dry-run"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("no workflow is triggered by"), "{text}");
+}

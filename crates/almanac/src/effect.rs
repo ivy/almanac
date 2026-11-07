@@ -32,7 +32,7 @@ pub enum Effect {
         target: Slug,
         body: Untrusted<String>,
     },
-    /// Ask a person, and block agents until they answer.
+    /// Ask a person. A workflow sees that it has asked, and does not ask again.
     Ask {
         question: Title,
         target: Slug,

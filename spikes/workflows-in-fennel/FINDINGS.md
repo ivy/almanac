@@ -206,7 +206,7 @@ All three need a mistaken or malicious workflow author, not hostile data alone: 
 
 **What still leaks, on purpose.** A narrower leaks what it is written to leak: one bit per narrower per observed value, the same bound as a Rust `fn`, and visible in review. A quarantined agent's answer can also be narrowed, so a script could ask an agent to echo a chosen byte. That is true in Rust too.
 
-**Rust has the same holes, and more.** `rust_join_and_narrow_read_the_text_too` proves the first attack against the real `Untrusted`, compiling with no `unsafe`: `join` carries a chosen index in the clean prefix, and a non-capturing `fn` parses it. `Untrusted` also derives `Serialize`, so `serde_json::to_value` is a public way out, which `update::opened` uses on purpose and which principle 3 says should not exist. In this respect a script is held more tightly than a Rust author is.
+**Rust has the same holes, and more.** `rust_join_and_narrow_read_the_text_too` proves the first attack against the real `Untrusted`, compiling with no `unsafe`: `join` carries a chosen index in the clean prefix, and a non-capturing `fn` parses it. `Untrusted` also derives `Serialize`, so `serde_json::to_value` is a public way out, which `update::opened` uses on purpose and which principle 3 says should not exist. In this respect a script is held more tightly than a Rust author is. A correction from review: `join` is one route, not the cause. A Rust `narrow` function gets the raw text, so it can choose a byte from a `static`, or write the text to a file. Rust trusts that function and its review, which `crates/fails/tests/ui/pass/hole_narrow_reads_by_index.rs` now records.
 
 ## Policy purity and replay
 
@@ -259,7 +259,7 @@ Reconsider if workflows grow past a dozen or so, or if people who will not write
 
 **Worth taking back into the Rust, whatever is decided:**
 
-1. **Close the `join` and `narrow` oracle in `crates/almanac/src/taint.rs`**, and decide what `Serialize` on `Untrusted` should mean under principle 3. This is the most important thing this spike found.
+1. **Decide what bounds a `narrow` function,** and what `Serialize` on `Untrusted` should mean under principle 3. A `fn` stops capture, not misuse: it reads the raw text and is trusted code. `main` records this as a known hole with a limit deferred to M5, because closing `join` alone would leave the `static` route open.
 2. **Stop `Cx::cooled` taking a caller's `Published`,** so a publish time cannot be supplied by a workflow.
 3. **Make `#[workflow]` follow helpers,** or at least fail when a step is out of its sight.
 4. **Enforce more of principle 7:** a read outside `cx.observe` and a clock in `policy` both compile today.

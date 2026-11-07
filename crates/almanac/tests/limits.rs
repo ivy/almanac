@@ -1,21 +1,5 @@
-use almanac::runtime::Limits;
+use almanac::testing::generators::limits;
 use hegel::TestCase;
-use hegel::generators as gs;
-use std::time::Duration;
-
-#[hegel::composite]
-fn limits(tc: &TestCase) -> Limits {
-    let cap = || gs::optional(gs::integers::<u32>().max_value(9_999));
-    Limits {
-        max_depth: tc.draw(gs::integers::<u32>().max_value(99)),
-        runs_cap: tc.draw(cap()),
-        overall_cap: tc.draw(cap()),
-        concurrency: tc.draw(gs::integers::<usize>().min_value(1).max_value(63)),
-        scan_interval: Duration::from_secs(
-            tc.draw(gs::integers::<u64>().min_value(1).max_value(99_999)),
-        ),
-    }
-}
 
 fn no_wider(after: Option<u32>, before: Option<u32>) -> bool {
     match (after, before) {

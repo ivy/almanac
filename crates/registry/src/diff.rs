@@ -135,8 +135,24 @@ fn read_archive(bytes: &[u8], limits: Limits) -> Result<Files, StepError> {
     }
 }
 
+/// A Go module zip nests everything under `module/path@version/`, which shares nothing between
+/// two versions, so this is the prefix to remove. It is `None` for any other layout.
+fn module_root(files: &Files) -> Option<String> {
+    let first = files.keys().next()?;
+    let at = first.find('@')?;
+    let root = &first[..at + first[at..].find('/')? + 1];
+    files
+        .keys()
+        .all(|name| name.starts_with(root))
+        .then(|| root.to_string())
+}
+
 /// Archives usually wrap everything in one top directory that changes per version.
 fn without_top(files: Files) -> Files {
+    if let Some(root) = module_root(&files) {
+        let inside = |(name, bytes): (String, Vec<u8>)| (name[root.len()..].to_string(), bytes);
+        return files.into_iter().map(inside).collect();
+    }
     let tops: std::collections::BTreeSet<&str> =
         files.keys().filter_map(|k| k.split('/').next()).collect();
     let wrapped = tops.len() == 1 && files.keys().all(|k| k.contains('/'));

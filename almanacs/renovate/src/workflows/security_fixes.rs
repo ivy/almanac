@@ -57,6 +57,7 @@ pub struct Facts {
     pub found: bool,
     pub names_the_fix: bool,
     pub readable: bool,
+    pub truncated: bool,
     pub install_script_added: bool,
     pub cooled: bool,
     pub tested: bool,
@@ -191,6 +192,7 @@ pub async fn security_fixes(cx: &Cx, event: &SecurityPull) -> Result<Facts, Halt
         found: pull.found,
         names_the_fix: false,
         readable: false,
+        truncated: false,
         install_script_added: false,
         cooled: false,
         tested: pull.tested,
@@ -213,8 +215,10 @@ pub async fn security_fixes(cx: &Cx, event: &SecurityPull) -> Result<Facts, Halt
         .is_some();
     let diff = cx.observe("diff", vetting.diff(&update)).await?;
     facts.readable = diff.readable;
+    facts.truncated = diff.truncated;
     facts.install_script_added = diff.install_script_added;
-    let checks_pass = facts.names_the_fix && facts.readable && !facts.install_script_added;
+    let checks_pass =
+        facts.names_the_fix && facts.readable && !facts.truncated && !facts.install_script_added;
     if checks_pass && facts.cooled {
         let prompt = ReviewerPrompt {
             repo: event.repo.clone(),
@@ -268,6 +272,15 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
         return refuse(
             facts,
             title!("This security update's package could not be read"),
+            empty(),
+        );
+    }
+    // A reviewer that saw part of an update has not reviewed it, and what is cut is predictable,
+    // because files are diffed in name order.
+    if facts.truncated {
+        return refuse(
+            facts,
+            title!("This security update is too large for its reviewer to read in full"),
             empty(),
         );
     }

@@ -179,3 +179,23 @@ fn path_traversal_in_a_zip_is_refused() {
     let error = diff_archives(&zip_of("a"), &zip_of("../../evil"), OK).unwrap_err();
     assert!(error.0.contains("unsafe path"), "{}", error.0);
 }
+
+fn module_zip(version: &str, files: &[(&str, &str)]) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(vec![]));
+    let options = zip::write::SimpleFileOptions::default();
+    for (name, text) in files {
+        let path = format!("github.com/example/module@{version}/{name}");
+        writer.start_file(path, options).unwrap();
+        writer.write_all(text.as_bytes()).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
+#[test]
+fn a_go_modules_versioned_directory_does_not_read_as_a_rewrite() {
+    let old = module_zip("v1.0.0", &[("a.go", "same"), ("b.go", "old")]);
+    let new = module_zip("v1.0.1", &[("a.go", "same"), ("b.go", "new")]);
+    let d = diff_archives(&old, &new, OK).unwrap();
+    assert_eq!(d.files_changed, 1);
+    assert!(text(&d.diff).contains("a/b.go"), "{}", text(&d.diff));
+}

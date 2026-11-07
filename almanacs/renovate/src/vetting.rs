@@ -11,6 +11,8 @@ observed! {
     pub struct UpdateDiff {
         pub readable: bool,
         pub install_script_added: bool,
+        // Part of the diff was cut to fit, so nothing has read the whole of this update.
+        pub truncated: bool,
         pub diff: Untrusted<String>,
     }
 }
@@ -107,21 +109,25 @@ impl Vetting for RealVetting {
             let unreadable = || UpdateDiff {
                 readable: false,
                 install_script_added: false,
+                truncated: false,
                 diff: Untrusted::new(String::new()),
             };
             let mut text = String::new();
             let mut install_script_added = false;
+            let mut truncated = false;
             for package in &update.packages {
                 let Some(found) = self.one_diff(package).await? else {
                     return Ok(unreadable());
                 };
                 install_script_added |= found.install_script_added;
+                truncated |= found.truncated;
                 let tagged = serde_json::to_value(&found.diff)?;
                 text.push_str(tagged["$untrusted"].as_str().unwrap_or_default());
             }
             Ok(UpdateDiff {
                 readable: !update.packages.is_empty(),
                 install_script_added,
+                truncated,
                 diff: Untrusted::new(text),
             })
         })

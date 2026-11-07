@@ -198,3 +198,17 @@ async fn work_filed_for_later_is_not_assigned_to_anyone() {
     assert_eq!(posted[0]["assignees"], json!([]));
     assert!(!posted[0]["body"].as_str().unwrap().contains("@person"));
 }
+
+#[tokio::test]
+async fn a_directory_exists_though_it_has_no_content() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/repos/owner/repo/contents/.github/workflows"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([{"name": "ci.yml"}])))
+        .mount(&server)
+        .await;
+    let client = GithubClient::new(server.uri(), Auth::Token("t".to_string()));
+    let found = client.exists("owner/repo", ".github/workflows").await;
+    assert!(found.unwrap());
+    assert!(!client.exists("owner/repo", "missing").await.unwrap());
+}

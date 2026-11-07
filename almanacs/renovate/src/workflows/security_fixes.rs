@@ -9,6 +9,8 @@ use crate::workflows::build_failures::{MIN_RELEASE_AGE, ScanTarget};
 use almanac::prelude::*;
 use github::client::GithubClient;
 use serde_json::{Value, json};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 const RENOVATE_BRANCH: &str = "renovate/";
 /// Renovate's default branch topic for vulnerability fixes.
@@ -33,13 +35,16 @@ output! {
     }
 }
 
+/// How long CI gets to report on a pull request before a person is told nothing has.
+const CI_PATIENCE: time::Duration = time::Duration::hours(1);
+
 observed! {
     pub struct SecurityView {
         pub found: bool,
         pub head: Sha,
         // Something other than Almanac or a cooldown has reported on this commit.
         pub tested: bool,
-        // The repository has no workflows, so nothing is ever going to report.
+        // Nothing is going to report: it has no workflows, or they had an hour and stayed quiet.
         pub untestable: bool,
         pub text: Untrusted<PullText>,
     }
@@ -67,6 +72,15 @@ pub fn is_security(event: &SecurityPull) -> bool {
     branch.starts_with(RENOVATE_BRANCH) && (event.labeled || branch.ends_with(VULNERABILITY_SUFFIX))
 }
 
+/// Whether CI has had long enough to report on a pull request. A workflow can exist and still
+/// never run on one, through a path filter or a push-only trigger, and a security fix should not
+/// wait for that in silence.
+pub fn gave_up_on_ci(pull: &Value) -> bool {
+    let opened = pull["created_at"].as_str().unwrap_or_default();
+    let opened = OffsetDateTime::parse(opened, &Rfc3339);
+    opened.is_ok_and(|at| OffsetDateTime::now_utc() - at >= CI_PATIENCE)
+}
+
 async fn read_pull(
     client: &GithubClient,
     target: &ScanTarget,
@@ -84,12 +98,12 @@ async fn read_pull(
     let suites = client.check_suites(&repo, &sha).await?;
     let statuses = client.combined_status(&repo, &sha).await?;
     let tested = checks_of(&suites, &statuses) != Checks::None;
-    let workflows = client.file(&repo, ".github/workflows").await?;
+    let workflows = client.exists(&repo, ".github/workflows").await?;
     Ok(SecurityView {
         found: open && by_renovate,
         head,
         tested,
-        untestable: !tested && workflows.is_none(),
+        untestable: !tested && (!workflows || gave_up_on_ci(&pull)),
         text: Untrusted::new(PullText {
             body: pull["body"].as_str().map(str::to_string),
         }),
@@ -139,8 +153,12 @@ pub async fn scan(scanner: &Scanner) -> Result<Vec<Scanned<SecurityPull>>, StepE
             let cooled = crate::fleet::cooldown_of(ages.as_ref(), &pull).await;
             let suites = client.check_suites(&name, &sha.to_string()).await?;
             let tested = checks_of(&suites, &statuses) != Checks::None;
+            let gave_up = gave_up_on_ci(&pull);
             let id = format!("scan:security:{repo}#{number}@{sha}");
-            found.push(Scanned::new(id, payload).at_state(format!("{cooled:?},tested={tested}")));
+            found.push(
+                Scanned::new(id, payload)
+                    .at_state(format!("{cooled:?},tested={tested},gave_up={gave_up}")),
+            );
         }
     }
     Ok(found)

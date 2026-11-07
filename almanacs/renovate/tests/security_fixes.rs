@@ -408,3 +408,19 @@ async fn a_repository_with_no_checks_is_never_attested_and_asks_a_person() {
     let filed = format!("{:?}", w.tracker.filed.lock().unwrap());
     assert!(filed.contains("Nothing tests this repository"), "{filed}");
 }
+
+/// Workflows can exist and never run on a pull request, which must not hold a fix in silence.
+#[test]
+fn ci_gets_an_hour_to_report() {
+    let now = time::OffsetDateTime::now_utc();
+    let opened = |ago: time::Duration| {
+        let at = (now - ago).format(&time::format_description::well_known::Rfc3339);
+        json!({"created_at": at.unwrap()})
+    };
+    assert!(!gave_up_on_ci(&opened(time::Duration::minutes(5))));
+    assert!(gave_up_on_ci(&opened(time::Duration::minutes(61))));
+    assert!(
+        !gave_up_on_ci(&json!({})),
+        "an unknown age is not a long wait"
+    );
+}

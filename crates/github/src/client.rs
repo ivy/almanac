@@ -468,6 +468,15 @@ impl GithubClient {
     }
 
     /// A file's text, or `None` if the repository does not have it.
+    /// Whether a file or directory exists.
+    pub async fn exists(&self, repo: &str, path: &str) -> Result<bool, Error> {
+        match self.get(&format!("/repos/{repo}/contents/{path}")).await {
+            Ok(_) => Ok(true),
+            Err(Error::ForgeRefused { status: 404, .. }) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
     pub async fn file(&self, repo: &str, path: &str) -> Result<Option<String>, Error> {
         let found = match self.get(&format!("/repos/{repo}/contents/{path}")).await {
             Ok(found) => found,

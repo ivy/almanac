@@ -15,10 +15,12 @@ almanac.workspace = true
 github.workspace = true
 
 [dev-dependencies]
+almanac = { workspace = true, features = ["hegel"] }
 axum.workspace = true
 broker.workspace = true
 deliveries.workspace = true
 futures.workspace = true
+hegeltest.workspace = true
 simforge.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

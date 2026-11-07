@@ -22,7 +22,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 | R-17 Prompts checked | `crates/fails/tests/ui/fail/prompt_*` |
 | R-18 Agents discovered | `crates/fails/tests/ui/pass/ok_workflow_macro.rs`, `the_manifest_shows_each_agents_capabilities` |
 | R-19 Profiles | `crates/fails/tests/ui/fail/fixer_*`, `the_manifest_shows_a_fixers_grant` |
-| R-20 Patch policy | `crates/almanac/tests/patch.rs` |
+| R-20 Patch policy | `crates/almanac/tests/patch.rs`, including `a_repair_of_text_at_accepted_paths_is_accepted` |
 | R-55 Titles | `crates/fails/tests/ui/fail/title_*`, `file_title_is_a_string`, `crates/almanac/tests/taint.rs` |
 | R-21 Push only to its own branch | `crates/github/tests/client.rs`: `pushing_to_another_branch_is_refused`, `pushing_to_a_fork_is_refused`; `effect_has_no_merge` |
 | R-22 Cooled proof | `crates/fails/tests/ui/fail/cooled_*`, `fixer_needs_cooled`, `crates/almanac/tests/cooled.rs` |
@@ -46,7 +46,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 | R-41 Tracker | `crates/github/tests/tracker.rs` |
 | R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs` |
 | R-43 Manifest | `the_manifest_names_the_prompt_file_and_its_variables`, `a_new_almanac_builds_tests_and_describes_itself` |
-| R-44 Config only tightens | `crates/almanac/tests/limits.rs`, `a_secret_in_config_points_at_its_line_and_says_where_it_belongs` |
+| R-44 Config only tightens | `crates/almanac/tests/limits.rs`: `tighten_takes_the_tighter_of_each_limit`, `a_secret_in_config_points_at_its_line_and_says_where_it_belongs` |
 | R-45 PostgreSQL state | `crates/almanac/tests/store_postgres.rs`, `workflows_on_postgres.rs` |
 | R-46 Scaffolding | `crates/cli/tests/scaffold.rs` |
 | R-47 Fleet discovery | `discovery_skips_archived_repositories_and_other_owners`, `an_app_finds_every_repository_past_the_first_page` |

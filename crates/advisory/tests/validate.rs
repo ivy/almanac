@@ -2,7 +2,7 @@ use advisory::{
     Advisories, Advisory, CveNow, FakeAdvisories, Severity, Validation, compare, validate,
 };
 use almanac::prelude::*;
-use almanac::testing::generators::versions;
+use almanac::testing::generators::{prereleases, versions};
 use hegel::TestCase;
 use std::cmp::Ordering;
 use wiremock::matchers::{path, query_param};
@@ -157,27 +157,61 @@ fn text((a, b, c): (u64, u64, u64)) -> String {
     format!("{a}.{b}.{c}")
 }
 
-#[hegel::test]
-fn semver_order_is_numeric_and_not_textual(tc: TestCase) {
-    let x = tc.draw(versions());
-    let y = tc.draw(versions());
-    assert_eq!(compare("npm", &text(x), &text(y)), Some(x.cmp(&y)));
+fn with_pre(core: (u64, u64, u64), pre: &[String]) -> String {
+    match pre {
+        [] => text(core),
+        pre => format!("{}-{}", text(core), pre.join(".")),
+    }
 }
 
+/// Precedence as semver.org's section 11 states it, written independently of the semver crate.
+fn precedence(x: ((u64, u64, u64), &[String]), y: ((u64, u64, u64), &[String])) -> Ordering {
+    let identifier = |a: &String, b: &String| match (a.parse::<u64>(), b.parse::<u64>()) {
+        (Ok(a), Ok(b)) => a.cmp(&b),
+        (Ok(_), Err(_)) => Ordering::Less,
+        (Err(_), Ok(_)) => Ordering::Greater,
+        (Err(_), Err(_)) => a.as_bytes().cmp(b.as_bytes()),
+    };
+    let pre = match (x.1, y.1) {
+        ([], []) => Ordering::Equal,
+        ([], _) => Ordering::Greater,
+        (_, []) => Ordering::Less,
+        (a, b) => a
+            .iter()
+            .zip(b)
+            .map(|(a, b)| identifier(a, b))
+            .find(|o| o.is_ne())
+            .unwrap_or_else(|| a.len().cmp(&b.len())),
+    };
+    x.0.cmp(&y.0).then(pre)
+}
+
+/// R-10: semver ecosystems order versions by number and pre-release precedence, never as text.
+#[hegel::test]
+fn semver_order_is_numeric_and_not_textual(tc: TestCase) {
+    let (x, xp) = (tc.draw(versions()), tc.draw(prereleases()));
+    let (y, yp) = (tc.draw(versions()), tc.draw(prereleases()));
+    let found = compare("npm", &with_pre(x, &xp), &with_pre(y, &yp));
+    assert_eq!(found, Some(precedence((x, &xp), (y, &yp))));
+}
+
+/// R-10: comparing is antisymmetric, so swapping two versions reverses their order.
 #[hegel::test]
 fn order_reverses_when_the_versions_swap(tc: TestCase) {
-    let x = tc.draw(versions());
-    let y = tc.draw(versions());
-    let forward = compare("crates.io", &text(x), &text(y)).unwrap();
-    let backward = compare("crates.io", &text(y), &text(x)).unwrap();
+    let x = with_pre(tc.draw(versions()), &tc.draw(prereleases()));
+    let y = with_pre(tc.draw(versions()), &tc.draw(prereleases()));
+    let forward = compare("crates.io", &x, &y).unwrap();
+    let backward = compare("crates.io", &y, &x).unwrap();
     assert_eq!(forward, backward.reverse());
 }
 
+/// R-10: Go's `v` prefix is ignored, and both spellings get the numeric order.
 #[hegel::test]
 fn a_v_prefix_never_changes_the_order(tc: TestCase) {
     let x = tc.draw(versions());
     let y = tc.draw(versions());
-    let plain = compare("go", &text(x), &text(y));
-    let prefixed = compare("go", &format!("v{}", text(x)), &format!("v{}", text(y)));
-    assert_eq!(plain, prefixed);
+    let plain = compare("Go", &text(x), &text(y));
+    let prefixed = compare("Go", &format!("v{}", text(x)), &format!("v{}", text(y)));
+    assert_eq!(plain, Some(x.cmp(&y)));
+    assert_eq!(prefixed, plain);
 }

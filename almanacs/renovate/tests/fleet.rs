@@ -1,4 +1,5 @@
 use almanac::prelude::*;
+use almanac::testing::generators::mostly;
 use almanac_renovate::fleet::*;
 use almanac_renovate::update::{Ages, Update};
 use github::client::{Auth, GithubClient};
@@ -146,34 +147,28 @@ fn a_patched_branch_renovate_will_not_merge_names_the_setting() {
     assert!(v.reason.contains("gitIgnoredAuthors"), "{}", v.reason);
 }
 
+const CONFLICTS: [Conflict; 3] = [Conflict::None, Conflict::Yes, Conflict::Unknown];
+const CHECKS: [Checks; 4] = [Checks::None, Checks::Pending, Checks::Green, Checks::Red];
+const TRUSTS: [Option<Trust>; 4] = [
+    None,
+    Some(Trust::Pending),
+    Some(Trust::Success),
+    Some(Trust::Failure),
+];
+const COOLDOWNS: [Cooldown; 3] = [Cooldown::Passed, Cooldown::Young, Cooldown::Unknown];
+const FLAGS: [Option<bool>; 3] = [None, Some(false), Some(true)];
+
+/// Any facts at all, each field drawn from its whole domain.
 #[hegel::composite]
 fn scenarios(tc: &TestCase) -> PullFacts {
-    let flag = || gs::optional(gs::booleans());
+    let flag = || gs::sampled_from(FLAGS.to_vec());
     PullFacts {
-        conflict: tc.draw(gs::sampled_from(vec![
-            Conflict::None,
-            Conflict::Yes,
-            Conflict::Unknown,
-        ])),
-        checks: tc.draw(gs::sampled_from(vec![
-            Checks::None,
-            Checks::Pending,
-            Checks::Green,
-            Checks::Red,
-        ])),
-        trust: tc.draw(gs::sampled_from(vec![
-            None,
-            Some(Trust::Pending),
-            Some(Trust::Success),
-            Some(Trust::Failure),
-        ])),
+        conflict: tc.draw(gs::sampled_from(CONFLICTS.to_vec())),
+        checks: tc.draw(gs::sampled_from(CHECKS.to_vec())),
+        trust: tc.draw(gs::sampled_from(TRUSTS.to_vec())),
         security: tc.draw(gs::booleans()),
         attempts: tc.draw(gs::integers::<u32>().max_value(5)),
-        cooldown: tc.draw(gs::sampled_from(vec![
-            Cooldown::Passed,
-            Cooldown::Young,
-            Cooldown::Unknown,
-        ])),
+        cooldown: tc.draw(gs::sampled_from(COOLDOWNS.to_vec())),
         config: RepoConfig {
             automerge: tc.draw(flag()),
             platform_automerge: tc.draw(flag()),
@@ -183,6 +178,29 @@ fn scenarios(tc: &TestCase) -> PullFacts {
     }
 }
 
+/// Facts that mostly agree with `base` field by field, so a rare state is reached often while
+/// every field can still take any value.
+#[hegel::composite]
+fn scenarios_near(tc: &TestCase, base: PullFacts) -> PullFacts {
+    let flag = |usual| mostly(usual, FLAGS.to_vec());
+    let attempts = (0..=ATTEMPT_CAP + 1).collect();
+    PullFacts {
+        conflict: tc.draw(mostly(base.conflict, CONFLICTS.to_vec())),
+        checks: tc.draw(mostly(base.checks, CHECKS.to_vec())),
+        trust: tc.draw(mostly(base.trust, TRUSTS.to_vec())),
+        security: tc.draw(mostly(base.security, vec![false, true])),
+        attempts: tc.draw(mostly(base.attempts, attempts)),
+        cooldown: tc.draw(mostly(base.cooldown, COOLDOWNS.to_vec())),
+        config: RepoConfig {
+            automerge: tc.draw(flag(base.config.automerge)),
+            platform_automerge: tc.draw(flag(base.config.platform_automerge)),
+            git_ignored_authors: tc.draw(flag(base.config.git_ignored_authors)),
+            trust_required: tc.draw(mostly(base.config.trust_required, vec![false, true])),
+        },
+    }
+}
+
+/// R-48: every pull request gets exactly one state, and says why.
 #[hegel::test]
 fn every_scenario_gets_one_state_with_a_reason(tc: TestCase) {
     let facts = tc.draw(scenarios());
@@ -190,35 +208,53 @@ fn every_scenario_gets_one_state_with_a_reason(tc: TestCase) {
     assert!(!v.reason.is_empty());
 }
 
+/// R-48, R-49: `mergeable` means no conflict, green or no checks, and trust passed or not asked.
 #[hegel::test]
 fn mergeable_holds_only_when_the_definition_does(tc: TestCase) {
-    let facts = tc.draw(scenarios());
-    if derive(&facts).state == State::Mergeable {
-        assert_eq!(facts.conflict, Conflict::None);
-        assert!(matches!(facts.checks, Checks::Green | Checks::None));
-        assert!(matches!(facts.trust, None | Some(Trust::Success)));
-    }
+    let facts = tc.draw(scenarios_near(healthy()));
+    tc.assume(derive(&facts).state == State::Mergeable);
+    assert_eq!(facts.conflict, Conflict::None);
+    assert!(matches!(facts.checks, Checks::Green | Checks::None));
+    assert!(matches!(facts.trust, None | Some(Trust::Success)));
 }
 
+/// R-48: `blocked-by-config` always names the setting to change.
 #[hegel::test]
 fn blocked_by_config_always_names_a_setting(tc: TestCase) {
-    let facts = tc.draw(scenarios());
-    let v = derive(&facts);
-    if v.state == State::BlockedByConfig {
-        let named =
-            v.reason.contains("platformAutomerge") || v.reason.contains("gitIgnoredAuthors");
-        assert!(named, "{}", v.reason);
-    }
+    let unheld_security_fix = PullFacts {
+        security: true,
+        trust: Some(Trust::Pending),
+        ..healthy()
+    };
+    let patched_and_ignored = PullFacts {
+        attempts: 1,
+        config: RepoConfig {
+            git_ignored_authors: Some(false),
+            ..RepoConfig::default()
+        },
+        ..healthy()
+    };
+    let base = tc.draw(gs::sampled_from(vec![
+        unheld_security_fix,
+        patched_and_ignored,
+    ]));
+    let v = derive(&tc.draw(scenarios_near(base)));
+    tc.assume(v.state == State::BlockedByConfig);
+    let named = v.reason.contains("platformAutomerge") || v.reason.contains("gitIgnoredAuthors");
+    assert!(named, "{}", v.reason);
 }
 
+/// R-2, R-48: red CI is never shown as due a repair before the cooldown has been shown to pass.
 #[hegel::test]
 fn a_young_or_undated_update_is_never_being_repaired(tc: TestCase) {
-    let facts = tc.draw(scenarios());
-    let unproven = !matches!(facts.cooldown, Cooldown::Passed);
-    let v = derive(&facts);
-    if unproven && v.reason == "a repair is due" {
-        panic!("a repair was due before the cooldown");
-    }
+    let red = PullFacts {
+        checks: Checks::Red,
+        cooldown: tc.draw(gs::sampled_from(vec![Cooldown::Young, Cooldown::Unknown])),
+        ..healthy()
+    };
+    let facts = tc.draw(scenarios_near(red));
+    tc.assume(facts.cooldown != Cooldown::Passed);
+    assert_ne!(derive(&facts).reason, "a repair is due");
 }
 
 const OWNER: &str = "owner";

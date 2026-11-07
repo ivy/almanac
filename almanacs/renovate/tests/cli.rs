@@ -1,4 +1,7 @@
 //! The binary as an operator or agent meets it.
+use almanac::testing::generators::{arguments, config_texts, env_settings};
+use hegel::TestCase;
+use hegel::generators::{self as gs, Generator};
 use serde_json::Value;
 use std::process::{Command, Output};
 
@@ -189,4 +192,97 @@ fn simulating_a_kind_nothing_handles_says_so() {
     let out = run(None, &["simulate", "no.such.kind", FIXTURE, "--dry-run"]);
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("no workflow is triggered by"), "{text}");
+}
+
+/// What one invocation is given: its arguments, its config file, its environment, and, for
+/// `simulate`, an input file that is never valid JSON.
+#[derive(Debug)]
+struct Invocation {
+    args: Vec<String>,
+    config: Option<String>,
+    env: Vec<(String, String)>,
+    token: bool,
+    input: Option<String>,
+}
+
+#[hegel::composite]
+fn invocations(tc: &TestCase) -> Invocation {
+    Invocation {
+        args: tc.draw(arguments()),
+        config: tc.draw(gs::optional(config_texts())),
+        env: tc.draw(env_settings()),
+        token: tc.draw(gs::weighted_booleans(0.8)),
+        input: tc.draw(gs::optional(
+            gs::text().max_size(20).map(|t| format!("{{{t}")),
+        )),
+    }
+}
+
+impl Invocation {
+    /// Runs the binary in `dir`, so both forms of one invocation name the same paths.
+    fn run(&self, dir: &std::path::Path, json: bool) -> (bool, String) {
+        let config = dir.join("almanac.toml");
+        if let Some(text) = &self.config {
+            std::fs::write(&config, text).unwrap();
+        }
+        let mut args = self.args.clone();
+        if json {
+            args.splice(0..0, ["--format".to_string(), "json".to_string()]);
+        }
+        if self.args.first().is_some_and(|a| a == "simulate") && self.args.len() == 2 {
+            let input = dir.join("event.json");
+            if let Some(text) = &self.input {
+                std::fs::write(&input, text).unwrap();
+            }
+            args.push(input.to_string_lossy().into_owned());
+        }
+        let mut command = Command::new(env!("CARGO_BIN_EXE_almanac-renovate"));
+        command
+            .args(&args)
+            .env_clear()
+            .env("ALMANAC_CONFIG", &config)
+            .envs(self.env.iter().map(|(k, v)| (k, v)));
+        if self.token {
+            command
+                .env("GITHUB_TOKEN", "t")
+                .env("ANTHROPIC_API_KEY", "k");
+        }
+        let out = command.output().unwrap();
+        (out.status.success(), stderr(&out))
+    }
+}
+
+/// Letters and digits only, so wrapping, box drawing, and indentation do not count as substance.
+fn substance(text: &str) -> String {
+    text.chars().filter(|c| c.is_alphanumeric()).collect()
+}
+
+/// Principle 9, R-42: whatever an operator passes, a failure names a code with a page, says what
+/// to do next, and says the same to an agent asking for JSON as to a person.
+#[hegel::test]
+fn principle_9_every_failure_says_the_same_to_people_and_agents(tc: TestCase) {
+    let invocation = tc.draw(invocations());
+    let dir = tempfile::tempdir().unwrap();
+    let (ok, machine) = invocation.run(dir.path(), true);
+    let (human_ok, human) = invocation.run(dir.path(), false);
+    assert_eq!(ok, human_ok, "the format changed the outcome");
+    if ok {
+        return;
+    }
+    let json: Value = serde_json::from_str(&machine).expect("an error an agent can parse");
+    let code = json["code"].as_str().expect("a code");
+    assert!(almanac::diag::explain(code).is_ok(), "{code} has no page");
+    let human = substance(&human);
+    assert!(
+        human.contains(&substance(code)),
+        "{code} is missing for people"
+    );
+    for field in ["message", "help"] {
+        let text = json[field].as_str().unwrap_or_default();
+        assert!(!text.trim().is_empty(), "{code} has no {field}");
+        assert!(
+            human.contains(&substance(text)),
+            "{code}'s {field} differs for people"
+        );
+    }
 }

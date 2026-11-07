@@ -202,3 +202,99 @@ pub fn probabilities(tc: &TestCase) -> f64 {
         gs::floats::<f64>().min_value(0.0).max_value(1.0).boxed(),
     ]))
 }
+
+/// The text of a config file as an operator might write it: known keys with good and bad
+/// values, unknown keys, keys that look like secrets, and lines that are not TOML at all.
+#[hegel::composite]
+pub fn config_texts(tc: &TestCase) -> String {
+    let keys = gs::sampled_from(vec![
+        "listen",
+        "max_chain_depth",
+        "runs_per_hour_cap",
+        "overall_runs_per_hour_cap",
+        "concurrency",
+        "scan_interval_minutes",
+        "max_runs",
+        "github_token",
+        "api_key",
+        "Database_Password",
+    ]);
+    let values = gs::sampled_from(vec![
+        "3",
+        "0",
+        "-1",
+        "99999999999999999999",
+        "\"127.0.0.1:8080\"",
+        "\"many\"",
+        "true",
+        "[1, 2]",
+        "\"hunter2\"",
+    ]);
+    let line = gs::one_of(vec![
+        gs::tuples!(keys, values)
+            .map(|(k, v)| format!("{k} = {v}"))
+            .boxed(),
+        gs::text().max_size(20).boxed(),
+    ]);
+    tc.draw(gs::vecs(line).max_size(5)).join("\n")
+}
+
+/// A code an operator might ask `explain` about: a real one, one slightly wrong, or anything.
+#[hegel::composite]
+pub fn error_codes(tc: &TestCase) -> String {
+    let real = gs::sampled_from(
+        crate::diag::PAGES
+            .iter()
+            .map(|(c, _)| c.to_string())
+            .collect::<Vec<_>>(),
+    );
+    let code = tc.draw(real);
+    match tc.draw(gs::integers::<u8>().max_value(3)) {
+        0 => code,
+        1 => code.replace("::", "."),
+        2 => code.to_uppercase(),
+        _ => tc.draw(gs::text().max_size(30)),
+    }
+}
+
+/// Settings from the environment, by the names config reads, each a whole number or not.
+#[hegel::composite]
+pub fn env_settings(tc: &TestCase) -> Vec<(String, String)> {
+    let names = gs::sampled_from(vec![
+        "ALMANAC_MAX_CHAIN_DEPTH",
+        "ALMANAC_RUNS_PER_HOUR_CAP",
+        "ALMANAC_OVERALL_RUNS_PER_HOUR_CAP",
+        "ALMANAC_CONCURRENCY",
+        "ALMANAC_SCAN_INTERVAL_MINUTES",
+    ]);
+    let values = gs::sampled_from(vec!["2", "0", "-3", "1.5", "lots", ""]);
+    let setting = gs::tuples!(names, values).map(|(n, v)| (n.to_string(), v.to_string()));
+    tc.draw(gs::vecs(setting).max_size(3))
+}
+
+/// Arguments an operator might pass to an almanac, using only verbs that finish without the
+/// outside world: `run` starts a daemon and `backfill` reads the forge, so neither is drawn.
+#[hegel::composite]
+pub fn arguments(tc: &TestCase) -> Vec<String> {
+    let word = gs::sampled_from(vec![
+        "synth",
+        "check",
+        "explain",
+        "simulate",
+        "frobnicate",
+        "--dry-run",
+        "--repo",
+        "owner/repo",
+        "github.pull_request.opened",
+        "sentry.issue",
+    ]);
+    let mut args: Vec<String> = tc
+        .draw(gs::vecs(word).max_size(4))
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    if args.first().is_some_and(|a| a == "explain") {
+        args.push(tc.draw(error_codes()));
+    }
+    args
+}

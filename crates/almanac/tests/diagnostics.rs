@@ -1,7 +1,10 @@
 use almanac::config::Config;
-use almanac::diag::{Error, Format, render};
+use almanac::diag::{Error, Format, PAGES, explain, render};
 use almanac::prelude::*;
 use almanac::runtime::Runtime;
+use almanac::testing::generators::{config_texts, error_codes};
+use hegel::TestCase;
+use hegel::generators as gs;
 use serde_json::Value;
 
 fn parse(text: &str) -> Error {
@@ -82,4 +85,82 @@ fn an_agent_can_read_which_provider_is_missing() {
     let message = json["message"].as_str().unwrap();
     assert!(message.contains("needs a provider for"), "{message}");
     assert!(message.contains("String"), "{message}");
+}
+
+/// Letters and digits only, so wrapping, box drawing, and indentation do not count as substance.
+fn substance(text: &str) -> String {
+    text.chars().filter(|c| c.is_alphanumeric()).collect()
+}
+
+/// Principle 9: an error renders a known code, a message, and help, and its human and JSON
+/// forms say the same things.
+fn assert_renders_alike(error: &Error) {
+    let json: Value = serde_json::from_str(&render(error, Format::Json)).unwrap();
+    let human = substance(&render(error, Format::Human));
+    let code = json["code"].as_str().expect("a code");
+    assert!(explain(code).is_ok(), "{code} has no page");
+    for field in ["message", "help"] {
+        let text = json[field].as_str().unwrap_or_default();
+        assert!(!text.trim().is_empty(), "{code} has no {field}");
+        assert!(
+            human.contains(&substance(text)),
+            "{code}'s human form lacks its {field}"
+        );
+    }
+    assert!(
+        human.contains(&substance(code)),
+        "{code} is missing from the human form"
+    );
+}
+
+/// Principle 9, R-42: whatever a config file says, an error about it has a code, a page, and
+/// help, in the same substance for people and for agents.
+#[hegel::test]
+fn principle_9_every_config_error_says_what_to_do_in_both_forms(tc: TestCase) {
+    let text = tc.draw(config_texts());
+    if let Err(error) = Config::parse("almanac.toml", text) {
+        assert_renders_alike(&error);
+    }
+}
+
+/// Principle 9, R-42: `explain` answers any code with its page, or with an error that is
+/// itself explained.
+#[hegel::test]
+fn principle_9_explain_answers_any_code(tc: TestCase) {
+    let code = tc.draw(error_codes());
+    match explain(&code) {
+        Ok(page) => assert!(page.contains("## What to do next"), "{code}"),
+        Err(error) => assert_renders_alike(&error),
+    }
+}
+
+/// R-44: a secret written into config is never printed by the error about it.
+#[hegel::test]
+fn a_secret_in_config_is_never_printed(tc: TestCase) {
+    let text = tc.draw(config_texts());
+    let secret = tc.draw(gs::from_regex("[A-Za-z0-9]{8,16}"));
+    let text = format!("{text}\ngithub_token = \"{secret}\"\n");
+    let error = Config::parse("almanac.toml", text).unwrap_err();
+    for format in [Format::Human, Format::Json] {
+        assert!(!render(&error, format).contains(&secret), "{format:?}");
+    }
+}
+
+/// Principle 9: every listed code has a page in `docs/errors` named for it, and every page
+/// there is listed.
+#[test]
+fn every_code_has_a_page_and_every_page_a_code() {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/errors");
+    let on_disk: std::collections::BTreeSet<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    let listed = PAGES
+        .iter()
+        .map(|(code, _)| format!("{}.md", code.replace("::", ".")))
+        .collect();
+    assert_eq!(on_disk, listed);
+    for (code, page) in PAGES {
+        assert!(page.contains("## What to do next"), "{code}");
+    }
 }

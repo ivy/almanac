@@ -71,7 +71,7 @@ Add to your Renovate configuration:
 }
 ```
 
-- `gitIgnoredAuthors` matches a commit's author email. Without it, Renovate treats a patched branch as edited and will not automerge it. Change the value if you set a different commit author.
+- `gitIgnoredAuthors` matches a commit's author and committer emails, and Almanac sets both to the same address. Without it, Renovate treats a patched branch as edited and will not automerge it. Change the value if you set a different commit author.
 - A patch survives until a conflict. With `rebaseWhen: "conflicted"`, Renovate rewrites a conflicted branch from the base branch and drops the patch. Almanac sees the new commit and tries again, up to its attempt cap.
 - For `almanac/trust` to hold a merge, set `platformAutomerge: false`, or make it a required check. A platform automerge ignores any status that is not required, and `report` shows those repositories as `blocked-by-config`.
 

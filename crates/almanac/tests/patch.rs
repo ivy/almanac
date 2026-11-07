@@ -11,6 +11,7 @@ fn patch(changes: Vec<Change>) -> Untrusted<Patch> {
         changes,
         diff: String::new(),
         answer: Default::default(),
+        usage: Default::default(),
     })
 }
 
@@ -218,6 +219,7 @@ fn a_patch_keeps_a_line_it_leaves_alone_or_only_moves() {
         changes,
         diff: String::new(),
         answer: Default::default(),
+        usage: Default::default(),
     };
     assert!(patch.keeps("package.json", "    \"tar\": \"7.0.0\","));
     assert!(patch.keeps("other.json", "anything"));
@@ -233,6 +235,7 @@ fn a_patch_deleting_a_file_keeps_none_of_it() {
         changes,
         diff: String::new(),
         answer: Default::default(),
+        usage: Default::default(),
     };
     assert!(!patch.keeps("package.json", "\"tar\": \"7.0.0\""));
 }

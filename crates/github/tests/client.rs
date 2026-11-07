@@ -306,6 +306,7 @@ fn push_of(sim: &SimForge, number: u64, branch: &str) -> Push {
             ],
             diff: String::new(),
             answer: Default::default(),
+            usage: Default::default(),
         }),
     }
 }

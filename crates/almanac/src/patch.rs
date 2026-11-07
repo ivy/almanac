@@ -40,6 +40,9 @@ pub struct Patch {
     /// here.
     #[serde(default)]
     pub answer: serde_json::Value,
+    /// What the session used, kept in the run log so its cost can be read later.
+    #[serde(default)]
+    pub usage: serde_json::Value,
 }
 
 crate::clean! {

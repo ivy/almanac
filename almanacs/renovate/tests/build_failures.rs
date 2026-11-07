@@ -444,6 +444,7 @@ fn repaired(path: &str) -> Facts {
             changes,
             diff: String::new(),
             answer: Default::default(),
+            usage: Default::default(),
         }),
         updated: Untrusted::new(vec![]),
     }
@@ -460,6 +461,7 @@ fn a_person_asked_about_an_empty_repair_reads_what_the_agent_found() {
             changes: vec![],
             diff: String::new(),
             answer: json!({"summary": "This needs a CI change."}),
+            usage: Default::default(),
         }),
         updated: Untrusted::new(vec![]),
     };
@@ -699,4 +701,11 @@ async fn a_persons_branch_named_like_renovates_is_never_repaired() {
     .unwrap();
     rt.drain().await.unwrap();
     assert_eq!(harness.calls(), 0);
+}
+
+#[test]
+fn a_patch_keeps_what_its_session_used() {
+    let session = json!({"changes": [], "diff": "", "usage": {"cost_usd": 0.25}});
+    let patch: Patch = serde_json::from_value(session).unwrap();
+    assert_eq!(patch.usage["cost_usd"], 0.25);
 }

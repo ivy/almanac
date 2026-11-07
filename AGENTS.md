@@ -31,7 +31,7 @@ specs/                pinned API specs for sources
 spikes/               throwaway proofs behind decisions in docs/adrs
 tools/                the publication check
 xtask/                code generation: projections checked against pinned specs
-docs/                 vision, principles, requirements, roadmap
+docs/                 user docs, plus vision, principles, requirements, roadmap
 ```
 
 ## How to work here

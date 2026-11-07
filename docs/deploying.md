@@ -1,4 +1,6 @@
-# Deploying Almanac
+# Run Almanac on your repositories
+
+To see what it would do first, with only a token, follow [See what Almanac would do](try-it-read-only.md).
 
 This runs the broker and `almanac-renovate` as systemd user services on one host, with PostgreSQL and rootless Podman. Each stage has a step to verify it and a way to stop.
 

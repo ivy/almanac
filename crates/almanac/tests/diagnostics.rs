@@ -164,3 +164,17 @@ fn every_code_has_a_page_and_every_page_a_code() {
         assert!(page.contains("## What to do next"), "{code}");
     }
 }
+
+/// Principle 9: human output is safe to log, as `render` promises, so no control character
+/// from input reaches a terminal, whatever a config file or a code says.
+#[hegel::test]
+fn principle_9_a_human_error_carries_no_control_characters(tc: TestCase) {
+    let error = match tc.draw(gs::booleans()) {
+        true => explain(&tc.draw(error_codes())).err(),
+        false => Config::parse("almanac.toml", tc.draw(config_texts())).err(),
+    };
+    tc.assume(error.is_some());
+    let human = render(&error.unwrap(), Format::Human);
+    let control = human.chars().find(|c| c.is_control() && *c != '\n');
+    assert_eq!(control, None, "{human:?}");
+}

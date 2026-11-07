@@ -55,6 +55,7 @@ Almanac feeds the rest of the stack.
 - A Daytona sandbox provider, generated from `specs/daytona/`. Per-sandbox network rules need Daytona Tier 3 or above, because lower tiers cannot override organization restrictions, and sandboxes depend on them
 - Stronger isolation for agents, such as a microVM tier
 - A seal on `Untrusted` serialization, on `clean!`'s hidden traits, and on `title!`'s hidden constructor
+- A limit on what a `narrow` function can do. It reads the raw text, and a `static` or `join` lets it choose which part
 - Prompt output sections generated from agent output types
 
 **Done when** a seeded malicious dependency is detected in the sandbox and raises an alert.

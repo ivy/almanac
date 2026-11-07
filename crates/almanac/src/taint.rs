@@ -16,7 +16,8 @@ impl<T> Untrusted<T> {
     }
 
     /// Escape taint by narrowing to a closed set of values. Takes a `fn`, not a closure,
-    /// so it cannot capture a local and smuggle the content out.
+    /// so it cannot capture a local and smuggle the content out. `f` still reads the raw text,
+    /// so it is trusted code, and review is what stands behind it.
     pub fn narrow<N: Finite>(&self, f: fn(&T) -> N) -> N {
         f(&self.inner)
     }

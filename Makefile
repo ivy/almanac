@@ -13,7 +13,7 @@ DB_TESTS := binary(store_postgres) or binary(workflows_on_postgres) or binary(br
 SANDBOX_TESTS := binary(podman) or binary(real_cli)
 SLOW_TESTS := $(DB_TESTS) or $(SANDBOX_TESTS) or binary(scaffold)
 
-.PHONY: all build package test test-db test-sandbox test-e2e test-scaffold test-fast lint fmt generate generated sqlx-prepare check-public verify-units check clean
+.PHONY: all build package test test-db test-sandbox test-e2e test-scaffold test-fast lint fmt generate generated sqlx-prepare check-public verify-units check-isolated-demo check clean
 
 all: build
 
@@ -84,8 +84,16 @@ verify-units:
 generated:
 	cargo xtask generate --check
 
+# The optional synthetic demo is a standalone workspace, like the Renovate almanac.
+check-isolated-demo:
+	python -m unittest discover -s contrib/isolated-demo -p 'test_*.py'
+	for script in contrib/isolated-demo/*.sh contrib/isolated-demo/runtime/*.sh contrib/isolated-demo/runtime/almanac-bootstrap contrib/isolated-demo/runtime/nested-runtime-setup contrib/isolated-demo/runtime/start-private-runtime; do bash -n "$$script" || exit; done
+	cargo fmt --manifest-path contrib/isolated-demo/Cargo.toml --check
+	cargo clippy --manifest-path contrib/isolated-demo/Cargo.toml --all-targets --locked -- -D warnings
+	cargo test --manifest-path contrib/isolated-demo/Cargo.toml --locked
+
 # The gate. A change is not done until this passes.
-check: lint generated test test-db test-sandbox test-e2e test-scaffold check-public verify-units
+check: lint generated test test-db test-sandbox test-e2e test-scaffold check-public verify-units check-isolated-demo
 	cargo deny --locked check
 
 clean:

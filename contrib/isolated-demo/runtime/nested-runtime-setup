@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Operator startup only: expose network sysctls inside this workspace namespace.
+set -euo pipefail
+
+mkdir -p /work/tmp /work/.local/share/containers /run/containers /run/user/0 /run/podman
+chmod 0700 /run/user/0
+findmnt --mountpoint /proc/sys --noheadings --output VFS-OPTIONS | grep -Eq '(^|,)ro(,|$)'
+mount --bind /proc/sys/net /proc/sys/net
+mount -o remount,bind,rw /proc/sys/net
+findmnt --mountpoint /proc/sys --noheadings --output VFS-OPTIONS | grep -Eq '(^|,)ro(,|$)'
+findmnt --mountpoint /proc/sys/net --noheadings --output VFS-OPTIONS | grep -Eq '(^|,)rw(,|$)'

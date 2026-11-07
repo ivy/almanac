@@ -1,0 +1,46 @@
+FROM quay.io/fedora/fedora@sha256:b22ccd18a49a976e65b1e8fb0aceb25eb83df8b018ab31a068e90b43b7fc7638
+
+# The optional launcher configures the outer rootless development sandbox.
+RUN dnf -y --exclude=container-selinux --setopt=install_weak_deps=False install \
+    git-core jq python3 findutils tar gzip xz unzip procps-ng hostname \
+    openssh-clients which curl ca-certificates \
+    gcc gcc-c++ clang lld make pkgconf-pkg-config openssl openssl-devel \
+    systemd dbus-daemon podman crun shadow-utils util-linux \
+    && dnf clean all
+
+RUN curl --fail --show-error --location \
+      https://github.com/jdx/mise/releases/download/v2026.11.3/mise-v2026.11.3-linux-x64 \
+      --output /usr/local/bin/mise \
+    && printf '%s  %s\n' c2f7e814cb39f60b7f67a0ff36cb805e94128bf2dff09d175309d0f095b8cc3b /usr/local/bin/mise | sha256sum --check - \
+    && chmod 0755 /usr/local/bin/mise \
+    && mise --version
+
+RUN export MISE_DATA_DIR=/opt/workspace-tools/data; \
+    mkdir -p /opt/workspace-tools && cd /opt/workspace-tools \
+    && mise use jj@0.45.1 bun@1.4.2 \
+    && mise exec -- jj --version && mise exec -- bun --version \
+    && ln -s "$(mise which jj)" /usr/local/bin/jj \
+    && ln -s "$(mise which bun)" /usr/local/bin/bun
+
+# Native binary, pinned independently of Anthropic's moving installer/latest alias.
+RUN curl --fail --show-error --location \
+      https://downloads.claude.ai/claude-code-releases/2.1.319/linux-x64/claude \
+      --output /usr/local/bin/claude \
+    && printf '%s  %s\n' dabafec82ca1319fa43d8be36a10fc61b1d11821cb98ad5df04ad95e199b8eed /usr/local/bin/claude | sha256sum --check - \
+    && chmod 0755 /usr/local/bin/claude \
+    && claude --version
+
+COPY storage.development.conf /etc/containers/storage.conf
+COPY containers.development.conf /etc/containers/containers.conf
+COPY nested-runtime-setup /usr/local/bin/nested-runtime-setup
+COPY almanac-bootstrap /usr/local/bin/almanac-bootstrap
+COPY start-private-runtime /usr/local/bin/start-private-runtime
+RUN chmod 0755 /usr/local/bin/almanac-bootstrap /usr/local/bin/nested-runtime-setup /usr/local/bin/start-private-runtime \
+    && mkdir -p /work
+ENV HOME=/work
+ENV DISABLE_AUTOUPDATER=1
+ENV BUILDAH_ISOLATION=chroot
+ENV TMPDIR=/work/tmp
+ENV XDG_RUNTIME_DIR=/run/user/0
+ENV DOCKER_HOST=unix:///run/podman/podman.sock
+WORKDIR /work

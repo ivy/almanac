@@ -175,6 +175,9 @@ pub fn all(_config: &Config) -> Providers {
     let owner = env::var("ALMANAC_OWNER").unwrap_or_default();
     let author = env::var("ALMANAC_RENOVATE_AUTHOR").unwrap_or_else(|_| DEFAULT_AUTHOR.to_string());
     providers = providers.provide(Arc::new(ScanTarget { owner, author }));
+    if read_only() {
+        providers = providers.harness(NoAgent);
+    }
     let (Some(reader), Some(writer), Some(tracker)) = (client(), client(), client()) else {
         return providers;
     };
@@ -188,7 +191,7 @@ pub fn all(_config: &Config) -> Providers {
         .provide::<dyn Tracker>(tracker)
         .provide::<dyn Sweep>(sweep);
     if read_only() {
-        return providers.harness(NoAgent);
+        return providers;
     }
     match harness(reader) {
         Some(harness) => providers.harness(harness),

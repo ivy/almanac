@@ -263,6 +263,23 @@ async fn an_app_authenticates_with_a_signed_token_then_an_installation_token() {
     assert_eq!(minted.len(), 1, "the token is cached");
 }
 
+#[tokio::test]
+async fn a_private_key_may_arrive_on_one_line() {
+    let key = std::process::Command::new("openssl")
+        .args(["genrsa", "2048"])
+        .output()
+        .unwrap()
+        .stdout;
+    let (sim, _) = scripted().await;
+    let auth = Auth::App {
+        app_id: "1".to_string(),
+        private_key: String::from_utf8(key).unwrap().replace('\n', "\\n"),
+        installation_id: 7,
+    };
+    let c = GithubClient::new(sim.base_url(), auth).retrying(quick());
+    assert_eq!(c.repositories("owner").await.unwrap().len(), 1);
+}
+
 fn forge(sim: &SimForge) -> GithubForge {
     GithubForge::new(client(sim), CommitAuthor::default())
 }

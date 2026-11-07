@@ -136,7 +136,9 @@ impl GithubClient {
             action: "signing an App token".to_string(),
             reason: e.to_string(),
         };
-        let key = EncodingKey::from_rsa_pem(private_key.as_bytes()).map_err(failed)?;
+        // An environment file holds one line, so newlines arrive escaped. A PEM has no backslashes.
+        let pem = private_key.replace("\\n", "\n");
+        let key = EncodingKey::from_rsa_pem(pem.as_bytes()).map_err(failed)?;
         jsonwebtoken::encode(&Header::new(Algorithm::RS256), &claims, &key).map_err(failed)
     }
 

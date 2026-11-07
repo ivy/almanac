@@ -61,4 +61,5 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 - **R-41** files issues through GitHub. A real delivery of one has not been exercised, because no App exists yet.
 - **Real webhook shapes** are spec-checked, not captured, for the same reason.
 - **Repair quality** is barely measured. One real session's output was kept, and its repair was correct. Five others were lost to a harness fault, since fixed, and were not rerun, so the rate on type and lint failures is unknown.
+- **pnpm in a sandbox** arrives through the fetch step, which downloads the latest version each time, about 64 MB. A repository with no root `pnpm-lock.yaml` gets none.
 - **The token budget** counts cached tokens, and its default has not been tried against a long real session. `almanacs/renovate` also stops a session at $6.

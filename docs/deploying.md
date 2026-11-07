@@ -17,7 +17,7 @@ podman build -t localhost/almanac-fixer:latest images/polyglot
 
 `make package` puts `almanac-broker` and `almanac-renovate` in `dist/`. Copy both to `~/.local/bin/`.
 
-The image holds Node, pnpm, Go, and bun, because a sandbox has no network. Add a repository's other toolchains to it.
+The image holds Node, npm, Go, and bun, because a sandbox has no network. Add a repository's other toolchains to it. pnpm comes through corepack, and a repository with a root `pnpm-lock.yaml` gets it from the fetch step.
 
 ## 2. Create the GitHub App
 
@@ -47,11 +47,18 @@ Create a database, then two environment files readable only by you:
 
 ```bash
 createdb almanac
+install -d -m 700 ~/.config/almanac
 install -m 600 contrib/broker.env.example ~/.config/almanac/broker.env
 install -m 600 contrib/almanac-renovate.env.example ~/.config/almanac/almanac-renovate.env
 ```
 
-Fill them in. Secrets belong there and never in `almanac.toml`. Set `ALMANAC_BOT_LOGIN` to your App's bot login, which is its slug followed by `[bot]`, so Almanac recognises its own echoes.
+Fill them in. Secrets belong there and never in `almanac.toml`. `GITHUB_APP_PRIVATE_KEY` goes on one line in double quotes, with `\n` for each newline, which both systemd and a shell keep as written. This prints that form:
+
+```bash
+awk 'NF { printf "%s\\n", $0 }' your-app.private-key.pem
+```
+
+ Set `ALMANAC_BOT_LOGIN` to your App's bot login, which is its slug followed by `[bot]`, so Almanac recognises its own echoes.
 
 ## 4. Configure Renovate
 
@@ -91,6 +98,10 @@ set -a; . ~/.config/almanac/almanac-renovate.env; set +a
 ALMANAC_READ_ONLY=1 almanac-renovate report
 ALMANAC_READ_ONLY=1 almanac-renovate backfill --repo owner/repo --dry-run
 ```
+
+A read-only pass needs `ALMANAC_OWNER` and GitHub credentials: the App's, or `GITHUB_TOKEN`. It needs no `ANTHROPIC_API_KEY`, and with no `DATABASE_URL` it keeps its state in memory.
+
+`report` has no `--repo`. It covers what its credentials can see, so an App installed on one repository reports on that repository, and a token reports on all of yours.
 
 **Verify:** every open Renovate pull request has a state. A run that stops with `an agent would run here` is what a repair looks like at this stage.
 

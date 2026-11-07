@@ -58,6 +58,7 @@ pub struct Facts {
     pub names_the_fix: bool,
     pub readable: bool,
     pub truncated: bool,
+    pub unshown: Untrusted<String>,
     pub install_script_added: bool,
     pub cooled: bool,
     pub tested: bool,
@@ -193,6 +194,7 @@ pub async fn security_fixes(cx: &Cx, event: &SecurityPull) -> Result<Facts, Halt
         names_the_fix: false,
         readable: false,
         truncated: false,
+        unshown: Untrusted::new(String::new()),
         install_script_added: false,
         cooled: false,
         tested: pull.tested,
@@ -216,9 +218,13 @@ pub async fn security_fixes(cx: &Cx, event: &SecurityPull) -> Result<Facts, Halt
     let diff = cx.observe("diff", vetting.diff(&update)).await?;
     facts.readable = diff.readable;
     facts.truncated = diff.truncated;
+    facts.unshown = diff.unshown.clone();
     facts.install_script_added = diff.install_script_added;
-    let checks_pass =
-        facts.names_the_fix && facts.readable && !facts.truncated && !facts.install_script_added;
+    let checks_pass = facts.names_the_fix
+        && facts.readable
+        && !facts.truncated
+        && !has_unshown(&facts)
+        && !facts.install_script_added;
     if checks_pass && facts.cooled {
         let prompt = ReviewerPrompt {
             repo: event.repo.clone(),
@@ -255,6 +261,10 @@ fn refuse(facts: &Facts, question: Title, body: Untrusted<String>) -> Vec<Effect
     effects
 }
 
+fn has_unshown(facts: &Facts) -> bool {
+    facts.unshown.narrow(|names| !names.is_empty())
+}
+
 /// Deterministic checks first. The model comes last and can only say no.
 pub fn policy(facts: &Facts) -> Vec<Effect> {
     let empty = || Untrusted::new(String::new());
@@ -277,6 +287,13 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
     }
     // A reviewer that saw part of an update has not reviewed it, and what is cut is predictable,
     // because files are diffed in name order.
+    if has_unshown(facts) {
+        return refuse(
+            facts,
+            title!("This security update changes files no reviewer can read"),
+            facts.unshown.clone(),
+        );
+    }
     if facts.truncated {
         return refuse(
             facts,

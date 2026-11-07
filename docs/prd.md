@@ -40,7 +40,7 @@ Validates a Renovate security pull request and gets its build passing.
 - **R-9** On trigger it posts `almanac/trust` as `pending` before any other work, because a security pull request skips the cooldown and an absent status holds nothing.
 - **R-10** It checks deterministically that an advisory exists for the package, that the current version is affected, and that the pull request's target is the advisory's patched version.
 - **R-11** It checks that the target release is older than the declared cooldown. A younger release asks a person.
-- **R-12** A quarantined reviewer inspects the package diff from the registry. It can veto and never approve (principle 4). A diff too large to show in full reaches no reviewer and asks a person.
+- **R-12** A quarantined reviewer inspects the package diff from the registry. It can veto and never approve (principle 4). A diff too large to show in full, or one holding a file that cannot be shown, reaches no reviewer and asks a person.
 - **R-13** All checks passing posts `almanac/trust` as `success`, and a failing check posts `failure` and asks a person. Renovate counts that status as a passing check, so it is never posted on a commit nothing else has tested. A repository with no workflows asks a person, as does a pull request whose CI has said nothing for an hour.
 - **R-14** If CI is red, repair follows the same route as R-4 to R-6.
 

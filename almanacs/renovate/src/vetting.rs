@@ -13,6 +13,8 @@ observed! {
         pub install_script_added: bool,
         // Part of the diff was cut to fit, so nothing has read the whole of this update.
         pub truncated: bool,
+        // Files that changed and that nothing can read, by name.
+        pub unshown: Untrusted<String>,
         pub diff: Untrusted<String>,
     }
 }
@@ -110,17 +112,22 @@ impl Vetting for RealVetting {
                 readable: false,
                 install_script_added: false,
                 truncated: false,
+                unshown: Untrusted::new(String::new()),
                 diff: Untrusted::new(String::new()),
             };
             let mut text = String::new();
             let mut install_script_added = false;
             let mut truncated = false;
+            let mut unshown = vec![];
             for package in &update.packages {
                 let Some(found) = self.one_diff(package).await? else {
                     return Ok(unreadable());
                 };
                 install_script_added |= found.install_script_added;
                 truncated |= found.truncated;
+                let names = serde_json::to_value(&found.unshown)?;
+                let names = names["$untrusted"].as_array().cloned().unwrap_or_default();
+                unshown.extend(names.iter().filter_map(|n| n.as_str().map(str::to_string)));
                 let tagged = serde_json::to_value(&found.diff)?;
                 text.push_str(tagged["$untrusted"].as_str().unwrap_or_default());
             }
@@ -128,6 +135,7 @@ impl Vetting for RealVetting {
                 readable: !update.packages.is_empty(),
                 install_script_added,
                 truncated,
+                unshown: Untrusted::new(unshown.join("\n")),
                 diff: Untrusted::new(text),
             })
         })

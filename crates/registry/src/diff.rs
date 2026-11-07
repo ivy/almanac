@@ -33,6 +33,9 @@ observed! {
         pub install_script_added: bool,
         pub files_changed: u64,
         pub truncated: bool,
+        // Files that changed and could not be shown, by name. A NUL makes a file binary here, and
+        // one byte does that to a source file too, so these are unreviewed and not merely dull.
+        pub unshown: Untrusted<Vec<String>>,
         pub diff: Untrusted<String>,
     }
 }
@@ -198,12 +201,12 @@ fn install_script_added(old: &Files, new: &Files) -> bool {
     hook_added || appeared
 }
 
-/// A change as a reviewer reads it. Binary content cannot be read as text, so it is named rather
-/// than shown, and a reviewer still sees that it changed.
+fn is_binary(before: &[u8], after: &[u8]) -> bool {
+    before.contains(&0) || after.contains(&0)
+}
+
+/// A text change as a reviewer reads it.
 fn shown_change(name: &str, before: &[u8], after: &[u8]) -> String {
-    if before.contains(&0) || after.contains(&0) {
-        return format!("Binary file changed, and not shown: {name}\n");
-    }
     let (a, b) = (
         String::from_utf8_lossy(before),
         String::from_utf8_lossy(after),
@@ -223,6 +226,7 @@ pub fn diff_archives(old: &[u8], new: &[u8], limits: Limits) -> Result<PackageDi
     let mut text = String::new();
     let mut changed = 0;
     let mut truncated = false;
+    let mut unshown = vec![];
     for name in names {
         let before = old.get(name).unwrap_or(&empty);
         let after = new.get(name).unwrap_or(&empty);
@@ -230,6 +234,10 @@ pub fn diff_archives(old: &[u8], new: &[u8], limits: Limits) -> Result<PackageDi
             continue;
         }
         changed += 1;
+        if is_binary(before, after) {
+            unshown.push(name.clone());
+            continue;
+        }
         if truncated {
             continue;
         }
@@ -244,6 +252,7 @@ pub fn diff_archives(old: &[u8], new: &[u8], limits: Limits) -> Result<PackageDi
         install_script_added: install_script_added(&old, &new),
         files_changed: changed,
         truncated,
+        unshown: Untrusted::new(unshown),
         diff: Untrusted::new(text),
     })
 }

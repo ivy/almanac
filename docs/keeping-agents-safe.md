@@ -28,6 +28,10 @@ An agent never pushes. It returns a patch, and plain code decides. A patch canno
 
 Most malicious releases are found within days. So no agent reads an update until it has cooled, and code that skips the check does not compile, because the agent call requires a proof only the check can produce.
 
+## A reviewer must see all of it
+
+A veto only means something if the reviewer read everything. So a diff too large to show in full never reaches a reviewer, and neither does one with a changed file that cannot be shown, such as a binary. Both ask a person, because a reviewer that read part of an update has not reviewed it. One stray byte can make a source file look binary, and binary test fixtures are where the xz backdoor hid.
+
 ## What this does not cover
 
 - A patch can still change a test, or a package script CI runs. Limit what branch-triggered workflows can reach.

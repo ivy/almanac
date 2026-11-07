@@ -122,7 +122,7 @@ impl Vetting for RealVetting {
                 unshown: Untrusted::new(String::new()),
                 diff: Untrusted::new(String::new()),
             };
-            let mut text = String::new();
+            let mut text = Untrusted::new(String::new());
             let mut install_script_added = false;
             let mut truncated = false;
             let mut unshown = Untrusted::new(String::new());
@@ -133,15 +133,16 @@ impl Vetting for RealVetting {
                 install_script_added |= found.install_script_added;
                 truncated |= found.truncated;
                 unshown = unshown.zip(&found.unshown).map(with_unshown);
-                let tagged = serde_json::to_value(&found.diff)?;
-                text.push_str(tagged["$untrusted"].as_str().unwrap_or_default());
+                text = text
+                    .zip(&found.diff)
+                    .map(|(all, diff)| format!("{all}{diff}"));
             }
             Ok(UpdateDiff {
                 readable: !update.packages.is_empty(),
                 install_script_added,
                 truncated,
                 unshown,
-                diff: Untrusted::new(text),
+                diff: text,
             })
         })
     }

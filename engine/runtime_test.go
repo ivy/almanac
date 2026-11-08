@@ -175,6 +175,11 @@ func throughTheRuntime(fresh storetest.Fresh) {
 		Expect(w.fixer.Grants()[0].Write).To(BeTrue())
 		Expect(w.fixer.Inputs()[0]).To(MatchJSON(`{"logs": {"$untrusted": "npm ERR! ` + injection + `"}, "$checkout": {"repo": "` + repo + `", "sha": "` + sha + `"}}`))
 		Expect(w.github.Calls()).To(Equal(4), "the pull request, the publish time, the logs and the updated lines")
+
+		digest, ok, err := w.open(almanac).Recorded(w.ctx, outcome.RunID, "model", 1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeTrue())
+		Expect(digest).To(MatchJSON(`"` + w.workflows()[0].Manifest().Digest + `"`))
 	})
 
 	It("replays a repair with providers that fail every call, and reaches the same push", func() {

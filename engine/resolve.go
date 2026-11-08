@@ -59,9 +59,10 @@ type template struct {
 	show *vocab.Entry
 }
 
-// recordedByCx are the names Cx records under itself, besides each agent's name. An observed
-// fact under one of these would share its recordings.
-var recordedByCx = []string{"cooldown", model.AttemptsFact, "hold", "screen", "guard"}
+// recordedByCx are the names a run records under besides its observations: Cx's own, the
+// runtime's guard, and the model's digest, besides each agent's name. An observed fact under
+// one of these would share its recordings.
+var recordedByCx = []string{"cooldown", model.AttemptsFact, "hold", "screen", "guard", modelRecord}
 
 // resolve looks up every part w names in v, once. Check has accepted w, so a part it cannot
 // find is a mistake in the caller, such as a different vocabulary passed to each.

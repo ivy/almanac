@@ -8,8 +8,8 @@
 // publish-time source reaches only the providers its registration says it needs.
 //
 // Every read a walk makes goes through the run's workflow.Cx, which records it by name and
-// occurrence: an observation under its fact's name, and an age, attempts count, hold, screen
-// and agent answer under the names Cx gives them. Checking a patch is deterministic and is not
+// occurrence: the model's digest under "model", an observation under its fact's name, and an
+// age, attempts count, hold, screen and agent answer under the names Cx gives them. Checking a patch is deterministic and is not
 // recorded. A replay therefore walks the same steps to the same ending, with the same effects,
 // without calling a provider.
 package engine

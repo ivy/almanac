@@ -16,7 +16,8 @@ import (
 
 // recorded is a workflow.Cx over a run that was already recorded, as a replay sees it. Every
 // read must have been recorded: one that was not fails, and no provider is reachable, so a walk
-// over it shows a model reaching its ending from recorded facts alone.
+// over it shows a model reaching its ending from recorded facts alone. The model's digest is
+// recorded as the walk makes it, as a run made before the digest was recorded would.
 type recorded struct {
 	records   map[string][]json.RawMessage
 	counts    map[string]int
@@ -60,6 +61,11 @@ func (r *recorded) Record(ctx context.Context, name string, read func(context.Co
 	r.counts[name]++
 	if occurrence < len(r.records[name]) {
 		return r.records[name][occurrence], nil
+	}
+	if name == "model" {
+		value, err := read(ctx)
+		r.records[name] = append(r.records[name], value)
+		return value, err
 	}
 	r.reads = append(r.reads, name)
 	if !r.live {

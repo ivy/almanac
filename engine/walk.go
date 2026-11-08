@@ -46,6 +46,9 @@ func (e *Workflow) Walk(ctx context.Context, cx workflow.Cx, payload json.RawMes
 	if err != nil {
 		return Ended{}, err
 	}
+	if _, err := cx.Record(ctx, modelRecord, e.digest); err != nil {
+		return Ended{}, e.at("model", err)
+	}
 	w := &walk{e: e, cx: cx, facts: facts{model.EventFact: event}}
 	for _, s := range e.plan.steps {
 		ended, done, err := w.step(ctx, s)
@@ -64,6 +67,16 @@ func (e *Workflow) Walk(ctx context.Context, cx workflow.Cx, payload json.RawMes
 		return ended, nil
 	}
 	return Ended{}, e.at("flow", errors.New("the run passed its last step having decided nothing, which a checked model cannot do: run the model through check.Check"))
+}
+
+// modelRecord is where a run records the digest of the model it walked first, so its log names
+// the version that decided. A replay walks the model the binary holds now, whatever the
+// recording says.
+const modelRecord = "model"
+
+// digest is the model's digest, as a run records it.
+func (e *Workflow) digest(context.Context) (json.RawMessage, error) {
+	return json.Marshal(e.manifest.Digest)
 }
 
 // facts are what a run knows, by fact name.

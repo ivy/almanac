@@ -65,6 +65,14 @@ var _ = Describe("A model run as a workflow", func() {
 		Expect(bf.Manifest().Digest).To(HavePrefix("sha256:"))
 	})
 
+	It("records the digest of the model a run walked, before anything else", func() {
+		r := failedBuild(fixed)
+		_, err := buildFailures().Walk(context.Background(), r, buildFailed)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(r.records["model"]).To(HaveLen(1))
+		Expect(r.records["model"][0]).To(MatchJSON(`"` + buildFailures().Manifest().Digest + `"`))
+	})
+
 	It("identifies a payload by key and subjects, from the event alone", func() {
 		identity, err := buildFailures().Identify(buildFailed)
 		Expect(err).NotTo(HaveOccurred())
@@ -221,6 +229,7 @@ var _ = Describe("What a model does not declare", func() {
 		Entry("a screen", sneaky("screen")),
 		Entry("a cooldown", sneaky("cooldown")),
 		Entry("the guard's verdict", sneaky("guard")),
+		Entry("the model's digest", sneaky("model")),
 		Entry("an agent's answer", sharesAnAgentsName),
 	)
 })

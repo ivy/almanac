@@ -70,12 +70,12 @@ linters:
       - path: (sandbox/podman|harness/claude)/
         linters:
           - forbidigo
-        text: os/exec
+        text: may spawn processes
       # Specs drive binaries, podman and the claude CLI as subprocesses.
       - path: _test\.go$
         linters:
           - forbidigo
-        text: os/exec
+        text: may spawn processes
       # Analyzer test data is code the analyzer must refuse.
       - path: testdata/
         linters:

@@ -7,7 +7,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/ivy/almanac/almanacs/renovate"
+	"github.com/ivy/almanac/almanacs/renovate/buildfailures"
 	"github.com/ivy/almanac/check"
+	"github.com/ivy/almanac/internal/fixture/workflows"
 	"github.com/ivy/almanac/vocab"
 )
 
@@ -48,13 +50,15 @@ var _ = Describe("The Renovate vocabulary", func() {
 		Expect(needs("renovate.failing_pulls")).To(ConsistOf("*github.Client", "renovate.Target", "registry.Registry", "clock.Clock"))
 	})
 
+	// security_fixes is checked as the fixture writes it, which names the same parts, until it
+	// is written against this vocabulary.
 	It("holds the parts the Renovate workflows are written with, as they are written", func() {
-		Expect(check.Check(renovate.Vocabulary, buildFailures)).To(Succeed())
-		Expect(check.Check(renovate.Vocabulary, securityFixes)).To(Succeed())
+		Expect(check.Check(renovate.Vocabulary, buildfailures.Model)).To(Succeed())
+		Expect(check.Check(renovate.Vocabulary, workflows.SecurityFixes)).To(Succeed())
 	})
 
 	It("declares its agents with the prompts the Rust almanac uses", func() {
-		manifest, err := check.Manifest(renovate.Vocabulary, buildFailures)
+		manifest, err := check.Manifest(renovate.Vocabulary, buildfailures.Model)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(manifest.Agents).To(HaveLen(1))
 		Expect(manifest.Agents[0].Name).To(Equal("fixer"))
@@ -62,7 +66,7 @@ var _ = Describe("The Renovate vocabulary", func() {
 		Expect(manifest.Agents[0].PromptVars).To(Equal([]string{"repo"}))
 		Expect(manifest.Agents[0].Grant.Write).To(BeTrue())
 
-		manifest, err = check.Manifest(renovate.Vocabulary, securityFixes)
+		manifest, err = check.Manifest(renovate.Vocabulary, workflows.SecurityFixes)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(manifest.Agents[0].Name).To(Equal("reviewer"))
 		Expect(manifest.Agents[0].Prompt).To(Equal("reviewer.md"))

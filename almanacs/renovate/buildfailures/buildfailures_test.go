@@ -8,6 +8,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/ivy/almanac/almanacs/renovate"
+	"github.com/ivy/almanac/almanacs/renovate/report"
+	"github.com/ivy/almanac/cooled"
 	"github.com/ivy/almanac/effect"
 	"github.com/ivy/almanac/hostile"
 	"github.com/ivy/almanac/patch"
@@ -202,6 +204,24 @@ var _ = Describe("build_failures, on a simulated forge", func() {
 		Expect(outcomes[0].Effects).To(BeEmpty())
 		Expect(w.fixer.Calls()).To(BeZero())
 		Expect(w.statuses()).To(BeEmpty())
+	})
+
+	// almanacs/renovate/tests/build_failures.rs: a_conflict_on_a_patched_branch_waits_for_renovate.
+	// Renovate's rebase drops the patch, and a build that fails again is repaired again, so no
+	// person is needed.
+	It("a conflict on a patched branch waits for Renovate", func() {
+		w := newWorld(fixedMain).released(cooledAge)
+		w.suiteFinishes("failure")
+		w.settle()
+		Expect(w.pushes()).To(Equal(1), "the branch carries a patch")
+		facts := report.Facts{
+			Conflict: report.Conflicted,
+			Checks:   renovate.ChecksRed,
+			Trust:    renovate.TrustAbsent,
+			Attempts: w.pushes(),
+			Cooldown: cooled.Passed,
+		}
+		Expect(report.Derive(facts).State).To(Equal(report.Waiting))
 	})
 
 	It("parses a status and a check suite to the same event", func() {

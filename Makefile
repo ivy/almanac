@@ -120,6 +120,7 @@ go-test-db:
 	$(GINKGO) --label-filter='db'
 
 go-test-sandbox:
+	podman build -q -t localhost/almanac-fixer:test images/fixer
 	$(GINKGO) --label-filter='sandbox'
 
 go-test-e2e:

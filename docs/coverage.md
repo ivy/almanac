@@ -26,8 +26,8 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-55 Titles | `crates/fails/tests/ui/fail/title_*`, `file_title_is_a_string`, `crates/almanac/tests/taint.rs` |
 | R-21 Push only to its own branch | `crates/github/tests/client.rs`: `pushing_to_another_branch_is_refused`, `pushing_to_a_fork_is_refused`; `effect_has_no_merge` |
 | R-22 Cooled proof | `crates/fails/tests/ui/fail/cooled_*`, `fixer_needs_cooled`, `crates/almanac/tests/cooled.rs` |
-| R-23 Sandbox enforces capability | `crates/sandbox/tests/podman.rs`, `crates/claude/tests/real_cli.rs` |
-| R-52 Remote-shaped `Sandbox` | `FakeSandbox` holds nothing on the host; [ADR 1](adrs/0001-agent-sandbox.md) maps every operation |
+| R-23 Sandbox enforces capability | `crates/sandbox/tests/podman.rs`, `crates/claude/tests/real_cli.rs`; Go: `sandbox/podman/podman_test.go` "A Podman sandbox" (label `sandbox`), `sandbox/fetch_test.go` "The dependency fetch step" |
+| R-52 Remote-shaped `Sandbox` | `FakeSandbox` holds nothing on the host; [ADR 1](adrs/0001-agent-sandbox.md) maps every operation; Go: `sandbox/fake` holds nothing on the host, `sandbox/fake/fake_test.go`, `sandbox/sandbox_test.go` |
 | R-24 Dedupe, seen only once persisted | `crates/almanac/tests/store_postgres.rs`: `a_delivery_that_failed_to_persist_is_accepted_when_redelivered` |
 | R-25 One run per key | `testing::conformance`, `the_database_itself_refuses_a_second_active_run_for_a_key` |
 | R-26 Chains contained | `crates/definitions/tests/chains.rs` |

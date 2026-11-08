@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Workflow}} · Almanac workflow</title>
+<style>
+:root {
+  --bg: #f4f5f2; --panel: #ffffff; --ink: #1b2228; --muted: #5d6870; --line: #c3cbc6;
+  --accent: #14705e; --accent-soft: #d6ece5;
+  --hostile: #a3500a; --hostile-soft: #f6e6d3;
+  --change: #3756a4; --change-soft: #dfe6f6;
+  --agent: #7a4597; --agent-soft: #efe3f5;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11161b; --panel: #182027; --ink: #e2e7ea; --muted: #94a1aa; --line: #34404a;
+    --accent: #4cbb9e; --accent-soft: #1b3a32;
+    --hostile: #eea24a; --hostile-soft: #3b2b17;
+    --change: #92aaee; --change-soft: #222d47;
+    --agent: #cfa3ea; --agent-soft: #33243d;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); }
+main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 26px; margin: 0 0 4px; font-family: var(--mono); font-weight: 600; }
+h2 { font-size: 19px; margin: 40px 0 6px; }
+h3 { font-size: 15px; margin: 20px 0 6px; }
+p { margin: 6px 0; }
+code, .mono { font-family: var(--mono); font-size: 13px; }
+.muted { color: var(--muted); }
+.intent { font-size: 17px; margin: 0 0 12px; }
+nav { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 12px 0 0; }
+nav a { color: var(--accent); }
+dl.meta { display: grid; grid-template-columns: max-content 1fr; gap: 2px 16px; margin: 12px 0; }
+dl.meta dt { color: var(--muted); }
+dl.meta dd { margin: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+svg { display: block; width: 100%; height: auto; min-width: 640px; font-family: var(--sans); }
+svg rect { fill: var(--panel); stroke: var(--box, var(--line)); stroke-width: 1.5; }
+svg .head { font: 11px var(--mono); fill: var(--muted); }
+svg .label { font-size: 14px; fill: var(--ink); }
+svg .sub { font-size: 13px; fill: var(--muted); }
+svg .effects { font-size: 12px; fill: var(--muted); }
+svg .end .label { font-weight: 600; }
+svg .trigger rect { fill: var(--accent-soft); stroke: var(--accent); }
+svg path, svg line { fill: none; stroke: var(--edge, var(--line)); stroke-width: 1.5; }
+svg .end:hover { --edge: var(--accent); --box: var(--accent); }
+svg .flag { font: 600 11px var(--mono); }
+svg .flag.hostile { fill: var(--hostile); }
+svg .flag.added, svg .flag.changed { fill: var(--change); }
+svg .added rect, svg .changed rect { fill: var(--change-soft); stroke: var(--change); stroke-width: 2; }
+svg .changed rect { stroke-dasharray: 5 3; }
+svg .shows rect { stroke: var(--hostile); }
+svg .fact rect { fill: var(--hostile-soft); stroke: var(--hostile); }
+svg .as-narrowing { --edge: var(--accent); --box: var(--accent); }
+svg .as-map, svg .as-text { --edge: var(--hostile); --box: var(--hostile); }
+svg .as-agent { --edge: var(--agent); --box: var(--agent); }
+svg .use rect { fill: var(--panel); }
+{{.Flow.Hover}}
+.legend { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 2px solid; vertical-align: -1px; margin-right: 5px; }
+.sw-accent { border-color: var(--accent); background: var(--accent-soft); }
+.sw-hostile { border-color: var(--hostile); background: var(--hostile-soft); }
+.sw-change { border-color: var(--change); background: var(--change-soft); }
+.sw-agent { border-color: var(--agent); background: var(--agent-soft); }
+.stats { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; list-style: none; margin: 10px 0; }
+.stats li { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 2px 12px; font-size: 13px; }
+table { border-collapse: collapse; width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { font-size: 13px; color: var(--muted); font-weight: 600; }
+td ul { margin: 0; padding-left: 18px; }
+tr.added td:first-child, tr.changed td:first-child { box-shadow: inset 4px 0 var(--change); }
+.tag { display: inline-block; font: 600 11px var(--mono); border-radius: 4px; padding: 0 5px; margin-left: 4px; }
+.tag.added, .tag.changed, .tag.path { color: var(--change); background: var(--change-soft); }
+.tag.hostile { color: var(--hostile); background: var(--hostile-soft); }
+.yes { color: var(--accent); font-weight: 600; }
+.no { color: var(--muted); }
+.warn { color: var(--hostile); font-weight: 600; }
+details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.rules { padding-left: 18px; }
+.table-wrap { overflow-x: auto; }
+@media (max-width: 640px) { dl.meta { grid-template-columns: 1fr; } dl.meta dd { margin-bottom: 6px; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>{{.Workflow}}</h1>
+<p class="intent">{{.Intent}}</p>
+<dl class="meta">
+  <dt>Triggered by</dt><dd>{{.On.Label}} <code>{{.On.Name}}</code></dd>
+  {{with .When}}<dt>Only when</dt><dd>{{.Text}}</dd>{{end}}
+  <dt>One run at a time per</dt><dd>{{range $i, $k := .Key}}{{if $i}}, {{end}}<code>{{$k}}</code>{{end}}</dd>
+  <dt>May</dt><dd>{{range $i, $k := .May}}{{if $i}}, {{end}}{{$k}}{{end}}</dd>
+  <dt>Limits</dt><dd>{{.Limits.RunsPerHour}} runs an hour{{if .Limits.Attempts}}; {{.Limits.Attempts}} attempts per key{{end}}</dd>
+  {{with .Scan}}<dt>Scan</dt><dd>{{.Label}} <code>{{.Name}}</code></dd>{{end}}
+  <dt>Version</dt><dd><code>{{$.ShortDigest .Digest}}</code>{{with .Changes}}, compared with <code>{{$.ShortDigest .Old}}</code>{{end}}</dd>
+</dl>
+<nav aria-label="Views">
+  <a href="#flow">Flow</a><a href="#outcomes">Outcomes</a><a href="#hostile">Hostile facts</a>{{if .Changes}}<a href="#changes">Changes</a>{{end}}
+</nav>
+</header>
+
+<section id="flow">
+<h2>Flow</h2>
+<p class="muted">Steps run from the top. A decide step tries its rules in order, and the first that matches ends the run at the ending beside it; if none matches, the run goes on. Point at an ending to see the path to it.</p>
+<div class="panel">
+<svg class="flow" viewBox="0 0 {{.Flow.Width}} {{.Flow.Height}}" role="img" aria-label="The steps of {{.Workflow}} and the endings beside each">
+  <g class="trigger">{{template "box" .Flow.Trigger}}</g>
+  {{range .Flow.Spine}}<line x1="{{.X1}}" y1="{{.Y1}}" x2="{{.X2}}" y2="{{.Y2}}" class="{{.Class}}"/>{{end}}
+  {{range .Flow.Steps}}
+  <g class="{{.Class}}">
+    {{template "box" .Box}}
+    {{if .State}}<text x="{{.Box.FlagX}}" y="{{.Box.HeadY}}" text-anchor="end" class="flag {{.State}}">{{.State}}</text>{{else if .Hostile}}<text x="{{.Box.FlagX}}" y="{{.Box.HeadY}}" text-anchor="end" class="flag hostile">reads hostile</text>{{end}}
+  </g>
+  {{end}}
+  {{range .Flow.Endings}}
+  <g class="{{.Class}}{{if .Shows}} shows{{end}}">
+    <path d="{{.Edge}}"/>
+    {{template "box" .Box}}
+    {{if .State}}<text x="{{.Box.FlagX}}" y="{{.Box.HeadY}}" text-anchor="end" class="flag {{.State}}">{{.State}}</text>{{else if .Shows}}<text x="{{.Box.FlagX}}" y="{{.Box.HeadY}}" text-anchor="end" class="flag hostile">shows hostile text</text>{{end}}
+  </g>
+  {{end}}
+</svg>
+</div>
+<p class="legend">
+  <span><span class="swatch sw-accent"></span>trigger, and the path to the ending you point at</span>
+  <span><span class="swatch sw-hostile"></span>reads a hostile fact, or shows one to a person</span>
+  {{if .Changes}}<span><span class="swatch sw-change"></span>added or changed since <code>{{$.ShortDigest .Changes.Old}}</code></span>{{end}}
+</p>
+</section>
+
+<section id="outcomes">
+<h2>Outcomes</h2>
+<p class="muted">Every way a run can end, and what it does to the repository when it ends there.</p>
+<ul class="stats">{{range .Stats}}<li>{{.}}</li>{{end}}</ul>
+<p>{{range .Declared}}<span class="mono">{{.Kind}}</span> {{if and .May .Used}}<span class="yes">declared, used</span>{{else if .May}}<span class="warn">declared, never used</span>{{else}}<span class="no">not declared</span>{{end}}&emsp;{{end}}</p>
+<div class="table-wrap">
+<table>
+<colgroup><col style="width:22%"><col style="width:36%"><col style="width:42%"></colgroup>
+<thead><tr><th>Outcome</th><th>Ends when</th><th>Effects</th></tr></thead>
+<tbody>
+{{range .Endings}}{{$state := $.EndingState .}}
+<tr class="{{$state}}">
+  <td><strong>{{.Label}}</strong>{{if $state}}<span class="tag {{$state}}">{{$state}}</span>{{end}}<br><code class="muted">{{.ID}}</code></td>
+  <td>{{with .When}}{{.String}}{{else}}no earlier rule matched{{end}}
+    {{if .Path}}<details><summary>after {{len .Path}} {{if eq (len .Path) 1}}condition{{else}}conditions{{end}}{{if .Agents}}, and calling {{range $i, $a := .Agents}}{{if $i}}, {{end}}{{$a}}{{end}}{{end}}</summary><ul>{{range .Path}}<li>{{.String}} <code class="muted">{{.At}}</code></li>{{end}}</ul></details>{{end}}</td>
+  <td>{{if or .Effects .Along}}<ul>{{range .Along}}<li class="muted">earlier: {{.Text}}</li>{{end}}{{range .Effects}}<li><span class="mono">{{.Kind}}</span> {{.Text}}</li>{{end}}</ul>{{else}}<span class="muted">none</span>{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+</section>
+
+<section id="hostile">
+<h2>Hostile facts</h2>
+<p class="muted">Text from outside, such as a pull request's body, a build's logs or an agent's answer, is hostile. A run can read it in only these places, and the checker refuses a model that puts it anywhere else.</p>
+<ul class="rules">
+  <li>A decision reads it only through a narrowing predicate or a classifier, which answers yes, no, or one of a closed set.</li>
+  <li>A person sees it only in the body of a question or an issue, shown through a map that keeps it hostile.</li>
+  <li>An agent reads it as input, and an observer or a publish-time source reads with it, each through the parts the vocabulary registers.</li>
+  <li>Titles, keys, prompt variables and statuses take clean facts only, and a push takes only a patch the patch policy accepted.</li>
+</ul>
+{{if .Taint.Facts}}
+<div class="panel">
+<svg class="taint" viewBox="0 0 {{.Taint.Width}} {{.Taint.Height}}" role="img" aria-label="Each hostile fact of {{.Workflow}} and every place it is read">
+  {{range .Taint.Uses}}
+  <g class="{{.Class}}">
+    <path d="{{.Edge}}"/>
+    {{template "box" .Box}}
+  </g>
+  {{end}}
+  {{range .Taint.Facts}}
+  <g class="fact">{{template "box" .}}</g>
+  {{end}}
+</svg>
+</div>
+<p class="legend">
+  <span><span class="swatch sw-accent"></span>narrowing: a decision on it</span>
+  <span><span class="swatch sw-hostile"></span>shown to a person</span>
+  <span><span class="swatch sw-agent"></span>an agent's input</span>
+</p>
+{{else}}
+<p>This workflow reads no hostile fact.</p>
+{{end}}
+</section>
+
+{{with .Changes}}
+<section id="changes">
+<h2>Changes</h2>
+<p class="muted">Compared by outcome with version <code>{{$.ShortDigest .Old}}</code>: which endings a run can reach that it could not before, which it can no longer reach, and which do something else or are reached another way.</p>
+{{if .Empty}}<p>The outcomes, steps and settings are the same in both versions.</p>{{end}}
+{{if .Settings}}<h3>Settings</h3>
+<ul>{{range .Settings}}<li><strong>{{.Name}}</strong>: {{.Old}} → {{.New}}</li>{{end}}</ul>{{end}}
+{{if .Added}}<h3>Endings added</h3>
+<ul>{{range .Added}}<li><strong>{{.Label}}</strong> <code class="muted">{{.ID}}</code>: {{with .When}}{{.String}}{{else}}otherwise{{end}}{{range .Effects}}; <span class="mono">{{.Kind}}</span> {{.Text}}{{end}}</li>{{end}}</ul>{{end}}
+{{if .Removed}}<h3>Endings removed</h3>
+<ul>{{range .Removed}}<li><strong>{{.Label}}</strong> <code class="muted">{{.ID}}</code>: {{with .When}}{{.String}}{{else}}otherwise{{end}}</li>{{end}}</ul>{{end}}
+{{if .Changed}}<h3>Endings changed</h3>
+<ul>{{range .Changed}}<li><strong>{{.Label}}</strong> <code class="muted">{{.Ending}}</code><ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul></li>{{end}}</ul>{{end}}
+{{if .PathOnly}}<h3>Reached another way</h3>
+<p class="muted">These endings do the same thing, and a run meets different conditions or steps on the way to them.</p>
+<ul>{{range .PathOnly}}<li><strong>{{.Label}}</strong> <code class="muted">{{.Ending}}</code><ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul></li>{{end}}</ul>{{end}}
+{{if .Steps}}<h3>Steps</h3>
+<ul>{{range .Steps}}<li><span class="tag {{.Change}}">{{.Change}}</span> <strong>{{.Label}}</strong> <code class="muted">{{.ID}}</code>{{if .Notes}}<ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}</li>{{end}}</ul>{{end}}
+</section>
+{{end}}
+</main>
+</body>
+</html>
+{{define "box"}}{{$b := .}}{{with .Title}}<title>{{.}}</title>{{end}}
+    <rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" rx="6"/>
+    <text x="{{.TextX}}" y="{{.HeadY}}" class="head">{{.Head}}</text>
+    {{range .Lines}}<text x="{{$b.TextX}}" y="{{.Y}}" class="{{.Class}}">{{.Text}}</text>{{end}}{{end}}

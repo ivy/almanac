@@ -77,6 +77,7 @@ The `go-rewrite` branch rewrites Almanac in Go, with workflows written in a Go D
 - **Specs** are Ginkgo and Gomega. `testing` appears only in `*_suite_test.go`. A spec needing PostgreSQL carries the `db` label, one needing Podman or the `claude` CLI the `sandbox` label, the end-to-end suite `e2e`.
 - **Processes:** only `sandbox/podman` and `harness/claude` may import `os/exec`.
 - **Taint:** `tools/hostilevet` runs in `make go-lint`. Only the packages its `boundaries` list names may import `hostile/reveal`; adding one is a reviewed change.
+- **GitHub's events** are generated from `github/events/projection.toml` by `tools/eventgen`. Run `make go-generate` after changing the projection, and commit `github/events/events.go`: `make go-lint` fails while it is stale.
 - **A worktree** needs `private/denylist.txt` copied from the main checkout, or `check-public` checks machine details only.
 
 ## Where to look first

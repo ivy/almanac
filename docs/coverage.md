@@ -24,7 +24,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-19 Profiles | `crates/fails/tests/ui/fail/fixer_*`, `the_manifest_shows_a_fixers_grant`; Go: `agent/agent_test.go`, `workflow/cx_test.go` "Agent calls through Cx" |
 | R-20 Patch policy | `crates/almanac/tests/patch.rs`; Go: `patch/patch_test.go` |
 | R-55 Titles | `crates/fails/tests/ui/fail/title_*`, `file_title_is_a_string`, `crates/almanac/tests/taint.rs`; Go: `hostile/title_test.go`, `hostile/format_test.go`, `tools/hostilevet/taint/testdata/title` |
-| R-21 Push only to its own branch | `crates/github/tests/client.rs`: `pushing_to_another_branch_is_refused`, `pushing_to_a_fork_is_refused`; `effect_has_no_merge`; Go: `effect/effect_test.go` "the closed set", "refuses a push whose patch no policy checked" |
+| R-21 Push only to its own branch | `crates/github/tests/client.rs`: `pushing_to_another_branch_is_refused`, `pushing_to_a_fork_is_refused`; `effect_has_no_merge`; Go: `effect/effect_test.go` "the closed set", "refuses a push whose patch no policy checked", `github/forge_test.go` "refuses to push to another branch, and writes nothing", "refuses to push to a fork, and writes nothing" |
 | R-22 Cooled proof | `crates/fails/tests/ui/fail/cooled_*`, `fixer_needs_cooled`, `crates/almanac/tests/cooled.rs`; Go: `cooled/cooled_test.go`, `agent/agent_test.go` "needs a Cooled proof" |
 | R-23 Sandbox enforces capability | `crates/sandbox/tests/podman.rs`, `crates/claude/tests/real_cli.rs`; Go: `sandbox/podman/podman_test.go` "A Podman sandbox" (label `sandbox`), `sandbox/fetch_test.go` "The dependency fetch step", `harness/claude/real_cli_test.go` "The Claude harness, with the real CLI" (label `sandbox`), `harness/claude/harness_test.go`, `harness/claude/mcp_test.go` |
 | R-52 Remote-shaped `Sandbox` | `FakeSandbox` holds nothing on the host; [ADR 1](adrs/0001-agent-sandbox.md) maps every operation; Go: `sandbox/fake` holds nothing on the host, `sandbox/fake/fake_test.go`, `sandbox/sandbox_test.go` |
@@ -38,18 +38,18 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-54 Daemon | `crates/definitions/tests/daemon.rs`, `almanacs/renovate/tests/daemon.rs`, `tools/verify-units.sh` |
 | R-30 to R-33 Scan, backfill, simulate, origin | `crates/definitions/tests/origins.rs` |
 | R-34 Live and dry-run | `a_dry_run_records_what_would_apply_and_calls_no_provider`, `a_dry_run_leaves_a_live_run_everything_still_to_do`, `a_read_only_pass_writes_nothing_and_calls_no_model` |
-| R-35 Catch-up | `a_lost_webhook_is_found_by_the_next_scheduled_scan`, `a_sweep_redelivers_what_failed_and_only_once` |
+| R-35 Catch-up | `a_lost_webhook_is_found_by_the_next_scheduled_scan`, `a_sweep_redelivers_what_failed_and_only_once`; Go: `github/client_test.go` "sweeps up what failed, and asks for it only once" |
 | R-36 `gather` reads current state | `all_three_origins_produce_identical_decisions_for_the_same_state` |
-| R-37, R-38 Projections | `xtask/tests/generate.rs`, `a_new_enum_value_from_github_does_not_break_ingest` |
+| R-37, R-38 Projections | `xtask/tests/generate.rs`, `a_new_enum_value_from_github_does_not_break_ingest`; Go: `tools/eventgen/generate_test.go`, `github/events/events_test.go` "read a value GitHub adds later as Unknown, without failing" |
 | R-39 Hand-written sources | `crates/fails/tests/ui/fail/payload_field_rejects_string.rs`, `crates/advisory/src/cve_now.rs`; Go: `advisory/cvenow_test.go` |
 | R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing`; Go: `workflow/code_test.go` "Validate" |
-| R-41 Tracker | `crates/github/tests/tracker.rs` |
+| R-41 Tracker | `crates/github/tests/tracker.rs`; Go: `github/tracker_test.go` |
 | R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs`; Go: `diag/diag_test.go`, `config/config_test.go` "Config diagnostics" |
 | R-43 Manifest | `the_manifest_names_the_prompt_file_and_its_variables`, `a_new_almanac_builds_tests_and_describes_itself` |
 | R-44 Config only tightens | `crates/almanac/tests/limits.rs`, `a_secret_in_config_points_at_its_line_and_says_where_it_belongs`; Go: `config/limits_test.go`, `config/config_test.go` "a secret in config points at its line and says where it belongs", "can never widen what the binary declares" |
 | R-45 PostgreSQL state | `crates/almanac/tests/store_postgres.rs`, `workflows_on_postgres.rs`; Go: `store/postgres/postgres_test.go` "The PostgreSQL store" (label `db`) runs `store/storetest` |
 | R-46 Scaffolding | `crates/cli/tests/scaffold.rs` |
-| R-47 Fleet discovery | `discovery_skips_archived_repositories_and_other_owners`, `an_app_finds_every_repository_past_the_first_page` |
+| R-47 Fleet discovery | `discovery_skips_archived_repositories_and_other_owners`, `an_app_finds_every_repository_past_the_first_page`; Go: `github/client_test.go` "discovery" |
 | R-48, R-49 One state per pull request | `almanacs/renovate/tests/fleet.rs` |
 | R-50 Conflicts | `a_conflict_waits_for_renovate_unless_the_branch_carries_a_patch` |
 | R-51 No CI | `a_repository_with_no_ci_is_reported_as_having_no_checks` |

@@ -18,15 +18,21 @@ func Verb(env wiring.Env) app.Verb {
 		Name:  "report",
 		Short: "Print where every open Renovate pull request stands, and why.",
 		Run: func(ctx context.Context, _ app.Setting, _ []string) (app.Said, error) {
-			return run(ctx, env)
+			found, err := FromEnv(ctx, env)
+			if err != nil {
+				return app.Said{}, err
+			}
+			return app.Said{Human: Render(found), JSON: found}, nil
 		},
 	}
 }
 
-func run(ctx context.Context, env wiring.Env) (app.Said, error) {
+// FromEnv reads the report the report verb prints, with its settings from env, through a
+// client that refuses every write.
+func FromEnv(ctx context.Context, env wiring.Env) (Fleet, error) {
 	owner, ok := env("ALMANAC_OWNER")
 	if !ok || owner == "" {
-		return app.Said{}, diag.MissingEnv("ALMANAC_OWNER", "the account whose repositories to report on")
+		return Fleet{}, diag.MissingEnv("ALMANAC_OWNER", "the account whose repositories to report on")
 	}
 	author, ok := env("ALMANAC_RENOVATE_AUTHOR")
 	if !ok || author == "" {
@@ -34,14 +40,10 @@ func run(ctx context.Context, env wiring.Env) (app.Said, error) {
 	}
 	client, err := wiring.ReadOnlyClient(env)
 	if err != nil {
-		return app.Said{}, err
+		return Fleet{}, err
 	}
 	if client == nil {
-		return app.Said{}, diag.MissingEnv("GITHUB_TOKEN", "a token that can read the repositories, or the GITHUB_APP_ settings")
+		return Fleet{}, diag.MissingEnv("GITHUB_TOKEN", "a token that can read the repositories, or the GITHUB_APP_ settings")
 	}
-	found, err := Read(ctx, Sources{GitHub: client, Registry: wiring.Registry(env), Now: time.Now()}, owner, author)
-	if err != nil {
-		return app.Said{}, err
-	}
-	return app.Said{Human: Render(found), JSON: found}, nil
+	return Read(ctx, Sources{GitHub: client, Registry: wiring.Registry(env), Now: time.Now()}, owner, author)
 }

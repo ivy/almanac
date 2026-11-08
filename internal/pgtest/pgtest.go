@@ -19,7 +19,7 @@ import (
 const Image = "docker.io/library/postgres:17-alpine"
 
 // A suite shares one PostgreSQL between its parallel processes, started only
-// if a spec labelled db will run:
+// if a spec labelled db or e2e will run:
 //
 //	var _ = SynchronizedBeforeSuite(pgtest.Start, pgtest.Use)
 //	var _ = SynchronizedAfterSuite(func() {}, pgtest.Stop)
@@ -31,9 +31,11 @@ var (
 )
 
 // Start runs on the suite's first process. It starts PostgreSQL and returns
-// its URL for [Use].
+// its URL for [Use]. Specs labelled db or e2e need it, so it starts only when
+// the label filter lets one of them run.
 func Start(ctx ginkgo.SpecContext) []byte {
-	if !ginkgo.Label("db").MatchesLabelFilter(ginkgo.GinkgoLabelFilter()) {
+	filter := ginkgo.GinkgoLabelFilter()
+	if !ginkgo.Label("db").MatchesLabelFilter(filter) && !ginkgo.Label("e2e").MatchesLabelFilter(filter) {
 		return nil
 	}
 	var err error
@@ -58,7 +60,7 @@ func Stop(ctx ginkgo.SpecContext) {
 // each other's rows.
 func Database() string {
 	ginkgo.GinkgoHelper()
-	gomega.Expect(server).NotTo(gomega.BeEmpty(), "a spec that needs PostgreSQL must carry Label(\"db\")")
+	gomega.Expect(server).NotTo(gomega.BeEmpty(), "a spec that needs PostgreSQL must carry Label(\"db\") or Label(\"e2e\")")
 	return database(server)
 }
 

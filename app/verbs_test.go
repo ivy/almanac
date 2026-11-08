@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/spf13/pflag"
 
 	"github.com/ivy/almanac/almanactest"
 	"github.com/ivy/almanac/app"
@@ -276,6 +277,53 @@ var _ = Describe("An almanac binary's verbs", func() {
 			out := execute(a, "--format", "json", "report", "nobody")
 			Expect(out.code).To(Equal(1))
 			Expect(decoded(out.stderr)).To(HaveKeyWithValue("code", "almanac::config::env_missing"))
+		})
+
+		It("refuses a flag it does not declare", func() {
+			out := execute(a, "report", "--since", "1h")
+			Expect(out.code).To(Equal(1))
+			Expect(out.stderr).To(ContainSubstring("--since"))
+		})
+	})
+
+	Describe("an almanac's own verb with flags", func() {
+		var a app.Almanac
+		BeforeEach(func() {
+			a = w.almanac(holding)
+			a.Verbs = []app.Verb{{
+				Name: "compare", Args: "--rust FILE [--since DURATION]", Short: "Compare two reports.",
+				Flags: func(flags *pflag.FlagSet) {
+					flags.String("rust", "", "the Rust report")
+					flags.Duration("since", 0, "how far back to look")
+				},
+				Run: func(_ context.Context, s app.Setting, args []string) (app.Said, error) {
+					rust, err := s.Flags.GetString("rust")
+					if err != nil {
+						return app.Said{}, err
+					}
+					since, err := s.Flags.GetDuration("since")
+					if err != nil {
+						return app.Said{}, err
+					}
+					return app.Said{Human: rust + " " + since.String(), JSON: map[string]any{"rust": rust, "since": since.String(), "args": args}}, nil
+				},
+			}}
+		})
+
+		It("reads them from the command line, wherever --format goes", func() {
+			Expect(execute(a, "compare", "--rust", "r.json").stdout).To(Equal("r.json 0s\n"))
+			Expect(execute(a, "compare", "--since", "2h", "--format", "json", "--rust=r.json", "extra").stdout).
+				To(MatchJSON(`{"rust": "r.json", "since": "2h0m0s", "args": ["extra"]}`))
+		})
+
+		It("lists them in the verb's help", func() {
+			Expect(execute(a, "compare", "--help").stdout).To(ContainSubstring("--since duration"))
+		})
+
+		It("refuses a value the flag cannot take", func() {
+			out := execute(a, "compare", "--since", "soon")
+			Expect(out.code).To(Equal(1))
+			Expect(out.stderr).To(ContainSubstring("soon"))
 		})
 	})
 })

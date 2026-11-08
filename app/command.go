@@ -78,12 +78,16 @@ func (a *Almanac) command(out *output, args []string) *cobra.Command {
 		&cobra.Command{Use: "explain CODE", Short: builtins[5].short, Args: takes(1), RunE: v.explain},
 	)
 	for _, verb := range a.Verbs {
-		root.AddCommand(&cobra.Command{
+		cmd := &cobra.Command{
 			Use:   strings.TrimSpace(verb.Name + " " + verb.Args),
 			Short: verb.Short,
 			Args:  cobra.ArbitraryArgs,
 			RunE:  v.own(verb),
-		})
+		}
+		if verb.Flags != nil {
+			verb.Flags(cmd.Flags())
+		}
+		root.AddCommand(cmd)
 	}
 	return root
 }

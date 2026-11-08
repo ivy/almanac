@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ivy/almanac/config"
 	"github.com/ivy/almanac/diag"
 	"github.com/ivy/almanac/engine"
@@ -60,6 +62,9 @@ type Setting struct {
 	// all. A provider that writes through a concrete type, rather than an interface the
 	// runtime can wrap, must refuse writes itself when Switches.ReadOnly is set.
 	Switches runtime.Switches
+	// Flags are the flags an almanac's own verb declared, parsed from its command line. It is
+	// nil for a verb that declares none.
+	Flags *pflag.FlagSet
 }
 
 // Verb is a verb an almanac adds of its own, such as report.
@@ -74,6 +79,9 @@ type Verb struct {
 	// person, or as JSON with --format json. An error is printed the way every verb prints
 	// one, and the binary exits 1.
 	Run func(ctx context.Context, s Setting, args []string) (Said, error)
+	// Flags declares the verb's flags, such as --since, on its flag set, and Run reads them
+	// from Setting.Flags. Nil declares none, and a flag on the command line is then an error.
+	Flags func(flags *pflag.FlagSet)
 }
 
 // Said is what a verb has to say, for people and for programs.

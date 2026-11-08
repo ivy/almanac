@@ -62,6 +62,9 @@ func (v *verbs) own(verb Verb) func(*cobra.Command, []string) error {
 			return err
 		}
 		setting := Setting{Name: v.a.Name, Config: cfg, Switches: runtime.SwitchesFrom(false, os.LookupEnv)}
+		if verb.Flags != nil {
+			setting.Flags = cmd.Flags()
+		}
 		said, err := verb.Run(cmd.Context(), setting, args)
 		if err != nil {
 			return err

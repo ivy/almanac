@@ -22,6 +22,9 @@ type Repo struct {
 	Archived bool
 	// Renovate is the text of renovate.json. Empty means the repository has none.
 	Renovate string
+	// Workflows is whether the repository has a .github/workflows directory, which holds one
+	// workflow, ci.yml.
+	Workflows bool
 	// RequiredChecks are the status contexts required on the default branch.
 	RequiredChecks []string
 }

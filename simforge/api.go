@@ -366,11 +366,23 @@ func (f *Forge) branch(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// workflowsDirectory is where a repository keeps its GitHub Actions workflows.
+const workflowsDirectory = ".github/workflows"
+
 func (f *Forge) contents(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	path := r.PathValue("path")
 	repo, ok := f.world.repos[fullName(r)]
+	if ok && path == workflowsDirectory && repo.Workflows {
+		file := workflowsDirectory + "/ci.yml"
+		reply(w, http.StatusOK, []any{object{
+			"type": "file", "name": "ci.yml", "path": file, "size": 0, "sha": "0", "url": "/f",
+			"git_url": nil, "html_url": nil, "download_url": nil,
+			"_links": object{"self": "/f", "git": nil, "html": nil},
+		}})
+		return
+	}
 	if !ok || path != "renovate.json" || repo.Renovate == "" {
 		missing(w)
 		return

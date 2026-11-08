@@ -278,6 +278,16 @@ var _ = Describe("The API", func() {
 			Expect(response.StatusCode).To(Equal(http.StatusNotFound))
 		})
 
+		It("lists a repository's workflows where it has them", func() {
+			sim.AddRepo(simforge.Repo{FullName: "owner/tested", Workflows: true})
+			listing := getJSON(sim, "/repos/owner/tested/contents/.github/workflows")
+			Expect(listing).To(HaveLen(1))
+			Expect(at(listing, 0, "path")).To(Equal(".github/workflows/ci.yml"))
+
+			response, _ := call(http.MethodGet, path("/contents/.github/workflows"), nil)
+			Expect(response.StatusCode).To(Equal(http.StatusNotFound))
+		})
+
 		It("reports branch protection from required checks", func() {
 			sim.AddRepo(simforge.Repo{FullName: "owner/guarded", RequiredChecks: []string{"ci"}})
 			guarded := getJSON(sim, "/repos/owner/guarded/branches/main")

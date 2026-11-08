@@ -216,7 +216,7 @@ func undoesUpdate(p hostile.Of[patch.Patch], added hostile.Of[[]Line]) bool {
 func takesBack(pair hostile.Pair[patch.Patch, []Line]) bool {
 	for _, line := range pair.Second {
 		name := path.Base(line.Path)
-		lockfile := name == "go.sum" || strings.HasSuffix(name, ".lock") || strings.Contains(name, "-lock.")
+		lockfile := name == "go.sum" || strings.HasSuffix(name, ".lock") || strings.Contains(name, "-lock.") || strings.Contains(name, ".lock.")
 		if !lockfile && !pair.First.Keeps(line.Path, line.Text) {
 			return true
 		}

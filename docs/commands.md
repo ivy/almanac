@@ -50,7 +50,15 @@ The Go rewrite ([ADR 2](adrs/0002-go-and-a-workflow-model.md)) builds each alman
 | `simulate KIND FILE [--dry-run]` | Sends a JSON file through the production path as an event of that kind, then runs it. |
 | `explain CODE` | Prints the long form of an error. Pages for codes only the Go almanac has are in [`errors-go/`](errors-go/). |
 
-An almanac adds verbs of its own after these, and `--help` lists them.
+An almanac adds verbs of its own after these, and `--help` lists them. The Go `almanac-renovate` adds:
+
+| Command | What it does |
+|---|---|
+| `report` | Prints the state of every open Renovate pull request. See [Report states](report-states.md). |
+| `compare --rust FILE [--go FILE]` | Prints the Rust and Go reports' states side by side, marking every difference. Without `--go`, the Go report is made now. |
+| `compare-effects [--since DURATION]` | Prints what the Go dry run would do to each open Renovate pull request beside what the Rust version did, as GitHub shows it. Reads the dry run's runs from the database `DATABASE_URL` names. |
+
+[Compare the Go and Rust versions](comparing.md) says how to run and read both comparisons.
 
 Every command starts by checking each workflow model; a binary whose model the checker refuses prints every problem and exits `1`. Every command but `synth` and `explain` then reads config, sets up providers, and refuses to go on if a provider a workflow needs is missing. Effects apply only with `ALMANAC_MODE=live`, `--dry-run` always wins over it, and `ALMANAC_READ_ONLY` makes every command a dry run that writes nothing and calls no model. See [Configuration](configuration.md#the-go-almanac).
 

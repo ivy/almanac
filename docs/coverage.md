@@ -18,14 +18,14 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-12 Reviewer can only veto | `a_reviewers_concerns_veto_passing_checks`, `a_model_can_never_approve_what_a_check_refused` |
 | R-13 Verdict statuses | `a_valid_fix_goes_pending_then_success`, `a_target_that_is_not_the_patched_version_fails_and_asks` |
 | R-14 Red security update repaired | By routing: `github.check_suite.completed` goes to `build_failures` for every Renovate branch |
-| R-15, R-16 Authoring | `crates/fails/tests/ui/`, `crates/definitions/tests/workflows.rs` |
+| R-15, R-16 Authoring | `crates/fails/tests/ui/`, `crates/definitions/tests/workflows.rs`; Go: `check/check_test.go` "The checker", `dsl/types_test.go` "The Go compiler, through the DSL's types", `dsl/workflows_test.go` "The Rust workflows, written in the DSL" |
 | R-17 Prompts checked | `crates/fails/tests/ui/fail/prompt_*`; Go: `agent/prompt_test.go` |
 | R-18 Agents discovered | `crates/fails/tests/ui/pass/ok_workflow_macro.rs`, `the_manifest_shows_each_agents_capabilities` |
 | R-19 Profiles | `crates/fails/tests/ui/fail/fixer_*`, `the_manifest_shows_a_fixers_grant`; Go: `agent/agent_test.go`, `workflow/cx_test.go` "Agent calls through Cx" |
 | R-20 Patch policy | `crates/almanac/tests/patch.rs`; Go: `patch/patch_test.go` |
-| R-55 Titles | `crates/fails/tests/ui/fail/title_*`, `file_title_is_a_string`, `crates/almanac/tests/taint.rs`; Go: `hostile/title_test.go`, `hostile/format_test.go`, `tools/hostilevet/taint/testdata/title` |
-| R-21 Push only to its own branch | `crates/github/tests/client.rs`: `pushing_to_another_branch_is_refused`, `pushing_to_a_fork_is_refused`; `effect_has_no_merge`; Go: `effect/effect_test.go` "the closed set", "refuses a push whose patch no policy checked", `github/forge_test.go` "refuses to push to another branch, and writes nothing", "refuses to push to a fork, and writes nothing" |
-| R-22 Cooled proof | `crates/fails/tests/ui/fail/cooled_*`, `fixer_needs_cooled`, `crates/almanac/tests/cooled.rs`; Go: `cooled/cooled_test.go`, `agent/agent_test.go` "needs a Cooled proof" |
+| R-55 Titles | `crates/fails/tests/ui/fail/title_*`, `file_title_is_a_string`, `crates/almanac/tests/taint.rs`; Go: `hostile/title_test.go`, `hostile/format_test.go`, `tools/hostilevet/taint/testdata/title`, `check/check_test.go` "refuses a title filled from anything but clean numbers, bools, slugs and shas" |
+| R-21 Push only to its own branch | `crates/github/tests/client.rs`: `pushing_to_another_branch_is_refused`, `pushing_to_a_fork_is_refused`; `effect_has_no_merge`; Go: `effect/effect_test.go` "the closed set", "refuses a push whose patch no policy checked", `github/forge_test.go` "refuses to push to another branch, and writes nothing", "refuses to push to a fork |
+| R-22 Cooled proof | `crates/fails/tests/ui/fail/cooled_*`, `fixer_needs_cooled`, `crates/almanac/tests/cooled.rs`; Go: `cooled/cooled_test.go`, `agent/agent_test.go` "needs a Cooled proof", `check/check_test.go` "refuses a fixer before anything measured the release's age" |
 | R-23 Sandbox enforces capability | `crates/sandbox/tests/podman.rs`, `crates/claude/tests/real_cli.rs`; Go: `sandbox/podman/podman_test.go` "A Podman sandbox" (label `sandbox`), `sandbox/fetch_test.go` "The dependency fetch step", `harness/claude/real_cli_test.go` "The Claude harness, with the real CLI" (label `sandbox`), `harness/claude/harness_test.go`, `harness/claude/mcp_test.go` |
 | R-52 Remote-shaped `Sandbox` | `FakeSandbox` holds nothing on the host; [ADR 1](adrs/0001-agent-sandbox.md) maps every operation; Go: `sandbox/fake` holds nothing on the host, `sandbox/fake/fake_test.go`, `sandbox/sandbox_test.go` |
 | R-24 Dedupe, seen only once persisted | `crates/almanac/tests/store_postgres.rs`: `a_delivery_that_failed_to_persist_is_accepted_when_redelivered`; Go: `store/postgres/postgres_test.go` "accepts a redelivery of a delivery that failed to persist", `store/storetest` "dedupe" |
@@ -45,7 +45,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing`; Go: `workflow/code_test.go` "Validate" |
 | R-41 Tracker | `crates/github/tests/tracker.rs`; Go: `github/tracker_test.go` |
 | R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs`; Go: `diag/diag_test.go`, `config/config_test.go` "Config diagnostics" |
-| R-43 Manifest | `the_manifest_names_the_prompt_file_and_its_variables`, `a_new_almanac_builds_tests_and_describes_itself` |
+| R-43 Manifest | `the_manifest_names_the_prompt_file_and_its_variables`, `a_new_almanac_builds_tests_and_describes_itself`; Go: `dsl/workflows_test.go` "makes a manifest with the trigger, budgets, agents and providers" |
 | R-44 Config only tightens | `crates/almanac/tests/limits.rs`, `a_secret_in_config_points_at_its_line_and_says_where_it_belongs`; Go: `config/limits_test.go`, `config/config_test.go` "a secret in config points at its line and says where it belongs", "can never widen what the binary declares" |
 | R-45 PostgreSQL state | `crates/almanac/tests/store_postgres.rs`, `workflows_on_postgres.rs`; Go: `store/postgres/postgres_test.go` "The PostgreSQL store" (label `db`) runs `store/storetest` |
 | R-46 Scaffolding | `crates/cli/tests/scaffold.rs` |

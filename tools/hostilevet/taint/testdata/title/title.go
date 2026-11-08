@@ -18,6 +18,14 @@ func accepted(tool hostile.Slug, sha hostile.Sha, count uint64, ratio float64, f
 	_ = hostile.Titlef("%s at %s: %.1f %t %s %v", inner, sha, ratio, failed, High, 3)
 }
 
+var repaired = hostile.NewFormat("%s repaired %d times")
+
+func fromFormat(tool hostile.Slug, count uint64, name string, title hostile.Of[string]) {
+	_ = repaired.Title(tool, count)
+	_ = repaired.Title(name, count)          // want `hostile.Format.Title takes only clean values, and this is a string`
+	_ = hostile.NewFormat("%v").Title(title) // want `hostile.Format.Title takes only clean values, and this is a github.com/ivy/almanac/hostile.Of\[string\]`
+}
+
 func refused(name string, title hostile.Of[string], names []string, err error, values []any) {
 	_ = hostile.Titlef("%s failed", name)       // want `hostile.Titlef takes only clean values, and this is a string`
 	_ = hostile.Titlef("%v", title)             // want `hostile.Titlef takes only clean values, and this is a github.com/ivy/almanac/hostile.Of\[string\]`

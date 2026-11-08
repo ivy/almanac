@@ -5,8 +5,8 @@ import (
 	"reflect"
 )
 
-// Title is text a tracker shows as it is: an issue's title, or a question. Only [Titlef]
-// makes one, so it holds nothing but a literal and clean values.
+// Title is text a tracker shows as it is: an issue's title, or a question. Only [Titlef] and
+// [Format.Title] make one, so it holds nothing but a literal and clean values.
 type Title struct{ text string }
 
 func (t Title) String() string { return t.text }
@@ -22,12 +22,33 @@ type literal string
 // type, or a pointer to one. tools/hostilevet refuses anything else where it is written, and
 // Titlef panics if it is given anything else anyway.
 func Titlef(format literal, values ...any) Title {
+	return NewFormat(format).Title(values...)
+}
+
+// Format is a title's format held as a value, so that a workflow written as data can carry
+// it until a run has the values to fill it. Like the format [Titlef] takes, it is made only
+// from a string constant.
+type Format struct{ text string }
+
+// NewFormat holds a literal format for a title to be made later.
+func NewFormat(format literal) Format { return Format{text: string(format)} }
+
+// String is the format as it was written.
+func (f Format) String() string { return f.text }
+
+// MarshalText writes the format as it was written. There is no UnmarshalText: a format read
+// from data would be a format that is not a literal.
+func (f Format) MarshalText() ([]byte, error) { return []byte(f.text), nil }
+
+// Title fills the format with values, which must be clean as [Titlef]'s are. It panics if one
+// is not.
+func (f Format) Title(values ...any) Title {
 	for i, value := range values {
 		if !clean(value) {
-			panic(fmt.Sprintf("hostile.Titlef: value %d is a %T, and a title holds only literals and clean values", i+1, value))
+			panic(fmt.Sprintf("hostile: title value %d is a %T, and a title holds only literals and clean values", i+1, value))
 		}
 	}
-	return Title{text: fmt.Sprintf(string(format), values...)}
+	return Title{text: fmt.Sprintf(f.text, values...)}
 }
 
 // clean reports whether value is a type a title may hold.

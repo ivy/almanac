@@ -160,3 +160,18 @@ var _ = Describe("Shapes", func() {
 		})
 	})
 })
+
+var _ = Describe("Held", func() {
+	It("names the type a hostile value holds", func() {
+		held, ok := hostile.Held(reflect.TypeFor[hostile.Of[[]string]]())
+		Expect(ok).To(BeTrue())
+		Expect(held).To(Equal(reflect.TypeFor[[]string]()))
+	})
+
+	It("says a clean type holds nothing hostile", func() {
+		for _, t := range []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[*hostile.Of[string]](), reflect.TypeFor[hostile.Slug](), nil} {
+			_, ok := hostile.Held(t)
+			Expect(ok).To(BeFalse(), "%v", t)
+		}
+	})
+})

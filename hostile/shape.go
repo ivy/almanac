@@ -189,3 +189,19 @@ func DecodeClean(h Of[json.RawMessage], out any) error {
 	target.Elem().Set(fresh.Elem())
 	return nil
 }
+
+// Held reports whether t is an [Of], and if so the type it holds. A checker uses it to tell a
+// hostile value's type from a clean one without a value in hand.
+func Held(t reflect.Type) (reflect.Type, bool) {
+	if t == nil || t.Kind() != reflect.Struct || !t.Implements(holds) {
+		return nil, false
+	}
+	return reflect.Zero(t).Interface().(holder).held(), true
+}
+
+// holder is implemented only by Of, for Held.
+type holder interface{ held() reflect.Type }
+
+var holds = reflect.TypeFor[holder]()
+
+func (Of[T]) held() reflect.Type { return reflect.TypeFor[T]() }

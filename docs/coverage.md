@@ -51,11 +51,10 @@ A Go spec named under `almanactest` is a runtime scenario in `almanactest/scenar
 | R-44 Config only tightens | `crates/almanac/tests/limits.rs`, `a_secret_in_config_points_at_its_line_and_says_where_it_belongs`; Go: `config/limits_test.go`, `config/config_test.go` "a secret in config points at its line and says where it belongs", "can never widen what the binary declares" |
 | R-45 PostgreSQL state | `crates/almanac/tests/store_postgres.rs`, `workflows_on_postgres.rs`; Go: `store/postgres/postgres_test.go` "The PostgreSQL store" (label `db`) runs `store/storetest` |
 | R-46 Scaffolding | `crates/cli/tests/scaffold.rs` |
-| R-47 Fleet discovery | `discovery_skips_archived_repositories_and_other_owners`, `an_app_finds_every_repository_past_the_first_page`; Go: `github/client_test.go` "discovery" |
-| R-48, R-49 One state per pull request | `almanacs/renovate/tests/fleet.rs` |
-| R-50 Conflicts | `a_conflict_waits_for_renovate_unless_the_branch_carries_a_patch` |
-| R-51 No CI | `a_repository_with_no_ci_is_reported_as_having_no_checks` |
-
+| R-47 Fleet discovery | `discovery_skips_archived_repositories_and_other_owners`, `an_app_finds_every_repository_past_the_first_page`; Go: `github/client_test.go` "discovery"; `github/client_test.go` "discovery"; `almanacs/renovate/report/fleet_test.go` "a report covers every pull request and is stable" (an archived repository is not scanned) |
+| R-48, R-49 One state per pull request | `almanacs/renovate/tests/fleet.rs`; Go: `almanacs/renovate/report/policy_test.go` "Where a pull request stands" (exhaustive over every scenario), `almanacs/renovate/report/fleet_test.go` "The fleet report" (text and JSON byte for byte against the Rust snapshots), `almanacs/renovate/report/config_test.go`, `almanacs/renovate/report/presets_test.go`, `almanacs/renovate/report/verb_test.go` "The report verb" |
+| R-50 Conflicts | `a_conflict_waits_for_renovate_unless_the_branch_carries_a_patch`; Go: `almanacs/renovate/report/policy_test.go` "a conflict waits for Renovate to rebase it, even over a patch", "a conflict on a patched branch waits for Renovate", "a patched conflict Renovate would not rebase is blocked by config"; `almanacs/renovate/report/fleet_test.go` "waits on a patched branch in conflict for Renovate's rebase"; `almanacs/renovate/buildfailures/buildfailures_test.go` "leaves a pull request in conflict to Renovate, repairing nothing" |
+| R-51 No CI | `a_repository_with_no_ci_is_reported_as_having_no_checks`; Go: `almanacs/renovate/report/policy_test.go` "a repository with no CI is reported as having no checks"; `almanacs/renovate/report/fleet_test.go` "a report covers every pull request and is stable" (`renovate/no-ci-1.x`) |
 ## Not met
 
 - **R-14** has no single end-to-end test of a security pull request going red, being repaired, and passing. Each half is tested alone.

@@ -17,7 +17,7 @@ Renovate proposes updates and merges them. Almanac repairs what is broken and va
 - **R-47** The almanac covers every non-archived repository owned by `ivy` with an open Renovate pull request, discovered at run time rather than listed by hand. Renovate pull requests are those authored by `ivy-s-renovate-bot[bot]`.
 - **R-48** Every open Renovate pull request ends each scan with exactly one state: `mergeable`, `in-progress`, `waiting` (with what for), `needs-person` (with why), or `blocked-by-config` (with the setting to change).
 - **R-49** `report` prints that state for every pull request, grouped by repository, as text or JSON. A repository whose Renovate configuration cannot automerge is reported, and its pull requests still count as mergeable when they meet the definition above.
-- **R-50** A pull request with a merge conflict is not repaired by an agent while Renovate can rebase it. A conflict on a branch carrying an Almanac patch is reported as `needs-person`.
+- **R-50** A pull request with a merge conflict is not repaired by an agent while Renovate can rebase it. A conflict on a branch carrying an Almanac patch waits for that rebase too: it discards the patch, and a build that fails again is repaired again.
 - **R-51** A repository with no CI reports no failures, so it is never repaired, and it is reported as having no checks.
 
 ### Workflow: build failures

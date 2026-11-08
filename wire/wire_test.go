@@ -304,3 +304,42 @@ var _ = Describe("WebhookPayload", func() {
 		Expect(err).To(MatchError("the payload is missing or the wrong shape"))
 	})
 })
+
+// Finished is a check suite event, whose branch and conclusion GitHub sends as null until
+// they are known.
+type Finished struct {
+	Branch     *hostile.Slug
+	Conclusion *State
+}
+
+func (Finished) Kind() string        { return "test.finished" }
+func (Finished) AlsoKinds() []string { return nil }
+func (e *Finished) Parse(p *wire.Payload) {
+	e.Branch = wire.OptionalField[hostile.Slug](p, "/branch")
+	e.Conclusion = wire.OptionalMember[State](p, "/conclusion")
+}
+
+var _ = Describe("Optional fields", func() {
+	It("read a present value as the field would", func() {
+		event, err := wire.Parse[Finished]([]byte(`{"branch": "renovate/x", "conclusion": "closed"}`))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(event.Branch).To(HaveValue(Equal(hostile.MustParseSlug("renovate/x"))))
+		Expect(event.Conclusion).To(HaveValue(Equal(Closed)))
+	})
+
+	It("read a missing or null value as nil", func() {
+		for _, raw := range []string{`{}`, `{"branch": null, "conclusion": null}`} {
+			event, err := wire.Parse[Finished]([]byte(raw))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(event.Branch).To(BeNil())
+			Expect(event.Conclusion).To(BeNil())
+		}
+	})
+
+	It("still refuse a value of the wrong shape, naming it", func() {
+		_, err := wire.Parse[Finished]([]byte(`{"branch": "` + injection + `"}`))
+		Expect(err).To(MatchError("/branch is missing or the wrong shape"))
+		_, err = wire.Parse[Finished]([]byte(`{"conclusion": 3}`))
+		Expect(err).To(MatchError("/conclusion is missing or the wrong shape"))
+	})
+})

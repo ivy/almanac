@@ -89,6 +89,31 @@ func Member[C hostile.Finite, P interface {
 	return read[C](p, p.root, pointer, pointer)
 }
 
+// OptionalField reads the value at pointer as [Field] does. A missing or null value is nil.
+func OptionalField[T hostile.Clean](p *Payload, pointer string) *T {
+	return optional[T](p, pointer)
+}
+
+// OptionalMember reads the value at pointer as [Member] does. A missing or null value is nil.
+func OptionalMember[C hostile.Finite, P interface {
+	*C
+	json.Unmarshaler
+}](p *Payload, pointer string) *C {
+	return optional[C](p, pointer)
+}
+
+func optional[T any](p *Payload, pointer string) *T {
+	found, ok := lookup(p.root, pointer)
+	if !ok || found == nil {
+		return nil
+	}
+	value := read[T](p, p.root, pointer, pointer)
+	if p.err != nil {
+		return nil
+	}
+	return &value
+}
+
 // read decodes the value at pointer below from, naming the field as name if it fails.
 func read[T any](p *Payload, from any, pointer, name string) T {
 	var value T

@@ -13,6 +13,7 @@ require (
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/spf13/cobra v1.10.2
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
+	github.com/titanous/json5 v1.0.0
 	golang.org/x/mod v0.38.0
 	golang.org/x/tools v0.48.0
 )

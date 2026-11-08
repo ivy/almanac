@@ -43,7 +43,7 @@ Building a model, rather than running scripts, is what makes the views possible:
 
 ### Taint
 
-Hostile values are `hostile.Of[T]`, with no exported field and no accessor. `hostile.Map` keeps taint. `hostile.Narrow` returns `bool`, and `hostile.Classify` returns only a type in a closed set, marked by embedding `hostile.Closed`. Titles are `hostile.Title`, built from literals and clean values. A `go vet` analyzer in `make lint` refuses formatting a hostile value, and `forbidigo` keeps the package's escape hatches out of everything but the boundary packages that parse payloads. Hostile text is never a plain Go `string` outside those packages.
+Hostile values are `hostile.Of[T]`, with no exported field and no accessor. `hostile.Map` keeps taint. `hostile.Narrow` returns `bool`, and `hostile.Classify` returns only a type in a closed set, marked by embedding `hostile.Closed`. Titles are `hostile.Title`, built from literals and clean values. A `go vet` analyzer, `tools/hostilevet`, runs in `make go-lint`. It refuses formatting a hostile value, a narrowing function that is not a declared function or that formats or stores the text it reads, and a closed value outside its declared set. It also keeps `hostile/reveal`, the one way out of taint, to the boundary packages it lists, which hand text to the outside: a forge's API, an issue quoted as inert text, the patch policy. Hostile text is never a plain Go `string` outside those packages.
 
 ### The runtime keeps its semantics
 

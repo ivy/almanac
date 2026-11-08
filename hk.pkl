@@ -16,6 +16,15 @@ hooks {
         glob = List("**/*.rs", "**/Cargo.toml", "Cargo.lock", "Makefile")
         check = "make lint"
       }
+      ["go-lint"] {
+        glob = List("**/*.go", "go.mod", "go.sum", ".golangci.yml")
+        check = "make go-lint"
+      }
+      ["go-test"] {
+        glob = List("**/*.go", "go.mod", "go.sum")
+        check = "make go-test"
+        depends = "go-lint"
+      }
       ["test-fast"] {
         glob = List("**/*.rs", "**/Cargo.toml", "Cargo.lock", "Makefile")
         check = "make test-fast"

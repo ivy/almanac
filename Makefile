@@ -13,6 +13,8 @@ DB_TESTS := binary(store_postgres) or binary(workflows_on_postgres) or binary(br
 SANDBOX_TESTS := binary(podman) or binary(real_cli)
 SLOW_TESTS := $(DB_TESTS) or $(SANDBOX_TESTS) or binary(scaffold)
 
+# Go rewrite targets (docs/adrs/0002-go-and-a-workflow-model.md) are go-*.
+.PHONY: go-build go-lint go-test go-test-db go-test-sandbox go-test-e2e go-check go-generate
 .PHONY: all build package test test-db test-sandbox test-e2e test-scaffold test-fast lint fmt generate generated sqlx-prepare check-public verify-units check-isolated-demo check clean
 
 all: build
@@ -91,6 +93,40 @@ check-isolated-demo:
 	cargo fmt --manifest-path contrib/isolated-demo/Cargo.toml --check
 	cargo clippy --manifest-path contrib/isolated-demo/Cargo.toml --all-targets --locked -- -D warnings
 	cargo test --manifest-path contrib/isolated-demo/Cargo.toml --locked
+
+# ---- Go rewrite ------------------------------------------------------------
+# Specs are Ginkgo. Labels pick the slower suites: db needs PostgreSQL through
+# podman, sandbox needs podman and the claude CLI, e2e runs the binaries.
+GO_VERSION_PKG := github.com/ivy/almanac/version
+GO_LDFLAGS := -X $(GO_VERSION_PKG).Version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+GINKGO := ginkgo -r -p --randomize-all --fail-on-pending --keep-going --skip-package=target,crates,xtask,spikes,contrib
+
+go-build:
+	go build -ldflags "$(GO_LDFLAGS)" ./...
+
+go-generate:
+	go generate ./...
+
+# hostilevet is the taint analyzer; it is built and run once it exists.
+go-lint:
+	go vet ./...
+	golangci-lint run ./...
+	@if [ -d tools/hostilevet ]; then go build -o bin/hostilevet ./tools/hostilevet && go vet -vettool=$(CURDIR)/bin/hostilevet ./...; fi
+
+go-test:
+	$(GINKGO) --label-filter='!db && !sandbox && !e2e'
+
+go-test-db:
+	$(GINKGO) --label-filter='db'
+
+go-test-sandbox:
+	$(GINKGO) --label-filter='sandbox'
+
+go-test-e2e:
+	$(GINKGO) --label-filter='e2e'
+
+# The Go gate. A Go change is not done until this passes, and `check` still does.
+go-check: go-lint go-test go-test-db go-test-sandbox go-test-e2e check-public
 
 # The gate. A change is not done until this passes.
 check: lint generated test test-db test-sandbox test-e2e test-scaffold check-public verify-units check-isolated-demo

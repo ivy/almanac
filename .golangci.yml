@@ -1,0 +1,96 @@
+version: "2"
+
+run:
+  timeout: 5m
+  allow-parallel-runners: true
+
+linters:
+  default: standard
+  enable:
+    - depguard
+    - forbidigo
+    - gocritic
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    depguard:
+      rules:
+        # The broker knows nothing about workflows (R-29): adding one never touches it.
+        broker-knows-no-workflows:
+          files:
+            - "**/broker/**"
+            - "**/cmd/almanac-broker/**"
+          deny:
+            - pkg: github.com/ivy/almanac/workflow
+              desc: the broker knows nothing about workflows
+            - pkg: github.com/ivy/almanac/runtime
+              desc: the broker knows nothing about workflows
+            - pkg: github.com/ivy/almanac/engine
+              desc: the broker knows nothing about workflows
+        # PostgreSQL is reached through the Store interface. Only the code that
+        # wires a binary together picks the implementation.
+        postgres-only-from-wiring:
+          files:
+            - "$all"
+            - "!**/store/**"
+            - "!**/runtime/**"
+            - "!**/app/**"
+            - "!**/cmd/**"
+            - "!**/deliveries/**"
+            - "!**/almanactest/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/ivy/almanac/store/postgres
+              desc: use the store.Store interface; only wiring picks PostgreSQL
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^testing\.
+          msg: use Ginkgo and Gomega; testing belongs only in *_suite_test.go
+        # Every process Almanac spawns is a sandbox or the agent harness
+        # (docs/adrs/0002-go-and-a-workflow-model.md, §Processes).
+        - pattern: .*
+          pkg: ^os/exec$
+          msg: only sandbox/podman and harness/claude may spawn processes
+    revive:
+      rules:
+        - name: dot-imports
+          arguments:
+            - allowedPackages:
+                - github.com/onsi/ginkgo/v2
+                - github.com/onsi/gomega
+                - github.com/ivy/almanac/dsl
+  exclusions:
+    rules:
+      - path: _suite_test\.go$
+        linters:
+          - forbidigo
+      - path: (sandbox/podman|harness/claude)/
+        linters:
+          - forbidigo
+        text: os/exec
+      # Specs drive binaries, podman and the claude CLI as subprocesses.
+      - path: _test\.go$
+        linters:
+          - forbidigo
+        text: os/exec
+      # Analyzer test data is code the analyzer must refuse.
+      - path: testdata/
+        linters:
+          - forbidigo
+          - revive
+          - unparam
+
+issues:
+  uniq-by-line: false
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/ivy/almanac

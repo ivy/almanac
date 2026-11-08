@@ -67,6 +67,16 @@ This repository is public, and everything pushed to it stays public.
 - Comments explain this code, not upstream libraries. Link upstream docs instead.
 - Prose in Markdown is one line per paragraph.
 
+## Go rewrite
+
+The `go-rewrite` branch rewrites Almanac in Go, with workflows written in a Go DSL that builds a checked model. [ADR 2](docs/adrs/0002-go-and-a-workflow-model.md) is the design. Until the cutover the Rust implementation stays in the tree, unchanged and still gated by `make check`.
+
+- **Set up:** `mise install` adds Go, `golangci-lint`, `ginkgo` and `sqlc`.
+- **The Go gate:** `make go-check` runs `go-lint`, `go-test`, `go-test-db`, `go-test-sandbox`, `go-test-e2e` and `check-public`.
+- **Specs** are Ginkgo and Gomega. `testing` appears only in `*_suite_test.go`. A spec needing PostgreSQL carries the `db` label, one needing Podman or the `claude` CLI the `sandbox` label, the end-to-end suite `e2e`.
+- **Processes:** only `sandbox/podman` and `harness/claude` may import `os/exec`.
+- **A worktree** needs `private/denylist.txt` copied from the main checkout, or `check-public` checks machine details only.
+
 ## Where to look first
 
 - `almanacs/renovate/src/workflows/build_failures.rs`: what authoring looks like.

@@ -1,4 +1,4 @@
-# Every tool the build uses. Run `mise install` once. The only system package assumed is podman, which the database tests use.
+# Every tool the build uses, for the Rust implementation and the Go rewrite. Run `mise install` once. The only system package assumed is podman, which the database tests use.
 
 [tools]
 rust = "1.99.0"
@@ -9,3 +9,7 @@ cargo-deny = "0.20.2"
 gitleaks = "8.30.1"
 "cargo:sqlx-cli" = "0.9.0"
 python = "3.14"
+go = "1.25.7"
+golangci-lint = "2.13.2"
+sqlc = "1.31.1"
+ginkgo = "2.32.1"

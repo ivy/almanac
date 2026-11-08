@@ -2,6 +2,8 @@
 
 Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Rust test named here, and `make go-check` every Go spec.
 
+A Go spec named under `almanactest` is a runtime scenario in `almanactest/scenarios_*.go`. `runtime/runtime_test.go` runs each one on the memory store and on PostgreSQL (label `db`).
+
 | Requirement | Proved by |
 |---|---|
 | R-1 Triggers on red CI | `almanacs/renovate/tests/build_failures.rs`: `a_failed_status_works_like_a_failed_check_suite`, `a_red_pull_request_past_its_cooldown_is_patched_and_goes_pending_then_success` |
@@ -12,10 +14,10 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-6 Attempt cap | `a_repair_that_keeps_failing_stops_at_the_cap_and_asks_once`, `crates/definitions/tests/chains.rs` |
 | R-7 Status held during a repair | `a_red_pull_request_past_its_cooldown_is_patched_and_goes_pending_then_success` |
 | R-8 Security trigger | `almanacs/renovate/tests/security_fixes.rs`: `the_label_also_triggers_it`, `an_ordinary_update_is_ignored` |
-| R-9 Pending first | `pending_is_posted_before_any_other_work` |
+| R-9 Pending first | `pending_is_posted_before_any_other_work`; Go: `almanactest` "pending is posted before any other work, and the final status replaces it" |
 | R-10 Advisory validation | `crates/advisory/tests/validate.rs`; Go: `advisory/validate_test.go` |
 | R-11 Young fix asks | `a_brand_new_fix_asks_a_person_and_stays_pending` |
-| R-12 Reviewer can only veto | `a_reviewers_concerns_veto_passing_checks`, `a_model_can_never_approve_what_a_check_refused` |
+| R-12 Reviewer can only veto | `a_reviewers_concerns_veto_passing_checks`, `a_model_can_never_approve_what_a_check_refused`; Go: `almanactest` "the guard runs once per run, sees no event text, and is recorded" |
 | R-13 Verdict statuses | `a_valid_fix_goes_pending_then_success`, `a_target_that_is_not_the_patched_version_fails_and_asks` |
 | R-14 Red security update repaired | By routing: `github.check_suite.completed` goes to `build_failures` for every Renovate branch |
 | R-15, R-16 Authoring | `crates/fails/tests/ui/`, `crates/definitions/tests/workflows.rs`; Go: `check/check_test.go` "The checker", `dsl/types_test.go` "The Go compiler, through the DSL's types", `dsl/workflows_test.go` "The Rust workflows, written in the DSL" |
@@ -28,21 +30,21 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-22 Cooled proof | `crates/fails/tests/ui/fail/cooled_*`, `fixer_needs_cooled`, `crates/almanac/tests/cooled.rs`; Go: `cooled/cooled_test.go`, `agent/agent_test.go` "needs a Cooled proof", `check/check_test.go` "refuses a fixer before anything measured the release's age" |
 | R-23 Sandbox enforces capability | `crates/sandbox/tests/podman.rs`, `crates/claude/tests/real_cli.rs`; Go: `sandbox/podman/podman_test.go` "A Podman sandbox" (label `sandbox`), `sandbox/fetch_test.go` "The dependency fetch step", `harness/claude/real_cli_test.go` "The Claude harness, with the real CLI" (label `sandbox`), `harness/claude/harness_test.go`, `harness/claude/mcp_test.go` |
 | R-52 Remote-shaped `Sandbox` | `FakeSandbox` holds nothing on the host; [ADR 1](adrs/0001-agent-sandbox.md) maps every operation; Go: `sandbox/fake` holds nothing on the host, `sandbox/fake/fake_test.go`, `sandbox/sandbox_test.go` |
-| R-24 Dedupe, seen only once persisted | `crates/almanac/tests/store_postgres.rs`: `a_delivery_that_failed_to_persist_is_accepted_when_redelivered`; Go: `store/postgres/postgres_test.go` "accepts a redelivery of a delivery that failed to persist", `store/storetest` "dedupe" |
-| R-25 One run per key | `testing::conformance`, `the_database_itself_refuses_a_second_active_run_for_a_key`; Go: `store/storetest` "one run per key", `store/postgres/postgres_test.go` "is itself refused a second active run for a key" |
-| R-26 Chains contained | `crates/definitions/tests/chains.rs` |
-| R-27 Budgets | `testing::conformance`, `a_tripped_budget_asks_once_and_held_work_runs_after_an_hour`; Go: `store/storetest` "budgets" |
-| R-28 Concurrency and lanes | `a_backfill_does_not_starve_a_live_event`, `independent_keys_run_concurrently_but_one_key_never_does` |
+| R-24 Dedupe, seen only once persisted | `crates/almanac/tests/store_postgres.rs`: `a_delivery_that_failed_to_persist_is_accepted_when_redelivered`; Go: `store/postgres/postgres_test.go` "accepts a redelivery of a delivery that failed to persist", `store/storetest` "dedupe", `almanactest` "a redelivered webhook is dropped", "a crash between persisting and acknowledging starts no second run" |
+| R-25 One run per key | `testing::conformance`, `the_database_itself_refuses_a_second_active_run_for_a_key`; Go: `store/storetest` "one run per key", `store/postgres/postgres_test.go` "is itself refused a second active run for a key", `almanactest` "a hundred events about one thing start one agent", "events during a run cause exactly one rerun", "a run interrupted by a crash runs again after a restart" |
+| R-26 Chains contained | `crates/definitions/tests/chains.rs`; Go: `almanactest` "a chain reaction stops at the depth limit", "a direct echo does not start a run", "CI after a push inherits depth though another actor sent it", "an unrelated event after the ledger window starts fresh", "a dry run leaves no trace and so causes no depth" |
+| R-27 Budgets | `testing::conformance`, `a_tripped_budget_asks_once_and_held_work_runs_after_an_hour`; Go: `store/storetest` "budgets", `almanactest` "a tripped budget asks once and held work runs after an hour", "one root cause across many keys trips the budget and holds the rest" |
+| R-28 Concurrency and lanes | `a_backfill_does_not_starve_a_live_event`, `independent_keys_run_concurrently_but_one_key_never_does`; Go: `almanactest` scenarios of the same names |
 | R-29 Broker | `crates/broker/tests/receive.rs`; Go: `broker/receive_test.go`, `broker/replay_test.go`, `cmd/almanac-broker/main_test.go` |
 | R-53 Durable cursors | `crates/definitions/tests/broker_flow.rs`; Go: `broker/flow_test.go`, `deliveries/deliveries_test.go` (routing by kind ports with the app) |
 | R-54 Daemon | `crates/definitions/tests/daemon.rs`, `almanacs/renovate/tests/daemon.rs`, `tools/verify-units.sh` |
-| R-30 to R-33 Scan, backfill, simulate, origin | `crates/definitions/tests/origins.rs` |
-| R-34 Live and dry-run | `a_dry_run_records_what_would_apply_and_calls_no_provider`, `a_dry_run_leaves_a_live_run_everything_still_to_do`, `a_read_only_pass_writes_nothing_and_calls_no_model` |
-| R-35 Catch-up | `a_lost_webhook_is_found_by_the_next_scheduled_scan`, `a_sweep_redelivers_what_failed_and_only_once`; Go: `github/client_test.go` "sweeps up what failed, and asks for it only once" |
-| R-36 `gather` reads current state | `all_three_origins_produce_identical_decisions_for_the_same_state` |
+| R-30 to R-33 Scan, backfill, simulate, origin | `crates/definitions/tests/origins.rs`; Go: `almanactest/scenarios_scans.go`, the same scenarios |
+| R-34 Live and dry-run | `a_dry_run_records_what_would_apply_and_calls_no_provider`, `a_dry_run_leaves_a_live_run_everything_still_to_do`, `a_read_only_pass_writes_nothing_and_calls_no_model`; Go: `almanactest` scenarios of the same names, "--dry-run wins over ALMANAC_MODE=live", "a dry run applies nothing, even from a store holding pending effects" |
+| R-35 Catch-up | `a_lost_webhook_is_found_by_the_next_scheduled_scan`, `a_sweep_redelivers_what_failed_and_only_once`; Go: `github/client_test.go` "sweeps up what failed, and asks for it only once", `almanactest` "a lost webhook is found by the next scheduled scan", "a scheduled scan sweeps first, and a sweep that fails does not stop it" |
+| R-36 `gather` reads current state | `all_three_origins_produce_identical_decisions_for_the_same_state`; Go: `almanactest`, the same scenario |
 | R-37, R-38 Projections | `xtask/tests/generate.rs`, `a_new_enum_value_from_github_does_not_break_ingest`; Go: `tools/eventgen/generate_test.go`, `github/events/events_test.go` "read a value GitHub adds later as Unknown, without failing" |
 | R-39 Hand-written sources | `crates/fails/tests/ui/fail/payload_field_rejects_string.rs`, `crates/advisory/src/cve_now.rs`; Go: `advisory/cvenow_test.go` |
-| R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing`; Go: `workflow/code_test.go` "Validate" |
+| R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing`; Go: `workflow/code_test.go` "Validate", `almanactest` "a missing provider fails at startup and names what is missing", "going live requires a forge and a tracker" |
 | R-41 Tracker | `crates/github/tests/tracker.rs`; Go: `github/tracker_test.go` |
 | R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs`; Go: `diag/diag_test.go`, `config/config_test.go` "Config diagnostics" |
 | R-43 Manifest | `the_manifest_names_the_prompt_file_and_its_variables`, `a_new_almanac_builds_tests_and_describes_itself`; Go: `dsl/workflows_test.go` "makes a manifest with the trigger, budgets, agents and providers" |

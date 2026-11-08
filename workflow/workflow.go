@@ -73,14 +73,19 @@ type Decided struct {
 // Manifest is a workflow's reviewable declaration, so a change in what it may do shows in
 // review.
 type Manifest struct {
-	Workflow    string                  `json:"workflow"`
-	Intent      string                  `json:"intent"`
-	On          string                  `json:"on"`
-	Scans       bool                    `json:"scans"`
-	RunsPerHour int                     `json:"runs_per_hour"`
-	May         []effect.Kind           `json:"may"`
-	Agents      []agent.Info            `json:"agents"`
-	Requires    []providers.Requirement `json:"requires"`
+	Workflow    string `json:"workflow"`
+	Intent      string `json:"intent"`
+	On          string `json:"on"`
+	Scans       bool   `json:"scans"`
+	RunsPerHour int    `json:"runs_per_hour"`
+	// Attempts is how many patches a key may have before the workflow stops and asks, or zero
+	// for a workflow that declares no cap.
+	Attempts int                     `json:"attempts,omitempty"`
+	May      []effect.Kind           `json:"may"`
+	Agents   []agent.Info            `json:"agents"`
+	Requires []providers.Requirement `json:"requires"`
+	// Digest names the version of the model a workflow written as one runs, or is empty.
+	Digest string `json:"digest,omitempty"`
 }
 
 // Halt is a run that decided to stop: a recorded decision, not a failure.

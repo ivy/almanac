@@ -3,6 +3,7 @@ package podman
 // Exposed to the specs in podman_test.
 var (
 	CreateArgs  = createArgs
+	NewID       = newID
 	OutputLimit = outputLimit
 )
 

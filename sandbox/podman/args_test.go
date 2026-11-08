@@ -1,6 +1,7 @@
 package podman_test
 
 import (
+	"os"
 	"strings"
 	"time"
 
@@ -14,6 +15,15 @@ import (
 // These specs read the command line and need no Podman. The ones labelled
 // sandbox prove the same properties in a real container.
 var _ = Describe("The podman command line", func() {
+	It("names a sandbox after the process that made it, so a supervisor can stop what a killed process left", func() {
+		first, err := podman.NewID()
+		Expect(err).NotTo(HaveOccurred())
+		second, err := podman.NewID()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(first)).To(MatchRegexp(`^almanac-%d-[0-9a-f]{16}$`, os.Getpid()))
+		Expect(first).NotTo(Equal(second))
+	})
+
 	It("gives an agent sandbox no network, no capabilities and no privilege", func() {
 		args := podman.CreateArgs("almanac-x", sandbox.AgentSpec("image"))
 		Expect(args).To(ContainElements(

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"os/exec"
 	"slices"
 	"strconv"
@@ -85,12 +86,14 @@ func (p *Sandbox) Create(ctx context.Context, spec sandbox.Spec) (sandbox.ID, er
 	return id, nil
 }
 
+// newID names a sandbox almanac-PID-RANDOM, after the process that made it. A process killed
+// outright cannot end its sandboxes, so whatever supervised it stops them by that prefix.
 func newID() (sandbox.ID, error) {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return sandbox.ID("almanac-" + hex.EncodeToString(b)), nil
+	return sandbox.ID(fmt.Sprintf("almanac-%d-%s", os.Getpid(), hex.EncodeToString(b))), nil
 }
 
 // createArgs is the `podman` command line that starts a sandbox named id.

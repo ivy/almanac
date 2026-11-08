@@ -19,6 +19,7 @@ const (
 	ModelPromptVars         Code = "almanac::model::prompt_vars"
 	ModelPushUnchecked      Code = "almanac::model::push_unchecked"
 	ModelFixerBeforeMeasure Code = "almanac::model::fixer_before_measure"
+	ModelFixerUncooled      Code = "almanac::model::fixer_uncooled"
 	ModelNoEnding           Code = "almanac::model::no_ending"
 	ModelUnreachable        Code = "almanac::model::unreachable"
 	ModelDuplicateID        Code = "almanac::model::duplicate_id"
@@ -33,7 +34,7 @@ func modelCodes() []Code {
 	return []Code{
 		ModelUnknownName, ModelFactBeforeObserved, ModelEffectNotAllowed, ModelHostileFact,
 		ModelWrongType, ModelTitleNotClean, ModelAgentInputHostile, ModelPromptVars,
-		ModelPushUnchecked, ModelFixerBeforeMeasure, ModelNoEnding, ModelUnreachable,
+		ModelPushUnchecked, ModelFixerBeforeMeasure, ModelFixerUncooled, ModelNoEnding, ModelUnreachable,
 		ModelDuplicateID, ModelDuplicateFact, ModelUnlabelled, ModelDeclaration,
 		VocabDuplicate, VocabInvalid,
 	}
@@ -131,6 +132,16 @@ func FixerBeforeMeasure(at, agentName string) *Error {
 		Code:    ModelFixerBeforeMeasure,
 		Message: fmt.Sprintf("%s calls the fixer `%s`, and no earlier step measures the release's age", at, agentName),
 		Help:    "add a measure step before the agent, and end the run in a decide when the age is young or unknown",
+	}
+}
+
+// FixerUncooled is a fixer agent a run can reach while the release's age, measured before it,
+// may still be young or unknown.
+func FixerUncooled(at, agentName, ages string) *Error {
+	return &Error{
+		Code:    ModelFixerUncooled,
+		Message: fmt.Sprintf("%s calls the fixer `%s`, and a run can reach it with a release whose age is %s", at, agentName, ages),
+		Help:    "end those runs in a decide before the agent, with a rule such as Not(Age.Is(Cooled)), or one rule for Young and one for Unknown",
 	}
 }
 

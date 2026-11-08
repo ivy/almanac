@@ -54,7 +54,8 @@ var _ = Describe("The checker", func() {
 			w := whole()
 			step(w, "cooled").Decide[0].When = &model.Cond{Pred: "renovate.nope", Args: []model.Ref{"pull"}}
 			codes, message := refused(w)
-			Expect(codes).To(Equal([]diag.Code{diag.ModelUnknownName}))
+			// The rule no longer ends a young release's run, so the fixer is refused too.
+			Expect(codes).To(Equal([]diag.Code{diag.ModelUnknownName, diag.ModelFixerUncooled}))
 			Expect(message).To(ContainSubstring(`repairs, step "cooled", rule "young": the vocabulary has no predicate named ` + "`renovate.nope`"))
 		})
 
@@ -247,6 +248,15 @@ var _ = Describe("The checker", func() {
 		codes, message := refused(fixerFirst())
 		Expect(codes).To(Equal([]diag.Code{diag.ModelFixerBeforeMeasure}))
 		Expect(message).To(ContainSubstring(`step "fixer" calls the fixer ` + "`fixer`"))
+	})
+
+	It("refuses a fixer a run can reach before the release has cooled", func() {
+		codes, message := refused(fixerUncooled())
+		Expect(codes).To(Equal([]diag.Code{diag.ModelFixerUncooled}))
+		Expect(message).To(ContainSubstring(`step "fixer" calls the fixer ` + "`fixer`, and a run can reach it with a release whose age is young or unknown"))
+		codes, _ = refused(fixerPastYoungOnly())
+		Expect(codes).To(Equal([]diag.Code{diag.ModelFixerUncooled}))
+		Expect(check.Check(renovate.Vocabulary, fixerPastEachAge())).To(Succeed())
 	})
 
 	Describe("refuses a flow that can end having decided nothing", func() {

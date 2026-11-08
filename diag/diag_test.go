@@ -50,6 +50,7 @@ func samples() []*diag.Error {
 		diag.PromptVars("w", "a", "p"),
 		diag.PushUnchecked("w", "r"),
 		diag.FixerBeforeMeasure("w", "a"),
+		diag.FixerUncooled("w", "a", "young"),
 		diag.NoEnding("w", "p"),
 		diag.UnreachableStep("w", "p"),
 		diag.DuplicateID("w", "i"),

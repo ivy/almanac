@@ -8,8 +8,9 @@
 // workflow may produce; a hostile fact goes only to a narrowing predicate, a map, an observer or
 // an agent; a title holds only literals and clean values; a worker reads no hostile input; a
 // prompt is filled exactly, from clean facts; a push takes only a patch a check_patch step
-// accepted; a fixer comes after a measure; every step and rule has a unique ID and a label;
-// nothing follows an otherwise rule; and the flow ends in a decide with an otherwise rule.
+// accepted; a fixer comes after a measure, past a decide that ends every run whose release has
+// not cooled; every step and rule has a unique ID and a label; nothing follows an otherwise
+// rule; and the flow ends in a decide with an otherwise rule.
 package check
 
 import (
@@ -64,6 +65,10 @@ type checker struct {
 	// checked are the facts check_patch steps produced.
 	checked  map[string]bool
 	measured bool
+	// ages are the ages a run can still have, by the name of the built-in predicate that
+	// tests for each, once a measure produced one: a decide's rules that test the age alone
+	// narrow them for the steps after it.
+	ages map[string]bool
 	// beforeRun is true while checking what is worked out before a run starts, from the
 	// event alone.
 	beforeRun bool
@@ -276,6 +281,54 @@ func (c *checker) measure(at string, m model.MeasureStep) {
 	}
 	c.produce(at, model.AgeFact, ageType)
 	c.measured = true
+	c.ages = map[string]bool{}
+	for _, age := range agePredicates {
+		c.ages[age] = true
+	}
+}
+
+// agePredicates are the built-in predicates over the age, each testing for one of its values.
+var agePredicates = []string{vocab.Cooled.Name(), vocab.Young.Name(), vocab.Unknown.Name()}
+
+// pastRule narrows the ages a run can have once it goes on past a rule whose condition is
+// cond, which was false for it. Only a condition that tests the age alone says anything.
+func (c *checker) pastRule(cond model.Cond) {
+	switch {
+	case agePredicate(cond) != "":
+		delete(c.ages, agePredicate(cond))
+	case cond.Not != nil && agePredicate(*cond.Not) != "":
+		only := agePredicate(*cond.Not)
+		for age := range c.ages {
+			if age != only {
+				delete(c.ages, age)
+			}
+		}
+	case cond.Any != nil:
+		for _, each := range cond.Any {
+			c.pastRule(each)
+		}
+	case len(cond.All) == 1:
+		c.pastRule(cond.All[0])
+	}
+}
+
+// agePredicate is the built-in age predicate cond tests the age with, or "".
+func agePredicate(cond model.Cond) string {
+	if slices.Contains(agePredicates, cond.Pred) && slices.Equal(cond.Args, []model.Ref{model.AgeFact}) {
+		return cond.Pred
+	}
+	return ""
+}
+
+// uncooled are the ages other than cooled a run reaching here can still have, as words.
+func (c *checker) uncooled() []string {
+	var ages []string
+	for _, age := range agePredicates[1:] {
+		if c.ages[age] {
+			ages = append(ages, strings.TrimPrefix(age, "age."))
+		}
+	}
+	return ages
 }
 
 func (c *checker) checkPatch(at string, p model.CheckPatchStep) {
@@ -293,8 +346,11 @@ func (c *checker) agent(at string, a model.AgentStep) {
 		return
 	}
 	profile := entry.Agent.Profile
-	if profile == "fixer" && !c.measured {
+	switch {
+	case profile == "fixer" && !c.measured:
 		c.refuse(diag.FixerBeforeMeasure(at, a.Agent))
+	case profile == "fixer" && len(c.uncooled()) > 0:
+		c.refuse(diag.FixerUncooled(at, a.Agent, strings.Join(c.uncooled(), " or ")))
 	}
 	for _, name := range sortedKeys(a.Inputs) {
 		t, ok := c.typeOf(at, a.Inputs[name], "an agent's input")
@@ -337,6 +393,7 @@ func (c *checker) decide(at string, s model.Step, last bool) {
 		}
 		if rule.When != nil {
 			c.cond(ruleAt, *rule.When)
+			c.pastRule(*rule.When)
 		}
 		for _, e := range rule.Then {
 			c.effect(ruleAt, e)

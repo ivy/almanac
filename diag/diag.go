@@ -22,6 +22,7 @@ const (
 	ConfigSecret     Code = "almanac::config::secret"
 	ConfigEnvValue   Code = "almanac::config::env_value"
 	ConfigEnvMissing Code = "almanac::config::env_missing"
+	ConfigListen     Code = "almanac::config::listen"
 	Usage            Code = "almanac::usage"
 	ProviderMissing  Code = "almanac::provider::missing"
 	StoreFailed      Code = "almanac::store::failed"
@@ -41,7 +42,7 @@ const (
 func Codes() []Code {
 	return append([]Code{
 		ConfigRead, ConfigParse, ConfigUnknownKey, ConfigSecret, ConfigEnvValue, ConfigEnvMissing,
-		Usage, ProviderMissing, StoreFailed, InputUnreadable, InputInvalidJSON, RuntimeStartup,
+		ConfigListen, Usage, ProviderMissing, StoreFailed, InputUnreadable, InputInvalidJSON, RuntimeStartup,
 		UnknownCode, ScanFailed, ForgeRateLimited, ForgeRefused, ForgeUnreachable, ForgeReadOnly,
 		ForgePushRefused,
 	}, modelCodes()...)
@@ -151,6 +152,26 @@ func MissingEnv(name, purpose string) *Error {
 		Code:    ConfigEnvMissing,
 		Message: name + " is not set",
 		Help:    fmt.Sprintf("set %s in the environment: %s", name, purpose),
+	}
+}
+
+// NotLoopback is a listen address, set by setting, that is not a loopback IP
+// address and port. Example is one that would do.
+func NotLoopback(setting, address, example string) *Error {
+	return &Error{
+		Code:    ConfigListen,
+		Message: fmt.Sprintf("%s=%s is not a loopback address and port", setting, address),
+		Help:    fmt.Sprintf("set %s to a loopback address and port, such as %s, and put anything that must reach it from elsewhere in front of it", setting, example),
+	}
+}
+
+// CannotListen is a listen address, set by setting, that the host refused.
+func CannotListen(setting, address string, cause error) *Error {
+	return &Error{
+		Code:    ConfigListen,
+		Message: "cannot listen on " + address,
+		Help:    fmt.Sprintf("stop whatever holds %s, or set %s to a free loopback port", address, setting),
+		Cause:   cause,
 	}
 }
 

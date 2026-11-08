@@ -26,6 +26,7 @@ func samples() []*diag.Error {
 		diag.SecretInConfig("k", source, diag.Span{}),
 		diag.InvalidEnv("n"),
 		diag.MissingEnv("n", "p"),
+		diag.NotLoopback("S", "a", "e"),
 		diag.NotACommand("g", "u"),
 		diag.MissingProviders(nil),
 		diag.Store(errors.New("s")),

@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"github.com/ivy/almanac/almanactest"
@@ -371,6 +373,46 @@ var _ = Describe("An almanac binary's verbs", func() {
 				Expect(found).To(HaveLen(runs), mode.String())
 				done()
 			}
+		})
+	})
+
+	Describe("a command an almanac adds whole", func() {
+		var a app.Almanac
+		BeforeEach(func() {
+			a = w.almanac(holding)
+			a.Commands = func() []*cobra.Command {
+				var format, shape string
+				draw := &cobra.Command{
+					Use: "draw [WORKFLOW]", Short: "Draw a workflow.",
+					RunE: func(cmd *cobra.Command, args []string) error {
+						if len(args) > 0 && args[0] == "nothing" {
+							return &diag.Error{Code: diag.Usage, Message: "no workflow named nothing", Help: "name one"}
+						}
+						_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s as %s in %s\n", strings.Join(args, ","), shape, format)
+						return err
+					},
+				}
+				draw.Flags().StringVar(&format, "format", "text", "text or json")
+				draw.Flags().StringVar(&shape, "shape", "box", "box or circle")
+				return []*cobra.Command{draw}
+			}
+		})
+
+		It("is listed after the almanac's own verbs, and keeps flags of its own", func() {
+			help := execute(a, "--help").stdout
+			Expect(help).To(ContainSubstring("| explain CODE | draw [WORKFLOW]\n"))
+			Expect(help).To(MatchRegexp(`\n  draw \[WORKFLOW\] +Draw a workflow\.\n`))
+			out := execute(a, "draw", "holding", "--shape", "circle")
+			Expect(out.code).To(Equal(0), out.stderr)
+			Expect(out.stdout).To(Equal("holding as circle in text\n"))
+			Expect(execute(a, "draw", "--format", "json").stdout).To(Equal(" as box in json\n"), "its own --format wins")
+			Expect(execute(a, "draw", "--help").stdout).To(ContainSubstring("--shape"))
+		})
+
+		It("prints its error as every verb does", func() {
+			out := execute(a, "--format", "json", "draw", "nothing")
+			Expect(out.code).To(Equal(1))
+			Expect(decoded(out.stderr)).To(HaveKeyWithValue("code", "almanac::usage"))
 		})
 	})
 })

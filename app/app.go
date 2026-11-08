@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"github.com/ivy/almanac/config"
@@ -47,6 +48,12 @@ type Almanac struct {
 	Setup func(ctx context.Context, s Setting) (*providers.Set, error)
 	// Verbs are the almanac's own verbs, beside the ones every almanac has.
 	Verbs []Verb
+	// Commands makes cobra commands the almanac adds whole, writing their own output, such as
+	// the views package's outcomes and views, whose --format is their own. A verb that says
+	// what it has to say through Said belongs in Verbs. It is called once per invocation, and
+	// the usage line and help list what it makes after Verbs. An error a command returns is
+	// printed the way every verb prints one. Nil adds none.
+	Commands func() []*cobra.Command
 
 	// grace is how long an in-flight run gets once run is asked to stop.
 	grace time.Duration
@@ -134,6 +141,14 @@ func (a *Almanac) workflows() ([]workflow.Registered, error) {
 		return nil, problems
 	}
 	return append(all, a.Workflows...), nil
+}
+
+// commands are the commands the almanac adds whole, made for one invocation.
+func (a *Almanac) commands() []*cobra.Command {
+	if a.Commands == nil {
+		return nil
+	}
+	return a.Commands()
 }
 
 // limits are the limits the binary declares.

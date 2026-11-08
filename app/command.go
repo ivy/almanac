@@ -29,6 +29,9 @@ func (a *Almanac) usage() string {
 	for _, v := range a.Verbs {
 		verbs = append(verbs, strings.TrimSpace(v.Name+" "+v.Args))
 	}
+	for _, c := range a.commands() {
+		verbs = append(verbs, c.Use)
+	}
 	return fmt.Sprintf("usage: %s [--format json] %s", a.Name, strings.Join(verbs, " | "))
 }
 
@@ -89,6 +92,7 @@ func (a *Almanac) command(out *output, args []string) *cobra.Command {
 		}
 		root.AddCommand(cmd)
 	}
+	root.AddCommand(a.commands()...)
 	return root
 }
 
@@ -127,6 +131,9 @@ func (a *Almanac) help(cmd *cobra.Command, out *output) {
 		}
 		for _, verb := range a.Verbs {
 			fmt.Fprintf(&b, "  %-42s %s\n", strings.TrimSpace(verb.Name+" "+verb.Args), verb.Short)
+		}
+		for _, c := range a.commands() {
+			fmt.Fprintf(&b, "  %-42s %s\n", c.Use, c.Short)
 		}
 		b.WriteString("\nPut --format json first for output a program can read. `explain CODE` prints the long form of any error.\n")
 	} else {

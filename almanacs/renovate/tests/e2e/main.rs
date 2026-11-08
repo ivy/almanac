@@ -164,6 +164,32 @@ where
     panic!("timed out waiting for {what}");
 }
 
+/// A daemon process. Tests end it outright, as a crash would, and a crashed daemon cannot end
+/// its sandboxes, so this stops the ones it named.
+struct Daemon {
+    child: Child,
+    pid: u32,
+}
+
+impl Daemon {
+    async fn crash(&mut self) {
+        self.child.start_kill().unwrap();
+        self.child.wait().await.unwrap();
+    }
+}
+
+impl Drop for Daemon {
+    fn drop(&mut self) {
+        let _ = self.child.start_kill();
+        let named = format!("name=^almanac-{}-", self.pid);
+        let _ = std::process::Command::new("podman")
+            .args(["stop", "--time", "0", "--filter", &named])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
 impl World {
     fn command(&self, args: &[&str]) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_almanac-renovate"));
@@ -192,17 +218,18 @@ impl World {
         command
     }
 
-    async fn daemon(&self) -> Child {
+    async fn daemon(&self) -> Daemon {
         let mut command = self.command(&["run"]);
         command.env("ALMANAC_MODE", "live");
         let child = command.spawn().unwrap();
+        let pid = child.id().unwrap();
         let url = format!("http://127.0.0.1:{}/healthz", self.health);
         wait("the daemon", || {
             let url = url.clone();
             async move { reqwest::get(url).await.is_ok_and(|r| r.status() == 200) }
         })
         .await;
-        child
+        Daemon { child, pid }
     }
 
     /// What `report` says now.
@@ -438,8 +465,7 @@ async fn killing_the_process_mid_run_loses_no_effect_and_duplicates_none() {
         async move { requests > 0 }
     })
     .await;
-    daemon.start_kill().unwrap();
-    daemon.wait().await.unwrap();
+    daemon.crash().await;
     assert_eq!(w.pushes(), 0, "killed before it could push");
 
     w.model.release();

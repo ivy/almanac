@@ -63,10 +63,21 @@ fn go_escaped(module: &str) -> String {
     out
 }
 
+/// An HTTP client that gives up on a peer that stops answering, so a stalled connection fails the
+/// request instead of holding its run forever. There is no overall deadline, because a large
+/// download that keeps moving is not stalled.
+fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .read_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .expect("a client with only timeouts set always builds")
+}
+
 impl HttpRegistry {
     pub fn new(endpoints: Endpoints) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: http_client(),
             endpoints,
         }
     }

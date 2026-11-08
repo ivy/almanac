@@ -409,7 +409,7 @@ async fn the_logs_reach_the_agent_as_tainted_input_and_the_checkout_by_reference
 }
 
 #[tokio::test]
-async fn a_conflict_on_a_patched_branch_needs_a_person() {
+async fn a_conflict_on_a_patched_branch_waits_for_renovate() {
     let mut w = world(hours_old(100), patch_reply("src/main.rs")).await;
     w.suite_finishes("failure").await;
     w.settle().await;
@@ -422,7 +422,7 @@ async fn a_conflict_on_a_patched_branch_needs_a_person() {
         cooldown: fleet::Cooldown::Passed,
         config: fleet::RepoConfig::default(),
     };
-    assert_eq!(derive(&facts).state, State::NeedsPerson);
+    assert_eq!(derive(&facts).state, State::Waiting);
 }
 
 struct Case {

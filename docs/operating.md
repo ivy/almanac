@@ -44,6 +44,7 @@ curl -f http://127.0.0.1:8787/readyz
 ```
 
 The Go almanac of the rewrite answers on `127.0.0.1:8790/healthz`, and its broker on `127.0.0.1:8789/readyz`. A Go almanac's `/healthz` answers `503` until it has reached its database, and while it has lost it.
+The daemon also scans its repositories on a schedule, every 15 minutes unless configured longer, and logs `scheduled scan finished` each time, with how many pull requests it found and how long the scan took. A gap longer than the interval plus the last scan's duration means scanning has stopped.
 
 ## When it reports an error
 

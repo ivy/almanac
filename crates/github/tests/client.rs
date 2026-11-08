@@ -414,3 +414,26 @@ async fn a_pull_requests_added_lines_are_read_from_its_diffs() {
     let added = client.pull_added_lines("owner/repo", number).await.unwrap();
     assert_eq!(added, [("package.json".to_string(), "new".to_string())]);
 }
+
+/// Accepts connections and never answers, like a forge that stalled mid-request.
+async fn silent_forge() -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let mut held = Vec::new();
+        while let Ok((socket, _)) = listener.accept().await {
+            held.push(socket);
+        }
+    });
+    format!("http://{address}")
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_forge_that_stops_answering_is_unreachable_rather_than_a_hang() {
+    let c = GithubClient::new(silent_forge().await, Auth::Token("token".into())).retrying(quick());
+    let answer = c.exists(REPO, ".github/workflows").await;
+    assert!(
+        matches!(answer, Err(Error::ForgeUnreachable { .. })),
+        "{answer:?}"
+    );
+}

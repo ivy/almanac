@@ -122,6 +122,39 @@ fn step(reason: impl std::fmt::Display) -> StepError {
     StepError(reason.to_string())
 }
 
+/// A sandbox this harness made. One dropped before `destroy` finishes, as when a cancelled run's
+/// future is dropped, is abandoned rather than left running.
+struct Made<'a> {
+    sandbox: &'a dyn Sandbox,
+    id: SandboxId,
+    ended: bool,
+}
+
+impl<'a> Made<'a> {
+    async fn create(sandbox: &'a dyn Sandbox, spec: &SandboxSpec) -> Result<Self, StepError> {
+        let id = sandbox.create(spec).await.map_err(step)?;
+        Ok(Self {
+            sandbox,
+            id,
+            ended: false,
+        })
+    }
+
+    async fn destroy(mut self) -> Result<(), StepError> {
+        let destroyed = self.sandbox.destroy(&self.id).await;
+        self.ended = destroyed.is_ok();
+        destroyed.map_err(step)
+    }
+}
+
+impl Drop for Made<'_> {
+    fn drop(&mut self) {
+        if !self.ended {
+            self.sandbox.abandon(&self.id);
+        }
+    }
+}
+
 impl ClaudeHarness {
     pub fn new(config: ClaudeConfig) -> Self {
         Self {
@@ -162,7 +195,8 @@ impl ClaudeHarness {
         spec: &SandboxSpec,
         wrapped: Vec<u8>,
     ) -> Result<Vec<u8>, StepError> {
-        let id = sandbox.create(spec).await.map_err(step)?;
+        let made = Made::create(sandbox, spec).await?;
+        let id = made.id.clone();
         let fetched = async {
             self.unpack_source(sandbox, &id, wrapped).await?;
             let out = sandbox
@@ -178,9 +212,9 @@ impl ClaudeHarness {
             sandbox.download(&id, DEPENDENCIES_PATH).await.map_err(step)
         };
         let result = fetched.await;
-        let destroyed = sandbox.destroy(&id).await;
+        let destroyed = made.destroy().await;
         let archive = result?;
-        destroyed.map_err(step)?;
+        destroyed?;
         Ok(archive)
     }
 
@@ -233,11 +267,13 @@ impl ClaudeHarness {
             .sandbox
             .as_ref()
             .ok_or_else(|| step("a session that may write needs a sandbox"))?;
-        let id = sandbox.create(spec).await.map_err(step)?;
-        let outcome = self.sandboxed(sandbox.clone(), &id, prompt, input).await;
-        let destroyed = sandbox.destroy(&id).await;
+        let made = Made::create(sandbox.as_ref(), spec).await?;
+        let outcome = self
+            .sandboxed(sandbox.clone(), &made.id, prompt, input)
+            .await;
+        let destroyed = made.destroy().await;
         let value = outcome?;
-        destroyed.map_err(step)?;
+        destroyed?;
         Ok(value)
     }
 

@@ -17,6 +17,9 @@ const KILLED: i32 = 137;
 const UNPRIVILEGED: &str = "1000:1000";
 /// Longer than any session. A sandbox whose owner was killed outright ends itself by this.
 const LIFETIME_SECONDS: u32 = 7200;
+/// How long `abandon` holds its thread. A stop with no grace period takes about a second, and a
+/// stopping service may abandon several sandboxes in turn within its own stop timeout.
+const ABANDON_LIMIT: Duration = Duration::from_secs(3);
 const SCRATCH_MB: u32 = 1024;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -190,5 +193,32 @@ impl Sandbox for PodmanSandbox {
             }
             Ok(())
         })
+    }
+
+    /// The same stop as `destroy`, waited for on this thread. The caller is being dropped, usually
+    /// because the process is shutting down, and a stop left running when it exits is killed
+    /// with it. The container was started with `--rm`, so stopping removes it.
+    fn abandon(&self, id: &SandboxId) {
+        let stopping = std::process::Command::new("podman")
+            .args(["stop", "--time", "0", &id.0])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        let mut child = match stopping {
+            Ok(child) => child,
+            Err(error) => {
+                tracing::warn!(sandbox = %id.0, %error, "could not abandon a sandbox");
+                return;
+            }
+        };
+        let deadline = std::time::Instant::now() + ABANDON_LIMIT;
+        while matches!(child.try_wait(), Ok(None)) {
+            if std::time::Instant::now() >= deadline {
+                tracing::warn!(sandbox = %id.0, "a sandbox was still stopping when abandoned");
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 }

@@ -23,5 +23,5 @@ tokio = { workspace = true, features = ["time"] }
 [dev-dependencies]
 axum.workspace = true
 simforge.workspace = true
-tokio = { workspace = true, features = ["macros", "net"] }
+tokio = { workspace = true, features = ["macros", "net", "test-util"] }
 wiremock.workspace = true

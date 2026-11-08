@@ -1,0 +1,65 @@
+{
+  "repositories_scanned": 3,
+  "totals": {
+    "mergeable": 2,
+    "in-progress": 1,
+    "waiting": 2,
+    "needs-person": 1
+  },
+  "unreadable": ["owner/beta#9"],
+  "repositories": [
+    {
+      "repo": "owner/alpha",
+      "pulls": [
+        {
+          "number": 1,
+          "branch": "renovate/left-pad-2.x",
+          "state": "mergeable",
+          "reason": "nothing is in its way",
+          "note": "automerge is off, so this will not merge itself"
+        }
+      ]
+    },
+    {
+      "repo": "owner/beta",
+      "pulls": [
+        {
+          "number": 1,
+          "branch": "renovate/tar-7.x",
+          "state": "needs-person",
+          "reason": "nothing says when this update was published"
+        },
+        {
+          "number": 2,
+          "branch": "renovate/ansi-5.x",
+          "state": "waiting",
+          "reason": "Renovate to rebase it"
+        },
+        {
+          "number": 3,
+          "branch": "renovate/no-ci-1.x",
+          "state": "mergeable",
+          "reason": "nothing is in its way",
+          "note": "no checks ran on this pull request"
+        },
+        {
+          "number": 4,
+          "branch": "renovate/glob-10.x",
+          "state": "in-progress",
+          "reason": "Almanac is validating it"
+        }
+      ]
+    },
+    {
+      "repo": "owner/gamma",
+      "pulls": [
+        {
+          "number": 1,
+          "branch": "renovate/minimist-1.x",
+          "state": "waiting",
+          "reason": "CI to finish"
+        }
+      ]
+    }
+  ]
+}

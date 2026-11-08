@@ -9,7 +9,9 @@ local secrets = new Step {
 hooks {
   ["pre-commit"] {
     fix = false
-    stash = "git"
+    // A patch file, not `git stash`: worktrees share one stash stack, and parallel commits
+    // in separate worktrees would otherwise restore each other's changes.
+    stash = "patch-file"
     steps {
       ["gitleaks"] = secrets
       ["lint"] {

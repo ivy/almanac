@@ -115,4 +115,8 @@ impl Sandbox for FakeSandbox {
             Ok(())
         })
     }
+
+    fn abandon(&self, id: &SandboxId) {
+        self.state.lock().unwrap().alive.remove(&id.0);
+    }
 }

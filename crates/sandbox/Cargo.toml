@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 futures.workspace = true
 tokio = { workspace = true, features = ["io-util", "process", "time"] }
+tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros"] }

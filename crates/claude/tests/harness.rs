@@ -182,6 +182,22 @@ async fn a_sandbox_is_destroyed_when_its_session_fails() {
 }
 
 #[tokio::test]
+async fn a_sandbox_is_ended_when_its_session_is_abandoned() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = cli(dir.path(), "sleep 30");
+    let fake = fake_with_patch();
+    let harness =
+        ClaudeHarness::new(config).with_sandbox(fake.clone(), SandboxSpec::agent("image"));
+    let session = harness.session("Fix.", WRITE, json!({}));
+    let abandoned = tokio::time::timeout(Duration::from_millis(500), session).await;
+    assert!(
+        abandoned.is_err(),
+        "the session should still have been running"
+    );
+    assert_eq!(fake.alive(), 0);
+}
+
+#[tokio::test]
 async fn the_checkout_is_uploaded_and_never_sent_to_the_model() {
     let dir = tempfile::tempdir().unwrap();
     let config = cli(dir.path(), &answers("{}"));

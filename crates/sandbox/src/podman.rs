@@ -191,4 +191,21 @@ impl Sandbox for PodmanSandbox {
             Ok(())
         })
     }
+
+    /// Starts the same stop as `destroy` and does not wait for it, so it finishes even if this
+    /// process exits first. The container was started with `--rm`, so stopping removes it.
+    fn abandon(&self, id: &SandboxId) {
+        let stopping = std::process::Command::new("podman")
+            .args(["stop", "--time", "0", &id.0])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        match stopping {
+            Ok(mut child) => {
+                std::thread::spawn(move || child.wait());
+            }
+            Err(error) => tracing::warn!(sandbox = %id.0, %error, "could not abandon a sandbox"),
+        }
+    }
 }

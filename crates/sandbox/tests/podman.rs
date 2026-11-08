@@ -110,6 +110,22 @@ async fn a_destroyed_sandbox_is_gone() {
 }
 
 #[tokio::test]
+async fn an_abandoned_sandbox_is_gone_without_being_awaited() {
+    let p = PodmanSandbox;
+    let id = started(&p).await;
+    p.abandon(&id);
+    let deadline = std::time::Instant::now() + LIMIT;
+    while p
+        .exec(&id, "true", LIMIT)
+        .await
+        .is_ok_and(|o| o.exit_code == 0)
+    {
+        assert!(std::time::Instant::now() < deadline, "{} still runs", id.0);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+#[tokio::test]
 async fn an_agent_sandbox_cannot_be_given_egress() {
     let mut spec = SandboxSpec::agent(IMAGE);
     spec.egress = sandbox::Egress::Domains(vec!["example.com".to_string()]);

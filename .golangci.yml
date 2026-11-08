@@ -54,6 +54,10 @@ linters:
         - pattern: .*
           pkg: ^os/exec$
           msg: only sandbox/podman and harness/claude may spawn processes
+    staticcheck:
+      # Workflows are written with the DSL dot-imported, as revive allows below.
+      dot-import-whitelist:
+        - github.com/ivy/almanac/dsl
     revive:
       rules:
         - name: dot-imports

@@ -85,3 +85,25 @@ var _ = Describe("Providers", func() {
 		Expect(ok).To(BeFalse())
 	})
 })
+
+var _ = Describe("A cloned set", func() {
+	It("holds what the set held, and changing it leaves the set as it was", func() {
+		set := providers.Provide[effect.Forge](providers.New(), forge{name: "simforge"})
+		set.UseHarnessFor("reviewer", harness{name: "reviewer"}).ActAs("almanac[bot]").AlertTo(hostile.MustParseSlug("owner/ops"))
+
+		clone := set.Clone()
+		providers.Provide[effect.Forge](clone, forge{name: "refusing"})
+		clone.UseHarnessFor("reviewer", harness{name: "refusing"}).ActAs("someone")
+
+		found, _ := providers.Lookup[effect.Forge](clone)
+		Expect(found).To(Equal(forge{name: "refusing"}))
+		original, _ := providers.Lookup[effect.Forge](set)
+		Expect(original).To(Equal(forge{name: "simforge"}))
+		reviewer, _ := set.HarnessFor("reviewer")
+		Expect(reviewer).To(Equal(harness{name: "reviewer"}))
+		Expect(set.Identity()).To(Equal([]string{"almanac[bot]"}))
+		target, ok := clone.Alerts()
+		Expect(ok).To(BeTrue())
+		Expect(target).To(Equal(hostile.MustParseSlug("owner/ops")))
+	})
+})

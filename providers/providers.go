@@ -5,7 +5,9 @@
 package providers
 
 import (
+	"maps"
 	"reflect"
+	"slices"
 
 	"github.com/ivy/almanac/agent"
 	"github.com/ivy/almanac/hostile"
@@ -24,6 +26,22 @@ type Set struct {
 // New is an empty set.
 func New() *Set {
 	return &Set{items: map[reflect.Type]any{}, harnesses: map[string]agent.Harness{}}
+}
+
+// Clone is a copy of s. Providing to the copy leaves s as it was, so a runtime can replace what
+// it must refuse, such as every write in a read-only pass, without changing the binary's set.
+func (s *Set) Clone() *Set {
+	c := &Set{
+		items:     maps.Clone(s.items),
+		harness:   s.harness,
+		harnesses: maps.Clone(s.harnesses),
+		identity:  slices.Clone(s.identity),
+	}
+	if s.alerts != nil {
+		target := *s.alerts
+		c.alerts = &target
+	}
+	return c
 }
 
 // Provide sets the provider of T. Name T where it is not the value's own type, as in

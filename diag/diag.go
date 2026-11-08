@@ -28,6 +28,7 @@ const (
 	StoreFailed      Code = "almanac::store::failed"
 	InputUnreadable  Code = "almanac::input::unreadable"
 	InputInvalidJSON Code = "almanac::input::invalid_json"
+	InputNotAReport  Code = "almanac::input::not_a_report"
 	RuntimeStartup   Code = "almanac::runtime::startup"
 	UnknownCode      Code = "almanac::explain::unknown_code"
 	ScanFailed       Code = "almanac::scan::failed"
@@ -42,8 +43,8 @@ const (
 func Codes() []Code {
 	return append([]Code{
 		ConfigRead, ConfigParse, ConfigUnknownKey, ConfigSecret, ConfigEnvValue, ConfigEnvMissing,
-		ConfigListen, Usage, ProviderMissing, StoreFailed, InputUnreadable, InputInvalidJSON, RuntimeStartup,
-		UnknownCode, ScanFailed, ForgeRateLimited, ForgeRefused, ForgeUnreachable, ForgeReadOnly,
+		ConfigListen, Usage, ProviderMissing, StoreFailed, InputUnreadable, InputInvalidJSON, InputNotAReport,
+		RuntimeStartup, UnknownCode, ScanFailed, ForgeRateLimited, ForgeRefused, ForgeUnreachable, ForgeReadOnly,
 		ForgePushRefused,
 	}, modelCodes()...)
 }
@@ -222,6 +223,25 @@ func InvalidJSON(path string, cause error) *Error {
 		Message: path + " is not valid JSON",
 		Help:    "pass the raw JSON body of the event",
 		Cause:   cause,
+	}
+}
+
+// NotAReport is a file named as a report that is not one a report verb printed with
+// --format json. Problem says what is wrong with it.
+func NotAReport(path, problem string) *Error {
+	return &Error{
+		Code:    InputNotAReport,
+		Message: path + " is not a report: " + problem,
+		Help:    "pass what `report --format json` printed, from the Rust almanac-renovate or the Go one, unchanged",
+	}
+}
+
+// MissingFlag is a verb run without a flag it needs, for purpose.
+func MissingFlag(verb, flag, purpose string) *Error {
+	return &Error{
+		Code:    Usage,
+		Message: fmt.Sprintf("%s needs %s: %s", verb, flag, purpose),
+		Help:    fmt.Sprintf("run it again with %s; `%s --help` lists its flags", flag, verb),
 	}
 }
 

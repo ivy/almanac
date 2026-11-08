@@ -32,6 +32,7 @@ func samples() []*diag.Error {
 		diag.Store(errors.New("s")),
 		diag.UnreadableInput("p", cause),
 		diag.InvalidJSON("p", cause),
+		diag.NotAReport("p", "q"),
 		diag.Startup(cause),
 		diag.NoSuchCode("c"),
 		diag.Scan("w", "r"),

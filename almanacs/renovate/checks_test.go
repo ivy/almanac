@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/ivy/almanac/almanacs/renovate"
+	"github.com/ivy/almanac/almanacs/renovate/renovatetest"
 	"github.com/ivy/almanac/cooled"
 	"github.com/ivy/almanac/hostile"
 )
@@ -97,7 +98,7 @@ var _ = Describe("What Almanac last said about a commit", func() {
 
 var _ = Describe("How old a pull request's update is, for a scan", func() {
 	It("applies the cooldown a workflow applies, and is unknown when nothing dates it", func() {
-		reg := &archives{published: map[string]time.Time{}, files: map[string][]byte{}}
+		reg := renovatetest.NewRegistry()
 		pull := func(body string) hostile.Of[json.RawMessage] {
 			encoded, err := json.Marshal(map[string]any{"body": body})
 			Expect(err).NotTo(HaveOccurred())
@@ -105,7 +106,7 @@ var _ = Describe("How old a pull request's update is, for a scan", func() {
 		}
 		body := npmRow("lodash", "4.17.20", "4.17.21")
 		Expect(renovate.CooldownOf(context.Background(), reg, pull(body), now)).To(Equal(cooled.Unknown))
-		reg.release("lodash", "4.17.21", now.Add(-renovate.MinReleaseAge+time.Hour), nil)
+		reg.Release("lodash", "4.17.21", now.Add(-renovate.MinReleaseAge+time.Hour), nil)
 		Expect(renovate.CooldownOf(context.Background(), reg, pull(body), now)).To(Equal(cooled.Young))
 		Expect(renovate.CooldownOf(context.Background(), reg, pull(body), now.Add(time.Hour))).To(Equal(cooled.Passed))
 	})

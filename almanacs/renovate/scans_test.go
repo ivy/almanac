@@ -47,7 +47,7 @@ var _ = Describe("The scan for failing pull requests", func() {
 		Expect(event.Branch.String()).To(Equal(branch))
 		Expect(number).To(Equal(uint64(1)))
 
-		w.registry.release("lodash", "4.17.21", longAgo, nil)
+		w.Registry.Release("lodash", "4.17.21", longAgo, nil)
 		cooled := scan(w, "renovate.failing_pulls")
 		Expect(state(cooled[0])).To(ContainSubstring("cooled=true"))
 		Expect(cooled[0].DeliveryID).NotTo(Equal(found[0].DeliveryID))
@@ -134,10 +134,10 @@ var _ = Describe("The scan for security pull requests", func() {
 	It("looks again once CI has had its hour, and carries none of the pull request's text", func() {
 		security("renovate/npm-lodash", "security")
 		opened := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
-		providers.Provide[clock.Clock](w.set, clock.NewFake(opened.Add(30*time.Minute)))
+		providers.Provide[clock.Clock](w.Set, clock.NewFake(opened.Add(30*time.Minute)))
 		early := scan(w, "renovate.security_pulls")
 		Expect(state(early[0])).To(ContainSubstring("gave_up=false"))
-		providers.Provide[clock.Clock](w.set, clock.NewFake(opened.Add(renovate.CIPatience)))
+		providers.Provide[clock.Clock](w.Set, clock.NewFake(opened.Add(renovate.CIPatience)))
 		late := scan(w, "renovate.security_pulls")
 		Expect(state(late[0])).To(ContainSubstring("gave_up=true"))
 		Expect(late[0].DeliveryID).NotTo(Equal(early[0].DeliveryID))

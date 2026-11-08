@@ -1,29 +1,20 @@
 package renovate_test
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/ivy/almanac/advisory"
 	"github.com/ivy/almanac/almanacs/renovate"
-	"github.com/ivy/almanac/clock"
-	"github.com/ivy/almanac/github"
+	"github.com/ivy/almanac/almanacs/renovate/renovatetest"
 	"github.com/ivy/almanac/hostile"
-	"github.com/ivy/almanac/providers"
-	"github.com/ivy/almanac/registry"
 	"github.com/ivy/almanac/simforge"
 	"github.com/ivy/almanac/vocab"
 	"github.com/ivy/almanac/workflow"
@@ -42,31 +33,15 @@ var (
 
 // world is a forge with one repository, and the providers a vocabulary reads it through.
 type world struct {
-	sim        *simforge.Forge
-	set        *providers.Set
-	registry   *archives
-	advisories *advisory.Fake
-	clock      *clock.Fake
+	*renovatetest.World
+	sim *simforge.Forge
 }
 
 func newWorld() *world {
 	sim := simforge.Start()
 	DeferCleanup(sim.Close)
 	sim.AddRepo(simforge.PublicRepo(repoName))
-	w := &world{
-		sim:        sim,
-		set:        providers.New(),
-		registry:   &archives{published: map[string]time.Time{}, files: map[string][]byte{}},
-		advisories: advisory.NewFake(),
-		clock:      clock.NewFake(now),
-	}
-	retry := github.Retrying(github.Retry{Attempts: 2, Backoff: time.Millisecond, LongestWait: time.Second})
-	providers.Provide(w.set, github.New(sim.URL(), github.Token("token"), retry))
-	providers.Provide(w.set, renovate.Target{Owner: "owner", Author: simforge.Renovate})
-	providers.Provide[clock.Clock](w.set, w.clock)
-	providers.Provide[registry.Registry](w.set, w.registry)
-	providers.Provide[advisory.Advisories](w.set, w.advisories)
-	return w
+	return &world{World: renovatetest.NewWorld(sim, "owner", now), sim: sim}
 }
 
 // pull adds a Renovate pull request on branch whose body is body, and returns its number and
@@ -80,15 +55,7 @@ func (w *world) pull(body string) (uint64, string) {
 
 // status sets a commit status, as anything with write access can.
 func (w *world) status(sha, context, state string) {
-	body, err := json.Marshal(map[string]string{"context": context, "state": state})
-	Expect(err).NotTo(HaveOccurred())
-	request, err := http.NewRequest(http.MethodPost, w.sim.URL()+"/repos/"+repoName+"/statuses/"+sha, bytes.NewReader(body))
-	Expect(err).NotTo(HaveOccurred())
-	request.Header.Set("Authorization", "Bearer token")
-	response, err := http.DefaultClient.Do(request)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(response.Body.Close()).To(Succeed())
-	Expect(response.StatusCode).To(Equal(http.StatusCreated))
+	Expect(renovatetest.SetStatus(w.sim, repoName, sha, context, state)).To(Succeed())
 }
 
 // observe reads through the part registered as name, as a run's observe step does, and decodes
@@ -111,7 +78,7 @@ func observeErr(w *world, name string, in any) error {
 	return err
 }
 
-func scannerOf(w *world) *workflow.Scanner { return workflow.NewScanner(w.set) }
+func scannerOf(w *world) *workflow.Scanner { return workflow.NewScanner(w.Set) }
 
 // scan runs the scan registered as name over the world.
 func scan(w *world, name string) []workflow.Found {
@@ -120,67 +87,6 @@ func scan(w *world, name string) []workflow.Found {
 	found, err := entry.Scan(context.Background(), scannerOf(w))
 	Expect(err).NotTo(HaveOccurred())
 	return found
-}
-
-// archives is a registry of releases and their archives, by name@version.
-type archives struct {
-	mu        sync.Mutex
-	published map[string]time.Time
-	files     map[string][]byte
-	asked     []string
-	broken    bool
-}
-
-var errRegistryDown = errors.New("the registry is down")
-
-func (a *archives) release(name, version string, at time.Time, files map[string]string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.published[name+"@"+version] = at
-	a.files[name+"@"+version] = tgz(files)
-}
-
-func (a *archives) Published(_ context.Context, p registry.Package) (time.Time, bool, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.asked = append(a.asked, p.String())
-	at, ok := a.published[p.String()]
-	return at, ok, nil
-}
-
-func (a *archives) Artifact(_ context.Context, p registry.Package) ([]byte, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.asked = append(a.asked, p.String())
-	if a.broken {
-		return nil, errRegistryDown
-	}
-	archive, ok := a.files[p.String()]
-	if !ok {
-		return nil, registry.ErrNoArtifact
-	}
-	return archive, nil
-}
-
-func (a *archives) packages() []string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return append([]string(nil), a.asked...)
-}
-
-// tgz is a package archive holding files under one top directory, as npm packs one.
-func tgz(files map[string]string) []byte {
-	var out bytes.Buffer
-	zipped := gzip.NewWriter(&out)
-	archive := tar.NewWriter(zipped)
-	for name, content := range files {
-		Expect(archive.WriteHeader(&tar.Header{Name: "package/" + name, Mode: 0o644, Size: int64(len(content)), Typeflag: tar.TypeReg})).To(Succeed())
-		_, err := io.Copy(archive, strings.NewReader(content))
-		Expect(err).NotTo(HaveOccurred())
-	}
-	Expect(archive.Close()).To(Succeed())
-	Expect(zipped.Close()).To(Succeed())
-	return out.Bytes()
 }
 
 // npmRow is a Renovate table updating an npm package from one version to another.

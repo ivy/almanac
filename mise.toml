@@ -13,3 +13,8 @@ go = "1.25.7"
 golangci-lint = "2.13.2"
 sqlc = "1.31.1"
 ginkgo = "2.32.1"
+
+[env]
+# Specs reach PostgreSQL through testcontainers on rootless podman, inside or outside make.
+DOCKER_HOST = "unix:///run/user/{{ exec(command='id -u') }}/podman/podman.sock"
+TESTCONTAINERS_RYUK_DISABLED = "true"

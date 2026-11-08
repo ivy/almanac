@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
+	"reflect"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -14,6 +15,9 @@ import (
 	"github.com/ivy/almanac/hostile/reveal"
 	"github.com/ivy/almanac/patch"
 )
+
+// planned is a decision as a store would keep it.
+type planned struct{ Patch patch.Checked }
 
 var base = hostile.MustParseSha(strings.Repeat("a", 40))
 
@@ -124,8 +128,26 @@ var _ = Describe("The patch policy", func() {
 		Expect(reveal.Value(checked.Patch()).Changes[0].Path).To(Equal("src/a.rs"))
 	})
 
-	It("a zero Checked is not checked", func() {
+	It("a Checked cannot be built outside its package, and a zero one is not checked", func() {
+		t := reflect.TypeFor[patch.Checked]()
+		for i := range t.NumField() {
+			Expect(t.Field(i).IsExported()).To(BeFalse(), t.Field(i).Name)
+		}
 		Expect(patch.Checked{}.IsZero()).To(BeTrue())
+	})
+
+	It("a Checked does not survive being stored, so stored or model-written data cannot pose as checked", func() {
+		checked, err := patch.DefaultPolicy().Check(hostile.New(patch.Patch{Changes: []patch.Change{write("src/a.rs")}}), base)
+		Expect(err).NotTo(HaveOccurred())
+
+		stored, err := json.Marshal(planned{Patch: checked})
+		Expect(err).NotTo(HaveOccurred())
+		var restored, forged planned
+		Expect(json.Unmarshal(stored, &restored)).To(Succeed())
+		Expect(json.Unmarshal([]byte(`{"Patch": {"checked": true}}`), &forged)).To(Succeed())
+
+		Expect(restored.Patch.IsZero()).To(BeTrue())
+		Expect(forged.Patch.IsZero()).To(BeTrue())
 	})
 
 	It("says why it refused, and names no path", func() {

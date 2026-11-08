@@ -267,7 +267,13 @@ func Worker[Out any](v *Vocabulary, label string, a agent.Worker) WorkerPart[Out
 	return WorkerPart[Out]{part{a.Name()}}
 }
 
+// registerAgent registers an agent. Its prompt is part of its declaration, so a call cannot
+// choose one, and an agent declared with a prompt that was never parsed is refused here rather
+// than when a run first calls it.
 func registerAgent(v *Vocabulary, label string, info agent.Info, result reflect.Type, call func(agent.Vars, any, cooled.Cooled) (agent.Call, error), answer func(hostile.Of[json.RawMessage]) (any, error), problem string) {
+	if problem == "" && info.Prompt == "" {
+		problem = "its prompt was never parsed: declare the agent with a prompt from agent.ParsePrompt or agent.LoadPrompt, under a name the manifest shows"
+	}
 	v.add(&Entry{
 		Kind:   AgentKind,
 		Name:   info.Name,

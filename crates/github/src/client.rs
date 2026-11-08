@@ -101,10 +101,21 @@ fn next_page(response: &Response, base_url: &str) -> Option<String> {
     url.starts_with(base_url).then(|| url.to_string())
 }
 
+/// An HTTP client that gives up on a peer that stops answering, so a stalled connection fails the
+/// request instead of holding its run forever. There is no overall deadline, because a large
+/// download that keeps moving is not stalled.
+fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .read_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .expect("a client with only timeouts set always builds")
+}
+
 impl GithubClient {
     pub fn new(base_url: impl Into<String>, auth: Auth) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: http_client(),
             base_url: base_url.into().trim_end_matches('/').to_string(),
             auth,
             read_only: false,

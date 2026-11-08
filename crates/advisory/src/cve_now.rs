@@ -62,10 +62,21 @@ fn advisory(entry: &Value) -> Result<Advisory, StepError> {
     })
 }
 
+/// An HTTP client that gives up on a peer that stops answering, so a stalled connection fails the
+/// request instead of holding its run forever. There is no overall deadline, because a large
+/// download that keeps moving is not stalled.
+fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .read_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .expect("a client with only timeouts set always builds")
+}
+
 impl CveNow {
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: http_client(),
             base_url: base_url.into().trim_end_matches('/').to_string(),
         }
     }

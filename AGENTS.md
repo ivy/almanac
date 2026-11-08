@@ -79,6 +79,7 @@ The `go-rewrite` branch rewrites Almanac in Go, with workflows written in a Go D
 - **Taint:** `tools/hostilevet` runs in `make go-lint`. Only the packages its `boundaries` list names may import `hostile/reveal`; adding one is a reviewed change.
 - **GitHub's events** are generated from `github/events/projection.toml` by `tools/eventgen`. Run `make go-generate` after changing the projection, and commit `github/events/events.go`: `make go-lint` fails while it is stale.
 - **Workflows** are models (`model/`) of parts registered in a vocabulary (`vocab/`), written with the DSL (`dsl/`) and refused or accepted by `check/`. A workflow's spec runs `check.Check` on it. Its model errors have pages in `docs/errors-go/` until the cutover. `engine.New(vocabulary, model)` runs one as a `workflow.Registered`.
+- **The Renovate almanac** is `almanacs/renovate`: its vocabulary, registered in `renovate.Vocabulary`, and in `almanacs/renovate/wiring` its providers, set up from the environment `docs/configuration.md` lists. What a pull request claims leaves taint only by decoding into validated slugs with `hostile.DecodeClean`.
 - **A worktree** needs `private/denylist.txt` copied from the main checkout, or `check-public` checks machine details only.
 
 ## Where to look first

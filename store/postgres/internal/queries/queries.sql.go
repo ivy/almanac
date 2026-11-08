@@ -595,6 +595,53 @@ func (q *Queries) RunsFor(ctx context.Context, arg RunsForParams) ([]string, err
 	return items, nil
 }
 
+const runsSince = `-- name: RunsSince :many
+SELECT id, workflow, key, payload, origin, depth FROM runs
+WHERE almanac = $1 AND started_at >= $2
+ORDER BY seq
+`
+
+type RunsSinceParams struct {
+	Almanac string
+	Since   time.Time
+}
+
+type RunsSinceRow struct {
+	ID       string
+	Workflow string
+	Key      string
+	Payload  json.RawMessage
+	Origin   string
+	Depth    int32
+}
+
+func (q *Queries) RunsSince(ctx context.Context, arg RunsSinceParams) ([]RunsSinceRow, error) {
+	rows, err := q.db.Query(ctx, runsSince, arg.Almanac, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RunsSinceRow
+	for rows.Next() {
+		var i RunsSinceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Workflow,
+			&i.Key,
+			&i.Payload,
+			&i.Origin,
+			&i.Depth,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const startRun = `-- name: StartRun :one
 INSERT INTO runs (almanac, workflow, key, payload, origin, depth, status, started_at)
 VALUES ($1, $2, $3, $4, $5, $6, 'running', $7)

@@ -415,6 +415,45 @@ func Conformance(fresh Fresh) {
 		})
 	})
 
+	ginkgo.Describe("runs since a time", func() {
+		ginkgo.It("lists every run the scope started from then, oldest first, whatever became of it", func() {
+			st, other := s.open("since"), s.open("elsewhere")
+			s.admit(other, "d0", "k", "0")
+			s.started(other)
+
+			s.admit(st, "d1", "a", "1")
+			earlier := request(budgets...)
+			earlier.Now = now.Add(-2 * time.Hour)
+			first := s.claim(st, earlier).Run
+			gomega.Expect(first).NotTo(gomega.BeNil())
+			s.release(st, first.ID, effect.DryRun, `"x"`)
+			s.admit(st, "d2", "b", "2")
+			second := s.started(st)
+
+			ids := func(since time.Time) []string {
+				ginkgo.GinkgoHelper()
+				runs, err := s.open("since").RunsSince(s.ctx, since)
+				gomega.Expect(err).NotTo(gomega.HaveOccurred())
+				out := make([]string, len(runs))
+				for i, r := range runs {
+					out[i] = r.ID
+				}
+				return out
+			}
+			gomega.Expect(ids(time.Time{})).To(gomega.Equal([]string{first.ID, second.ID}))
+			gomega.Expect(ids(now.Add(-time.Hour))).To(gomega.Equal([]string{second.ID}))
+			gomega.Expect(ids(now)).To(gomega.Equal([]string{second.ID}), "a run started at since is listed")
+			gomega.Expect(ids(now.Add(time.Second))).To(gomega.BeEmpty())
+
+			runs, err := st.RunsSince(s.ctx, time.Time{})
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+			gomega.Expect(runs[1].Workflow).To(gomega.Equal(w))
+			gomega.Expect(runs[1].Key).To(gomega.Equal("b"))
+			gomega.Expect(runs[1].Payload).To(gomega.MatchJSON("2"))
+			gomega.Expect(runs[1].Origin).To(gomega.Equal(store.Webhook))
+		})
+	})
+
 	ginkgo.Describe("scopes", func() {
 		ginkgo.It("keep almanacs from seeing each other", func() {
 			one, two := s.open("one"), s.open("two")

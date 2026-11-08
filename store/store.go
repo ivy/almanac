@@ -73,6 +73,11 @@ type Store interface {
 	// Run is the run with an ID, and false if this scope has none.
 	Run(ctx context.Context, runID string) (Run, bool, error)
 
+	// RunsSince is every run this scope started at or after since, whatever
+	// became of it, oldest first. It is how a dry run's decisions are read
+	// back across keys, with Outbox and Recorded for each.
+	RunsSince(ctx context.Context, since time.Time) ([]Run, error)
+
 	// Recorded is the value a run recorded under name for the occurrence-th
 	// time, and false if it recorded none.
 	Recorded(ctx context.Context, runID, name string, occurrence int) (json.RawMessage, bool, error)

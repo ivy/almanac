@@ -145,6 +145,11 @@ ON CONFLICT (almanac, workflow, key) DO NOTHING;
 SELECT id, workflow, key, payload, origin, depth FROM runs
 WHERE id = @run_id AND almanac = @almanac;
 
+-- name: RunsSince :many
+SELECT id, workflow, key, payload, origin, depth FROM runs
+WHERE almanac = @almanac AND started_at >= @since
+ORDER BY seq;
+
 -- name: Recorded :one
 SELECT value FROM run_log WHERE run_id = @run_id AND name = @name AND occurrence = @occurrence;
 

@@ -520,6 +520,23 @@ func (s *Store) Run(ctx context.Context, runID string) (store.Run, bool, error) 
 	}, true, nil
 }
 
+// RunsSince implements store.Store.
+func (s *Store) RunsSince(ctx context.Context, since time.Time) ([]store.Run, error) {
+	rows, err := s.q.RunsSince(ctx, queries.RunsSinceParams{Almanac: s.almanac, Since: since})
+	if err != nil {
+		return nil, diag.Store(err)
+	}
+	runs := make([]store.Run, len(rows))
+	for i, r := range rows {
+		origin, err := store.ParseOrigin(r.Origin)
+		if err != nil {
+			return nil, diag.Store(err)
+		}
+		runs[i] = store.Run{ID: r.ID, Workflow: r.Workflow, Key: r.Key, Payload: r.Payload, Origin: origin, Depth: int(r.Depth)}
+	}
+	return runs, nil
+}
+
 // Recorded implements store.Store.
 func (s *Store) Recorded(ctx context.Context, runID, name string, occurrence int) (json.RawMessage, bool, error) {
 	value, err := s.q.Recorded(ctx, queries.RecordedParams{RunID: runID, Name: name, Occurrence: int32(occurrence)})

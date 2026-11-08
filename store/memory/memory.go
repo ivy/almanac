@@ -55,6 +55,7 @@ type Store struct {
 
 type start struct {
 	workflow string
+	run      string
 	at       time.Time
 }
 
@@ -167,7 +168,7 @@ func (s *Store) Claim(_ context.Context, request store.ClaimRequest) (store.Clai
 		Origin:   first.event.Origin,
 		Depth:    first.event.Depth,
 	}
-	s.started = append(s.started, start{workflow: next.workflow, at: request.Now})
+	s.started = append(s.started, start{workflow: next.workflow, run: run.ID, at: request.Now})
 	s.running[*next] = run.ID
 	s.runs[run.ID] = run
 	for _, subject := range first.event.Subjects {
@@ -404,6 +405,19 @@ func (s *Store) Run(_ context.Context, runID string) (store.Run, bool, error) {
 	defer s.mu.Unlock()
 	run, ok := s.runs[runID]
 	return run, ok, nil
+}
+
+// RunsSince implements store.Store.
+func (s *Store) RunsSince(_ context.Context, since time.Time) ([]store.Run, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var runs []store.Run
+	for _, st := range s.started {
+		if !st.at.Before(since) {
+			runs = append(runs, s.runs[st.run])
+		}
+	}
+	return runs, nil
 }
 
 // Recorded implements store.Store.

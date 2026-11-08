@@ -1,0 +1,18 @@
+# Generates the query code in internal/queries from queries.sql and the migrations.
+# `make go-generate` regenerates it, and `make go-lint` fails when it is stale.
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations
+    queries: queries.sql
+    gen:
+      go:
+        package: queries
+        out: internal/queries
+        sql_package: pgx/v5
+        emit_methods_with_db_argument: false
+        overrides:
+          - db_type: jsonb
+            go_type: encoding/json.RawMessage
+          - db_type: timestamptz
+            go_type: time.Time

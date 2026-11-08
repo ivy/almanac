@@ -73,6 +73,7 @@ The `go-rewrite` branch rewrites Almanac in Go, with workflows written in a Go D
 
 - **Set up:** `mise install` adds Go, `golangci-lint`, `ginkgo` and `sqlc`.
 - **The Go gate:** `make go-check` runs `go-lint`, `go-test`, `go-test-db`, `go-test-sandbox`, `go-test-e2e` and `check-public`.
+- **Queries:** `store/postgres` writes its SQL in `queries.sql` and generates `internal/queries` with `sqlc`. `make go-generate` regenerates it, and `make go-lint` fails while it is stale.
 - **Specs** are Ginkgo and Gomega. `testing` appears only in `*_suite_test.go`. A spec needing PostgreSQL carries the `db` label, one needing Podman or the `claude` CLI the `sandbox` label, the end-to-end suite `e2e`.
 - **Processes:** only `sandbox/podman` and `harness/claude` may import `os/exec`.
 - **Taint:** `tools/hostilevet` runs in `make go-lint`. Only the packages its `boundaries` list names may import `hostile/reveal`; adding one is a reviewed change.

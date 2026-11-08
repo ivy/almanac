@@ -107,8 +107,10 @@ go-build:
 go-generate:
 	go generate ./...
 
-# hostilevet is the taint analyzer; it is built and run once it exists.
+# Generated queries must match their SQL (sqlc diff). hostilevet is the taint
+# analyzer; it is built and run once it exists.
 go-lint:
+	@for config in $$(git ls-files '*sqlc.yaml'); do sqlc diff -f $$config || { echo "$$config: generated queries are stale; run make go-generate" >&2; exit 1; }; done
 	go vet ./...
 	golangci-lint run ./...
 	@if [ -d tools/hostilevet ]; then go build -o bin/hostilevet ./tools/hostilevet && go vet -vettool=$(CURDIR)/bin/hostilevet ./...; fi

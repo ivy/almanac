@@ -29,7 +29,8 @@ type Cx interface {
 	// run saw, and hostile values keep their tag.
 	//
 	// Cx records under "cooldown", "attempts", "hold", "screen" and each agent's name itself,
-	// so a workflow's own reads take other names.
+	// and the runtime records its guard's verdict under "guard", so a workflow's own reads take
+	// other names.
 	Record(ctx context.Context, name string, read func(context.Context) (json.RawMessage, error)) (json.RawMessage, error)
 
 	// Attempts is how many patches this run's key has had within AttemptWindow, and whether a

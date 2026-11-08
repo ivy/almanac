@@ -12,6 +12,9 @@ import (
 // timestamp is the one time the forge reports for every created and updated field.
 const timestamp = "2026-11-05T12:00:00Z"
 
+// zeroSHA is a commit SHA the forge does not know.
+var zeroSHA = strings.Repeat("0", 40)
+
 // object is a JSON object as GitHub renders one.
 type object = map[string]any
 
@@ -77,6 +80,9 @@ type Pull struct {
 
 	// before is the head before the branch last moved, for a synchronize event.
 	before string
+	// shas are the commits' SHAs, beside Commits. Only the head is known of the commits a pull
+	// request opens with, so the others list as forty zeros.
+	shas []string
 }
 
 // RenovatePull is an open Renovate pull request from headRef into main.
@@ -96,6 +102,7 @@ func RenovatePull(headRef, title string) Pull {
 func (p Pull) clone() Pull {
 	p.Labels = slices.Clone(p.Labels)
 	p.Commits = slices.Clone(p.Commits)
+	p.shas = slices.Clone(p.shas)
 	p.Files = slices.Clone(p.Files)
 	if p.Diffs != nil {
 		diffs := make(map[string]string, len(p.Diffs))
@@ -240,6 +247,7 @@ func (p *Pull) moveHead(sha, message string) {
 	p.before = p.HeadSHA
 	p.HeadSHA = sha
 	p.Commits = append(p.Commits, message)
+	p.shas = append(p.shas, sha)
 }
 
 func (w *world) addPull(repo string, p Pull) int {
@@ -247,6 +255,13 @@ func (w *world) addPull(repo string, p Pull) int {
 	p.Number = len(w.pulls[repo]) + len(w.issues[repo]) + 1
 	if p.HeadSHA == "" {
 		p.HeadSHA = w.nextSHA()
+	}
+	p.shas = make([]string, len(p.Commits))
+	for i := range p.shas {
+		p.shas[i] = zeroSHA
+	}
+	if len(p.shas) > 0 {
+		p.shas[len(p.shas)-1] = p.HeadSHA
 	}
 	w.refs[branchRef{repo, p.HeadRef}] = p.HeadSHA
 	w.pulls[repo] = append(w.pulls[repo], p)

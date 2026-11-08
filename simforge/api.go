@@ -309,16 +309,22 @@ func (f *Forge) pullCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	who := object{"name": "a", "email": "a@b", "date": timestamp}
-	f.paged(w, r, "page", list(p.Commits, func(message string) any {
-		return object{
-			"sha": strings.Repeat("0", 40), "node_id": "C_1", "url": "/c", "html_url": "/c",
-			"comments_url": "/c", "parents": []any{},
+	commits := make([]any, len(p.Commits))
+	for i, message := range p.Commits {
+		parents := []any{}
+		if i > 0 {
+			parents = append(parents, object{"sha": p.shas[i-1], "url": "/c", "html_url": "/c"})
+		}
+		commits[i] = object{
+			"sha": p.shas[i], "node_id": "C_1", "url": "/c", "html_url": "/c",
+			"comments_url": "/c", "parents": parents,
 			"commit": object{
 				"url": "/c", "author": who, "committer": who, "message": message,
 				"comment_count": 0, "tree": object{"sha": "t", "url": "/t"},
 			},
 		}
-	}))
+	}
+	f.paged(w, r, "page", commits)
 }
 
 func (f *Forge) pullFiles(w http.ResponseWriter, r *http.Request) {

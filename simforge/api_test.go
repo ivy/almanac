@@ -364,11 +364,16 @@ var _ = Describe("The API", func() {
 			Expect(at(p, "base", "repo", "full_name")).To(Equal(repo))
 		})
 
-		It("lists commits, oldest first", func() {
+		It("lists commits, oldest first, each with its SHA and parent", func() {
+			opened := sim.Pull(repo, number).HeadSHA
 			sim.MoveBranch(repo, number, strings.Repeat("c", 40), "someone else's commit")
 			commits := getJSON(sim, fmt.Sprintf("/repos/%s/pulls/%d/commits", repo, number))
 			Expect(at(commits, 0, "commit", "message")).To(Equal("Update"))
+			Expect(at(commits, 0, "sha")).To(Equal(opened))
+			Expect(at(commits, 0, "parents")).To(BeEmpty())
 			Expect(at(commits, 1, "commit", "message")).To(Equal("someone else's commit"))
+			Expect(at(commits, 1, "sha")).To(Equal(strings.Repeat("c", 40)))
+			Expect(at(commits, 1, "parents", 0, "sha")).To(Equal(opened))
 			Expect(sim.Pull(repo, number).HeadSHA).To(Equal(strings.Repeat("c", 40)))
 			response, _ := call(http.MethodGet, path("/pulls/99/commits"), nil)
 			Expect(response.StatusCode).To(Equal(http.StatusNotFound))

@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"github.com/ivy/almanac/internal/stall"
 )
 
 // Post and Patch are the writes Forge, Issues and the sweep make, for specs of the client
@@ -21,5 +23,5 @@ func (c *Client) Redeliver(ctx context.Context, id uint64) error { return c.rede
 // StallAfter replaces how long a request may wait for a byte, so a spec of a stalled forge
 // need not wait half a minute per attempt.
 func StallAfter(d time.Duration) Option {
-	return func(c *Client) { c.http = stallingClient(d) }
+	return func(c *Client) { c.http = stall.After(d) }
 }

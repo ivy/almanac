@@ -14,6 +14,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/ivy/almanac/hostile"
+	"github.com/ivy/almanac/internal/stall"
+	"github.com/ivy/almanac/internal/stall/stalltest"
 	"github.com/ivy/almanac/registry"
 )
 
@@ -203,4 +205,13 @@ var _ = Describe("Published", func() {
 		Expect(err).To(MatchError(ContainSubstring("not JSON")))
 		Expect(err.Error()).NotTo(ContainSubstring("IGNORE"))
 	})
+
+	// crates/registry/src/http.rs gives its client the same limits as the GitHub client's
+	// a_forge_that_stops_answering_is_unreachable_rather_than_a_hang.
+	It("a registry that stops answering fails the step rather than hanging", func(ctx SpecContext) {
+		r := registry.NewHTTP(registry.Endpoints{Npm: stalltest.Silent()}, stall.After(100*time.Millisecond))
+		_, _, err := r.Published(ctx, pkg(registry.Npm, "is-odd", "3.0.1"))
+		Expect(err).To(MatchError(ContainSubstring("the registry could not be reached")))
+		Expect(err).To(MatchError(ContainSubstring("timeout")))
+	}, SpecTimeout(10*time.Second))
 })

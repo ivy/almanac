@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,6 +15,7 @@ import (
 	"github.com/ivy/almanac/advisory"
 	"github.com/ivy/almanac/hostile"
 	"github.com/ivy/almanac/hostile/reveal"
+	"github.com/ivy/almanac/internal/stall/stalltest"
 )
 
 // served answers each path with its body, and 404 for any other, and keeps every request.
@@ -172,4 +174,14 @@ var _ = Describe("CveNow", func() {
 		Expect(json.Unmarshal(stored, &back)).To(Succeed())
 		Expect(advisory.Validate(back, "npm", sdk, "1.20.0", "1.31.0")).To(Equal(advisory.Valid))
 	})
+
+	// crates/advisory/src/cve_now.rs gives its client the same limits as the GitHub client's
+	// a_forge_that_stops_answering_is_unreachable_rather_than_a_hang.
+	It("a feed that stops answering fails the check rather than hanging", func(ctx SpecContext) {
+		feed := advisory.StallAfter(advisory.NewCveNow(stalltest.Silent()), 100*time.Millisecond)
+		_, _, err := feed.ByID(ctx, hostile.MustParseSlug("CVE-1"))
+		var failed *advisory.FeedError
+		Expect(errors.As(err, &failed)).To(BeTrue(), "%v", err)
+		Expect(failed.Problem).To(HavePrefix("got no answer"))
+	}, SpecTimeout(10*time.Second))
 })

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ivy/almanac/hostile"
+	"github.com/ivy/almanac/internal/stall"
 )
 
 const (
@@ -27,9 +28,10 @@ type CveNow struct {
 	baseURL string
 }
 
-// NewCveNow reads from the API at baseURL, such as https://cve.now.
+// NewCveNow reads from the API at baseURL, such as https://cve.now. A request to a feed that
+// stops answering fails rather than hanging.
 func NewCveNow(baseURL string) *CveNow {
-	return &CveNow{client: &http.Client{}, baseURL: strings.TrimRight(baseURL, "/")}
+	return &CveNow{client: stall.Client(), baseURL: strings.TrimRight(baseURL, "/")}
 }
 
 var _ Advisories = (*CveNow)(nil)

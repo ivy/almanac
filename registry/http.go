@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ivy/almanac/internal/stall"
 )
 
 const userAgent = "almanac"
@@ -51,11 +53,11 @@ type HTTP struct {
 	maxBytes  int64
 }
 
-// NewHTTP reads the registries at endpoints with client, or with a client of its own when
-// client is nil.
+// NewHTTP reads the registries at endpoints with client, or, when client is nil, with a client
+// of its own that fails a request to a registry that stops answering.
 func NewHTTP(endpoints Endpoints, client *http.Client) *HTTP {
 	if client == nil {
-		client = &http.Client{}
+		client = stall.Client()
 	}
 	return &HTTP{client: client, endpoints: endpoints, maxBytes: maxArtifactBytes}
 }

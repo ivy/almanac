@@ -16,6 +16,7 @@ import (
 	"github.com/ivy/almanac/github"
 	"github.com/ivy/almanac/hostile"
 	"github.com/ivy/almanac/hostile/reveal"
+	"github.com/ivy/almanac/internal/stall/stalltest"
 	"github.com/ivy/almanac/simforge"
 )
 
@@ -146,7 +147,7 @@ var _ = Describe("The GitHub client", func() {
 
 		// crates/github/tests/client.rs: a_forge_that_stops_answering_is_unreachable_rather_than_a_hang
 		It("reports a forge that stops answering as unreachable, rather than hanging", func(ctx SpecContext) {
-			c := github.New(silentForge(), github.Token("token"), github.Retrying(quick()), github.StallAfter(50*time.Millisecond))
+			c := github.New(stalltest.Silent(), github.Token("token"), github.Retrying(quick()), github.StallAfter(50*time.Millisecond))
 			_, err := c.Exists(ctx, slug, ".github/workflows")
 			Expect(err).To(haveCode(diag.ForgeUnreachable))
 		}, SpecTimeout(10*time.Second))

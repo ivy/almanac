@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -117,34 +116,6 @@ func (r *receiver) count() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.n
-}
-
-// silentForge accepts connections and never answers, like a forge that stalled mid-request.
-func silentForge() string {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	Expect(err).NotTo(HaveOccurred())
-	var held []net.Conn
-	var mu sync.Mutex
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			mu.Lock()
-			held = append(held, conn)
-			mu.Unlock()
-		}
-	}()
-	DeferCleanup(func() {
-		_ = listener.Close()
-		mu.Lock()
-		defer mu.Unlock()
-		for _, conn := range held {
-			_ = conn.Close()
-		}
-	})
-	return "http://" + listener.Addr().String()
 }
 
 // recorder is a forge that answers every request with the same status and body, and keeps

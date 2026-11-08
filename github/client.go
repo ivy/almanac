@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -30,6 +29,7 @@ import (
 
 	"github.com/ivy/almanac/diag"
 	"github.com/ivy/almanac/hostile"
+	"github.com/ivy/almanac/internal/stall"
 )
 
 const (
@@ -43,11 +43,6 @@ const (
 	jwtBackdate = 60 * time.Second
 	// tokenMargin is how close to expiry an installation token is replaced before use.
 	tokenMargin = 120 * time.Second
-	// connectTimeout and stallTimeout fail a request to a peer that stops answering, instead
-	// of holding its run forever. There is no overall deadline, because a large download that
-	// keeps moving is not stalled.
-	connectTimeout = 10 * time.Second
-	stallTimeout   = 30 * time.Second
 )
 
 // Retry is how hard a client tries before it reports a failure.
@@ -119,7 +114,7 @@ type installationToken struct {
 // New is a client of the API at baseURL, such as https://api.github.com.
 func New(baseURL string, auth Auth, options ...Option) *Client {
 	c := &Client{
-		http:    stallingClient(stallTimeout),
+		http:    stall.Client(),
 		baseURL: strings.TrimSuffix(baseURL, "/"),
 		auth:    auth,
 		retry:   DefaultRetry(),
@@ -128,33 +123,6 @@ func New(baseURL string, auth Auth, options ...Option) *Client {
 		option(c)
 	}
 	return c
-}
-
-// stallingClient is an HTTP client whose connections fail a read that waits longer than
-// stall for a byte.
-func stallingClient(stall time.Duration) *http.Client {
-	dialer := &net.Dialer{Timeout: connectTimeout}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		conn, err := dialer.DialContext(ctx, network, address)
-		if err != nil {
-			return nil, err
-		}
-		return &stallingConn{Conn: conn, stall: stall}, nil
-	}
-	return &http.Client{Transport: transport}
-}
-
-type stallingConn struct {
-	net.Conn
-	stall time.Duration
-}
-
-func (c *stallingConn) Read(p []byte) (int, error) {
-	if err := c.SetReadDeadline(time.Now().Add(c.stall)); err != nil {
-		return 0, err
-	}
-	return c.Conn.Read(p)
 }
 
 // Refusal is the HTTP status GitHub refused a request with. The *diag.Error for a refusal

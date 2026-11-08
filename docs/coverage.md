@@ -13,7 +13,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-7 Status held during a repair | `a_red_pull_request_past_its_cooldown_is_patched_and_goes_pending_then_success` |
 | R-8 Security trigger | `almanacs/renovate/tests/security_fixes.rs`: `the_label_also_triggers_it`, `an_ordinary_update_is_ignored` |
 | R-9 Pending first | `pending_is_posted_before_any_other_work` |
-| R-10 Advisory validation | `crates/advisory/tests/validate.rs` |
+| R-10 Advisory validation | `crates/advisory/tests/validate.rs`; Go: `advisory/validate_test.go` |
 | R-11 Young fix asks | `a_brand_new_fix_asks_a_person_and_stays_pending` |
 | R-12 Reviewer can only veto | `a_reviewers_concerns_veto_passing_checks`, `a_model_can_never_approve_what_a_check_refused` |
 | R-13 Verdict statuses | `a_valid_fix_goes_pending_then_success`, `a_target_that_is_not_the_patched_version_fails_and_asks` |
@@ -41,7 +41,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-35 Catch-up | `a_lost_webhook_is_found_by_the_next_scheduled_scan`, `a_sweep_redelivers_what_failed_and_only_once` |
 | R-36 `gather` reads current state | `all_three_origins_produce_identical_decisions_for_the_same_state` |
 | R-37, R-38 Projections | `xtask/tests/generate.rs`, `a_new_enum_value_from_github_does_not_break_ingest` |
-| R-39 Hand-written sources | `crates/fails/tests/ui/fail/payload_field_rejects_string.rs`, `crates/advisory/src/cve_now.rs` |
+| R-39 Hand-written sources | `crates/fails/tests/ui/fail/payload_field_rejects_string.rs`, `crates/advisory/src/cve_now.rs`; Go: `advisory/cvenow_test.go` |
 | R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing` |
 | R-41 Tracker | `crates/github/tests/tracker.rs` |
 | R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs`; Go: `diag/diag_test.go`, `config/config_test.go` "Config diagnostics" |

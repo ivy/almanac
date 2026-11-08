@@ -1,6 +1,6 @@
 # Requirements coverage
 
-Where each requirement in [prd.md](prd.md) is proved. `make check` runs every test named here.
+Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Rust test named here, and `make go-check` every Go spec.
 
 | Requirement | Proved by |
 |---|---|
@@ -44,9 +44,9 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 | R-39 Hand-written sources | `crates/fails/tests/ui/fail/payload_field_rejects_string.rs`, `crates/advisory/src/cve_now.rs` |
 | R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing` |
 | R-41 Tracker | `crates/github/tests/tracker.rs` |
-| R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs` |
+| R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs`; Go: `diag/diag_test.go`, `config/config_test.go` "Config diagnostics" |
 | R-43 Manifest | `the_manifest_names_the_prompt_file_and_its_variables`, `a_new_almanac_builds_tests_and_describes_itself` |
-| R-44 Config only tightens | `crates/almanac/tests/limits.rs`, `a_secret_in_config_points_at_its_line_and_says_where_it_belongs` |
+| R-44 Config only tightens | `crates/almanac/tests/limits.rs`, `a_secret_in_config_points_at_its_line_and_says_where_it_belongs`; Go: `config/limits_test.go`, `config/config_test.go` "a secret in config points at its line and says where it belongs", "can never widen what the binary declares" |
 | R-45 PostgreSQL state | `crates/almanac/tests/store_postgres.rs`, `workflows_on_postgres.rs` |
 | R-46 Scaffolding | `crates/cli/tests/scaffold.rs` |
 | R-47 Fleet discovery | `discovery_skips_archived_repositories_and_other_owners`, `an_app_finds_every_repository_past_the_first_page` |

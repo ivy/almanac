@@ -43,6 +43,8 @@ curl -f http://127.0.0.1:8788/healthz
 curl -f http://127.0.0.1:8787/readyz
 ```
 
+The Go almanac of the rewrite answers on `127.0.0.1:8790/healthz`, and its broker on `127.0.0.1:8789/readyz`. A Go almanac's `/healthz` answers `503` until it has reached its database, and while it has lost it.
+
 ## When it reports an error
 
 Every error has a code. `almanac-renovate explain CODE` prints what happened, why it matters, and what to do.

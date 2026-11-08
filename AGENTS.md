@@ -80,6 +80,7 @@ The `go-rewrite` branch rewrites Almanac in Go, with workflows written in a Go D
 - **GitHub's events** are generated from `github/events/projection.toml` by `tools/eventgen`. Run `make go-generate` after changing the projection, and commit `github/events/events.go`: `make go-lint` fails while it is stale.
 - **Workflows** are models (`model/`) of parts registered in a vocabulary (`vocab/`), written with the DSL (`dsl/`) and refused or accepted by `check/`. A workflow's spec runs `check.Check` on it. Its model errors have pages in `docs/errors-go/` until the cutover. `engine.New(vocabulary, model)` runs one as a `workflow.Registered`.
 - **The Renovate almanac** is `almanacs/renovate`: its vocabulary, registered in `renovate.Vocabulary`, and in `almanacs/renovate/wiring` its providers, set up from the environment `docs/configuration.md` lists. What a pull request claims leaves taint only by decoding into validated slugs with `hostile.DecodeClean`.
+- **An almanac binary** is an `app.Almanac` (name, vocabulary, models, providers, its own verbs) whose `main` calls `Main()`. `app` holds the verbs, the daemon behind `run` and the deliveries consumer; `app/internal/almanac-demo` is a small one its specs run as a process.
 - **A worktree** needs `private/denylist.txt` copied from the main checkout, or `check-public` checks machine details only.
 
 ## Where to look first

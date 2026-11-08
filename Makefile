@@ -130,7 +130,11 @@ go-test-sandbox:
 	podman build -q -t localhost/almanac-fixer:test images/fixer
 	$(GINKGO) --label-filter='sandbox'
 
+# The broker and almanac-renovate binaries as processes, on PostgreSQL, with the real claude
+# CLI against a stub model and Podman. The specs build the binaries; the sandbox image is built
+# here, as for go-test-sandbox.
 go-test-e2e:
+	podman build -q -t localhost/almanac-fixer:test images/fixer
 	$(GINKGO) --label-filter='e2e'
 
 # The Go gate. A Go change is not done until this passes, and `check` still does.

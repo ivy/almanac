@@ -107,10 +107,15 @@ go-build:
 go-generate:
 	go generate ./...
 
-# Generated queries must match their SQL (sqlc diff). hostilevet is the taint
-# analyzer; it is built and run once it exists.
+# GitHub's events are generated from github/events/projection.toml. go-lint fails if the
+# committed events.go is not what the generator writes now.
+EVENTGEN := go run ./tools/eventgen -spec specs/github/api.github.com.json -projection github/events/projection.toml -out github/events/events.go
+
+# Generated queries must match their SQL (sqlc diff), and generated events their
+# projection. hostilevet is the taint analyzer; it is built and run once it exists.
 go-lint:
 	@for config in $$(git ls-files '*sqlc.yaml'); do sqlc diff -f $$config || { echo "$$config: generated queries are stale; run make go-generate" >&2; exit 1; }; done
+	$(EVENTGEN) -check
 	go vet ./...
 	golangci-lint run ./...
 	@if [ -d tools/hostilevet ]; then go build -o bin/hostilevet ./tools/hostilevet && go vet -vettool=$(CURDIR)/bin/hostilevet ./...; fi

@@ -1,0 +1,67 @@
+# The fields workflows actually use. tools/eventgen checks each path against GitHub's pinned spec
+# and writes events.go: run `make go-generate` after changing this file. A string is hostile
+# unless `as` names a validated type (Slug or Sha). `each` reads one field from every item of a
+# list. `rest` says where a field is found in the REST response named at the top of an event, so
+# a scan can build the same event.
+[PullRequestOpened]
+webhook = "pull-request-opened"
+kind = "github.pull_request.opened"
+rest = "GET /repos/{owner}/{repo}/pulls/{pull_number}"
+fields.number = { path = "number", rest = "number" }
+fields.state = { path = "pull_request.state", rest = "state" }
+fields.draft = { path = "pull_request.draft", rest = "draft" }
+fields.repo = { path = "repository.full_name", as = "Slug", rest = "base.repo.full_name" }
+fields.head_branch = { path = "pull_request.head.ref", as = "Slug", rest = "head.ref" }
+fields.head_sha = { path = "pull_request.head.sha", as = "Sha", rest = "head.sha" }
+fields.author = { path = "pull_request.user.login", as = "Slug", rest = "user.login" }
+fields.sender = { path = "sender.login", as = "Slug", rest = "user.login" }
+fields.sender_type = { path = "sender.type", as = "Slug", rest = "user.type" }
+fields.title = { path = "pull_request.title", rest = "title" }
+fields.body = { path = "pull_request.body", rest = "body" }
+fields.labels = { path = "pull_request.labels", each = "name", rest = "labels" }
+
+[PullRequestLabeled]
+webhook = "pull-request-labeled"
+kind = "github.pull_request.labeled"
+fields.number = { path = "number" }
+fields.repo = { path = "repository.full_name", as = "Slug" }
+fields.head_branch = { path = "pull_request.head.ref", as = "Slug" }
+fields.head_sha = { path = "pull_request.head.sha", as = "Sha" }
+fields.author = { path = "pull_request.user.login", as = "Slug" }
+fields.sender = { path = "sender.login", as = "Slug" }
+fields.sender_type = { path = "sender.type", as = "Slug" }
+fields.label = { path = "label.name" }
+fields.labels = { path = "pull_request.labels", each = "name" }
+
+[PullRequestSynchronize]
+webhook = "pull-request-synchronize"
+kind = "github.pull_request.synchronize"
+fields.number = { path = "number" }
+fields.repo = { path = "repository.full_name", as = "Slug" }
+fields.head_branch = { path = "pull_request.head.ref", as = "Slug" }
+fields.head_sha = { path = "pull_request.head.sha", as = "Sha" }
+fields.before = { path = "before", as = "Sha" }
+fields.author = { path = "pull_request.user.login", as = "Slug" }
+fields.sender = { path = "sender.login", as = "Slug" }
+fields.sender_type = { path = "sender.type", as = "Slug" }
+
+[CheckSuiteCompleted]
+webhook = "check-suite-completed"
+kind = "github.check_suite.completed"
+fields.repo = { path = "repository.full_name", as = "Slug" }
+fields.head_branch = { path = "check_suite.head_branch", as = "Slug" }
+fields.head_sha = { path = "check_suite.head_sha", as = "Sha" }
+fields.conclusion = { path = "check_suite.conclusion" }
+fields.suite_id = { path = "check_suite.id" }
+fields.pull_requests = { path = "check_suite.pull_requests", each = "number" }
+fields.sender = { path = "sender.login", as = "Slug" }
+
+[Status]
+webhook = "status"
+kind = "github.status"
+fields.repo = { path = "repository.full_name", as = "Slug" }
+fields.sha = { path = "sha", as = "Sha" }
+fields.state = { path = "state" }
+fields.context = { path = "context" }
+fields.branches = { path = "branches", each = "name" }
+fields.sender = { path = "sender.login", as = "Slug" }

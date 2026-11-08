@@ -43,6 +43,8 @@ curl -f http://127.0.0.1:8788/healthz
 curl -f http://127.0.0.1:8787/readyz
 ```
 
+The daemon also scans its repositories on a schedule, every 15 minutes unless configured longer, and logs `scheduled scan finished` each time, with how many pull requests it found and how long the scan took. A gap longer than the interval plus the last scan's duration means scanning has stopped.
+
 ## When it reports an error
 
 Every error has a code. `almanac-renovate explain CODE` prints what happened, why it matters, and what to do.

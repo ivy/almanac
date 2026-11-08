@@ -17,8 +17,9 @@ const KILLED: i32 = 137;
 const UNPRIVILEGED: &str = "1000:1000";
 /// Longer than any session. A sandbox whose owner was killed outright ends itself by this.
 const LIFETIME_SECONDS: u32 = 7200;
-/// How long `abandon` holds its thread. A stop with no grace period takes about a second.
-const ABANDON_LIMIT: Duration = Duration::from_secs(10);
+/// How long `abandon` holds its thread. A stop with no grace period takes about a second, and a
+/// stopping service may abandon several sandboxes in turn within its own stop timeout.
+const ABANDON_LIMIT: Duration = Duration::from_secs(3);
 const SCRATCH_MB: u32 = 1024;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);

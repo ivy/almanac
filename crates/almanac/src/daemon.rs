@@ -124,8 +124,19 @@ pub async fn run(
     let scanning = async {
         let mut wake = stopped.clone();
         loop {
-            if let Err(error) = runtime.tick().await {
-                tracing::warn!(%error, "a scheduled scan failed");
+            let started = tokio::time::Instant::now();
+            match runtime.tick().await {
+                Ok(Some(scan)) => tracing::info!(
+                    found = scan.found,
+                    queued = scan.queued,
+                    unchanged = scan.unchanged,
+                    rejected = scan.rejected,
+                    skipped = scan.skipped,
+                    seconds = started.elapsed().as_secs_f32(),
+                    "scheduled scan finished"
+                ),
+                Ok(None) => {}
+                Err(error) => tracing::warn!(%error, "a scheduled scan failed"),
             }
             tokio::select! {
                 () = tokio::time::sleep(TICK) => {}

@@ -28,10 +28,10 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-22 Cooled proof | `crates/fails/tests/ui/fail/cooled_*`, `fixer_needs_cooled`, `crates/almanac/tests/cooled.rs`; Go: `cooled/cooled_test.go`, `agent/agent_test.go` "needs a Cooled proof" |
 | R-23 Sandbox enforces capability | `crates/sandbox/tests/podman.rs`, `crates/claude/tests/real_cli.rs`; Go: `sandbox/podman/podman_test.go` "A Podman sandbox" (label `sandbox`), `sandbox/fetch_test.go` "The dependency fetch step" |
 | R-52 Remote-shaped `Sandbox` | `FakeSandbox` holds nothing on the host; [ADR 1](adrs/0001-agent-sandbox.md) maps every operation; Go: `sandbox/fake` holds nothing on the host, `sandbox/fake/fake_test.go`, `sandbox/sandbox_test.go` |
-| R-24 Dedupe, seen only once persisted | `crates/almanac/tests/store_postgres.rs`: `a_delivery_that_failed_to_persist_is_accepted_when_redelivered` |
-| R-25 One run per key | `testing::conformance`, `the_database_itself_refuses_a_second_active_run_for_a_key` |
+| R-24 Dedupe, seen only once persisted | `crates/almanac/tests/store_postgres.rs`: `a_delivery_that_failed_to_persist_is_accepted_when_redelivered`; Go: `store/postgres/postgres_test.go` "accepts a redelivery of a delivery that failed to persist", `store/storetest` "dedupe" |
+| R-25 One run per key | `testing::conformance`, `the_database_itself_refuses_a_second_active_run_for_a_key`; Go: `store/storetest` "one run per key", `store/postgres/postgres_test.go` "is itself refused a second active run for a key" |
 | R-26 Chains contained | `crates/definitions/tests/chains.rs` |
-| R-27 Budgets | `testing::conformance`, `a_tripped_budget_asks_once_and_held_work_runs_after_an_hour` |
+| R-27 Budgets | `testing::conformance`, `a_tripped_budget_asks_once_and_held_work_runs_after_an_hour`; Go: `store/storetest` "budgets" |
 | R-28 Concurrency and lanes | `a_backfill_does_not_starve_a_live_event`, `independent_keys_run_concurrently_but_one_key_never_does` |
 | R-29 Broker | `crates/broker/tests/receive.rs`; Go: `broker/receive_test.go`, `broker/replay_test.go`, `cmd/almanac-broker/main_test.go` |
 | R-53 Durable cursors | `crates/definitions/tests/broker_flow.rs`; Go: `broker/flow_test.go`, `deliveries/deliveries_test.go` (routing by kind ports with the app) |
@@ -47,7 +47,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs`; Go: `diag/diag_test.go`, `config/config_test.go` "Config diagnostics" |
 | R-43 Manifest | `the_manifest_names_the_prompt_file_and_its_variables`, `a_new_almanac_builds_tests_and_describes_itself` |
 | R-44 Config only tightens | `crates/almanac/tests/limits.rs`, `a_secret_in_config_points_at_its_line_and_says_where_it_belongs`; Go: `config/limits_test.go`, `config/config_test.go` "a secret in config points at its line and says where it belongs", "can never widen what the binary declares" |
-| R-45 PostgreSQL state | `crates/almanac/tests/store_postgres.rs`, `workflows_on_postgres.rs` |
+| R-45 PostgreSQL state | `crates/almanac/tests/store_postgres.rs`, `workflows_on_postgres.rs`; Go: `store/postgres/postgres_test.go` "The PostgreSQL store" (label `db`) runs `store/storetest` |
 | R-46 Scaffolding | `crates/cli/tests/scaffold.rs` |
 | R-47 Fleet discovery | `discovery_skips_archived_repositories_and_other_owners`, `an_app_finds_every_repository_past_the_first_page` |
 | R-48, R-49 One state per pull request | `almanacs/renovate/tests/fleet.rs` |

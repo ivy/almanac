@@ -1,6 +1,6 @@
 // Package renovate is a small vocabulary shaped like the Renovate almanac's, for specs of the
-// workflow model. Its parts carry real labels and real signatures; its observers read nothing
-// and its scans find nothing, because no spec here runs a workflow.
+// workflow model and the engine. Its parts carry real labels and real signatures. Its observers
+// read through a GitHub a spec provides, such as a Fake, and its scans find nothing.
 package renovate
 
 import (
@@ -30,9 +30,15 @@ const TrustContext = "almanac/trust"
 // MinReleaseAge is how old a release must be before anything reads it.
 const MinReleaseAge = 72 * time.Hour
 
-// GitHub is what the observers read through.
+// GitHub is what the observers read through. A spec provides one, such as a [Fake].
 type GitHub interface {
-	PullForBranch(repo, branch hostile.Slug) error
+	PullForBranch(ctx context.Context, build BuildEvent) (Pull, error)
+	FailureLogs(ctx context.Context, pull Pull) (hostile.Of[string], error)
+	UpdatedLines(ctx context.Context, pull Pull) (hostile.Of[[]Line], error)
+	SecurityPull(ctx context.Context, opened SecurityEvent) (SecurityView, error)
+	Advisory(ctx context.Context, text hostile.Of[PullText]) (Advisory, error)
+	PackageDiff(ctx context.Context, text hostile.Of[PullText]) (PackageDiff, error)
+	NewestRelease(ctx context.Context, text hostile.Of[PullText]) (cooled.Published, error)
 }
 
 var github = providers.Require[GitHub]()
@@ -144,37 +150,65 @@ var (
 	FailureLogs   = vocab.Observer(Vocabulary, "renovate.failure_logs", "the tail of each failed job's log", readLogs, github)
 	UpdatedLines  = vocab.Observer(Vocabulary, "renovate.updated_lines", "the lines the update added", readLines, github)
 	SecurityPR    = vocab.Observer(Vocabulary, "renovate.security_pull_view", "the security pull request as GitHub shows it now", readSecurity, github)
-	NamesTheFix   = vocab.Observer(Vocabulary, "renovate.advisory", "whether an advisory names this update as its fix", readAdvisory)
-	ReleaseDiff   = vocab.Observer(Vocabulary, "renovate.package_diff", "the difference between the old and new release", readDiff)
-	NewestRelease = vocab.PublishTime(Vocabulary, "renovate.newest_release", "when the newest release the update installs was published", published)
+	NamesTheFix   = vocab.Observer(Vocabulary, "renovate.advisory", "whether an advisory names this update as its fix", readAdvisory, github)
+	ReleaseDiff   = vocab.Observer(Vocabulary, "renovate.package_diff", "the difference between the old and new release", readDiff, github)
+	NewestRelease = vocab.PublishTime(Vocabulary, "renovate.newest_release", "when the newest release the update installs was published", published, github)
 )
 
-var errFixture = errors.New("fixture observers read nothing")
-
-func readPull(context.Context, workflow.Lookup, BuildEvent) (Pull, error) { return Pull{}, errFixture }
-
-func readLogs(context.Context, workflow.Lookup, Pull) (hostile.Of[string], error) {
-	return hostile.Of[string]{}, errFixture
+func readPull(ctx context.Context, from workflow.Lookup, build BuildEvent) (Pull, error) {
+	gh, err := workflow.Get[GitHub](from)
+	if err != nil {
+		return Pull{}, err
+	}
+	return gh.PullForBranch(ctx, build)
 }
 
-func readLines(context.Context, workflow.Lookup, Pull) (hostile.Of[[]Line], error) {
-	return hostile.Of[[]Line]{}, errFixture
+func readLogs(ctx context.Context, from workflow.Lookup, pull Pull) (hostile.Of[string], error) {
+	gh, err := workflow.Get[GitHub](from)
+	if err != nil {
+		return hostile.Of[string]{}, err
+	}
+	return gh.FailureLogs(ctx, pull)
 }
 
-func readSecurity(context.Context, workflow.Lookup, SecurityEvent) (SecurityView, error) {
-	return SecurityView{}, errFixture
+func readLines(ctx context.Context, from workflow.Lookup, pull Pull) (hostile.Of[[]Line], error) {
+	gh, err := workflow.Get[GitHub](from)
+	if err != nil {
+		return hostile.Of[[]Line]{}, err
+	}
+	return gh.UpdatedLines(ctx, pull)
 }
 
-func readAdvisory(context.Context, workflow.Lookup, hostile.Of[PullText]) (Advisory, error) {
-	return Advisory{}, errFixture
+func readSecurity(ctx context.Context, from workflow.Lookup, opened SecurityEvent) (SecurityView, error) {
+	gh, err := workflow.Get[GitHub](from)
+	if err != nil {
+		return SecurityView{}, err
+	}
+	return gh.SecurityPull(ctx, opened)
 }
 
-func readDiff(context.Context, workflow.Lookup, hostile.Of[PullText]) (PackageDiff, error) {
-	return PackageDiff{}, errFixture
+func readAdvisory(ctx context.Context, from workflow.Lookup, text hostile.Of[PullText]) (Advisory, error) {
+	gh, err := workflow.Get[GitHub](from)
+	if err != nil {
+		return Advisory{}, err
+	}
+	return gh.Advisory(ctx, text)
 }
 
-func published(context.Context, workflow.Lookup, hostile.Of[PullText]) (cooled.Published, error) {
-	return cooled.Published{}, errFixture
+func readDiff(ctx context.Context, from workflow.Lookup, text hostile.Of[PullText]) (PackageDiff, error) {
+	gh, err := workflow.Get[GitHub](from)
+	if err != nil {
+		return PackageDiff{}, err
+	}
+	return gh.PackageDiff(ctx, text)
+}
+
+func published(ctx context.Context, from workflow.Lookup, text hostile.Of[PullText]) (cooled.Published, error) {
+	gh, err := workflow.Get[GitHub](from)
+	if err != nil {
+		return cooled.Published{}, err
+	}
+	return gh.NewestRelease(ctx, text)
 }
 
 // ---- Predicates -------------------------------------------------------------

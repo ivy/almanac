@@ -108,8 +108,8 @@ func (s shapeCheck) walk(t reflect.Type, path string) error {
 		return s.refuse(path, "a title, which has no stored form")
 	case slices.Contains(alwaysClean, t), decodesItself(t):
 		return nil
-	case t.Implements(closedSet):
-		// Decoded field by field, it would come out as a value outside its declared set.
+	case t.Kind() != reflect.Pointer && t.Implements(closedSet):
+		// A pointer to a closed set is checked as the set itself, below. Decoded field by field, it would come out as a value outside its declared set.
 		return s.refuse(path, "a closed set with no UnmarshalJSON to choose among its values")
 	}
 	switch t.Kind() {

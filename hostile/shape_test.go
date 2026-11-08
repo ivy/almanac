@@ -68,6 +68,11 @@ var _ = Describe("Shapes", func() {
 			Expect(hostile.CheckClean(reflect.TypeFor[*[]float64]())).To(Succeed())
 		})
 
+		It("accepts an optional closed set, as a pointer to one that decodes itself", func() {
+			Expect(hostile.CheckClean(reflect.TypeFor[*Severity]())).To(Succeed())
+			Expect(hostile.CheckClean(reflect.TypeFor[*Verdict]())).To(MatchError(ContainSubstring("closed set")))
+		})
+
 		DescribeTable("refuses what could carry free text, naming where",
 			func(t reflect.Type, path, holds string) {
 				err := hostile.CheckClean(t)

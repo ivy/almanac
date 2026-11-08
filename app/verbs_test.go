@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/pflag"
@@ -18,8 +20,11 @@ import (
 	"github.com/ivy/almanac/internal/fixture/renovate"
 	"github.com/ivy/almanac/internal/fixture/sample"
 	"github.com/ivy/almanac/internal/fixture/workflows"
+	"github.com/ivy/almanac/internal/pgtest"
 	"github.com/ivy/almanac/model"
 	"github.com/ivy/almanac/providers"
+	"github.com/ivy/almanac/store"
+	"github.com/ivy/almanac/store/postgres"
 	"github.com/ivy/almanac/workflow"
 )
 
@@ -324,6 +329,48 @@ var _ = Describe("An almanac binary's verbs", func() {
 			out := execute(a, "compare", "--since", "soon")
 			Expect(out.code).To(Equal(1))
 			Expect(out.stderr).To(ContainSubstring("soon"))
+		})
+	})
+
+	Describe("a verb opening the almanac's store", func() {
+		It("needs DATABASE_URL", func(ctx SpecContext) {
+			GinkgoT().Setenv("DATABASE_URL", "")
+			_, _, err := app.Setting{Name: "almanac-spec"}.OpenStore(ctx, effect.DryRun)
+			var refused *diag.Error
+			Expect(errors.As(err, &refused)).To(BeTrue())
+			Expect(refused.Code).To(Equal(diag.ConfigEnvMissing))
+			Expect(refused.Message).To(ContainSubstring("DATABASE_URL"))
+		})
+
+		It("reads the scope of the mode it is given, and changes nothing", Label("db"), func(ctx SpecContext) {
+			url := pgtest.Database()
+			GinkgoT().Setenv("DATABASE_URL", url)
+			pool, err := pgxpool.New(ctx, url)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(pool.Close)
+
+			s := app.Setting{Name: "almanac-spec"}
+			st, done, err := s.OpenStore(ctx, effect.DryRun)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = st.RunsSince(ctx, time.Time{})
+			Expect(err).To(HaveOccurred(), "an unmigrated database is not brought up to date")
+			done()
+
+			Expect(postgres.Migrate(ctx, pool)).To(Succeed())
+			dry := postgres.New(pool, effect.DryRun.Scope("almanac-spec"))
+			_, err = dry.Admit(ctx, "t", "d1", store.Queue(store.Event{Workflow: "w", Key: "k", Payload: json.RawMessage("1")}))
+			Expect(err).NotTo(HaveOccurred())
+			_, err = dry.Claim(ctx, store.ClaimRequest{Budgets: []store.Budget{{Workflow: "w", Limit: 1}}, Window: time.Hour, Now: time.Now()})
+			Expect(err).NotTo(HaveOccurred())
+
+			for mode, runs := range map[effect.Mode]int{effect.DryRun: 1, effect.Live: 0} {
+				st, done, err := s.OpenStore(ctx, mode)
+				Expect(err).NotTo(HaveOccurred())
+				found, err := st.RunsSince(ctx, time.Time{})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(found).To(HaveLen(runs), mode.String())
+				done()
+			}
 		})
 	})
 })

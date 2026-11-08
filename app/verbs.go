@@ -14,6 +14,7 @@ import (
 
 	"github.com/ivy/almanac/config"
 	"github.com/ivy/almanac/diag"
+	"github.com/ivy/almanac/effect"
 	"github.com/ivy/almanac/hostile"
 	"github.com/ivy/almanac/runtime"
 	"github.com/ivy/almanac/store"
@@ -71,6 +72,22 @@ func (v *verbs) own(verb Verb) func(*cobra.Command, []string) error {
 		}
 		return v.out.say(said.Human, said.JSON)
 	}
+}
+
+// OpenStore opens the almanac's store in the database DATABASE_URL names, in mode's scope, for
+// a verb of the almanac's own that reads what runs recorded, such as a comparison reading a dry
+// run. It does not bring the schema up to date, so it never changes the database. Call done
+// once the verb is done with the store.
+func (s Setting) OpenStore(ctx context.Context, mode effect.Mode) (st store.Store, done func(), err error) {
+	url := os.Getenv("DATABASE_URL")
+	if url == "" {
+		return nil, nil, diag.MissingEnv("DATABASE_URL", "the database the almanac keeps its runs in")
+	}
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		return nil, nil, diag.Store(err)
+	}
+	return postgres.New(pool, mode.Scope(s.Name)), pool.Close, nil
 }
 
 // opened is a runtime set up for one invocation, and the database it uses, if any.

@@ -20,7 +20,7 @@ A Go spec named under `almanactest` is a runtime scenario in `almanactest/scenar
 | R-12 Reviewer can only veto | `a_reviewers_concerns_veto_passing_checks`, `a_model_can_never_approve_what_a_check_refused`; Go: `almanactest` "the guard runs once per run, sees no event text, and is recorded" |
 | R-13 Verdict statuses | `a_valid_fix_goes_pending_then_success`, `a_target_that_is_not_the_patched_version_fails_and_asks` |
 | R-14 Red security update repaired | By routing: `github.check_suite.completed` goes to `build_failures` for every Renovate branch |
-| R-15, R-16 Authoring | `crates/fails/tests/ui/`, `crates/definitions/tests/workflows.rs`; Go: `check/check_test.go` "The checker", `dsl/types_test.go` "The Go compiler, through the DSL's types", `dsl/workflows_test.go` "The Rust workflows, written in the DSL" |
+| R-15, R-16 Authoring | `crates/fails/tests/ui/`, `crates/definitions/tests/workflows.rs`; Go: `check/check_test.go` "The checker", `dsl/types_test.go` "The Go compiler, through the DSL's types", `dsl/workflows_test.go` "The Rust workflows, written in the DSL", `engine/build_failures_test.go`, `engine/security_fixes_test.go` and `engine/error_triage_test.go` (every ending of each model, walked over recorded facts), `engine/engine_test.go` "What a model does not declare", `engine/runtime_test.go` "Models run by the runtime" (on memory and, label `db`, PostgreSQL, each replayed with every provider down) |
 | R-17 Prompts checked | `crates/fails/tests/ui/fail/prompt_*`; Go: `agent/prompt_test.go` |
 | R-18 Agents discovered | `crates/fails/tests/ui/pass/ok_workflow_macro.rs`, `the_manifest_shows_each_agents_capabilities` |
 | R-19 Profiles | `crates/fails/tests/ui/fail/fixer_*`, `the_manifest_shows_a_fixers_grant`; Go: `agent/agent_test.go`, `workflow/cx_test.go` "Agent calls through Cx" |
@@ -44,7 +44,7 @@ A Go spec named under `almanactest` is a runtime scenario in `almanactest/scenar
 | R-36 `gather` reads current state | `all_three_origins_produce_identical_decisions_for_the_same_state`; Go: `almanactest`, the same scenario |
 | R-37, R-38 Projections | `xtask/tests/generate.rs`, `a_new_enum_value_from_github_does_not_break_ingest`; Go: `tools/eventgen/generate_test.go`, `github/events/events_test.go` "read a value GitHub adds later as Unknown, without failing" |
 | R-39 Hand-written sources | `crates/fails/tests/ui/fail/payload_field_rejects_string.rs`, `crates/advisory/src/cve_now.rs`; Go: `advisory/cvenow_test.go` |
-| R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing`; Go: `workflow/code_test.go` "Validate", `almanactest` "a missing provider fails at startup and names what is missing", "going live requires a forge and a tracker" |
+| R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing`; Go: `workflow/code_test.go` "Validate", `almanactest` "a missing provider fails at startup and names what is missing", "going live requires a forge and a tracker", `engine/runtime_test.go` "checks at start-up that every provider and harness the models need is set up" |
 | R-41 Tracker | `crates/github/tests/tracker.rs`; Go: `github/tracker_test.go` |
 | R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs`; Go: `diag/diag_test.go`, `config/config_test.go` "Config diagnostics" |
 | R-43 Manifest | `the_manifest_names_the_prompt_file_and_its_variables`, `a_new_almanac_builds_tests_and_describes_itself`; Go: `dsl/workflows_test.go` "makes a manifest with the trigger, budgets, agents and providers" |

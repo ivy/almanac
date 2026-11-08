@@ -33,8 +33,8 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-26 Chains contained | `crates/definitions/tests/chains.rs` |
 | R-27 Budgets | `testing::conformance`, `a_tripped_budget_asks_once_and_held_work_runs_after_an_hour` |
 | R-28 Concurrency and lanes | `a_backfill_does_not_starve_a_live_event`, `independent_keys_run_concurrently_but_one_key_never_does` |
-| R-29 Broker | `crates/broker/tests/receive.rs` |
-| R-53 Durable cursors | `crates/definitions/tests/broker_flow.rs` |
+| R-29 Broker | `crates/broker/tests/receive.rs`; Go: `broker/receive_test.go`, `broker/replay_test.go`, `cmd/almanac-broker/main_test.go` |
+| R-53 Durable cursors | `crates/definitions/tests/broker_flow.rs`; Go: `broker/flow_test.go`, `deliveries/deliveries_test.go` (routing by kind ports with the app) |
 | R-54 Daemon | `crates/definitions/tests/daemon.rs`, `almanacs/renovate/tests/daemon.rs`, `tools/verify-units.sh` |
 | R-30 to R-33 Scan, backfill, simulate, origin | `crates/definitions/tests/origins.rs` |
 | R-34 Live and dry-run | `a_dry_run_records_what_would_apply_and_calls_no_provider`, `a_dry_run_leaves_a_live_run_everything_still_to_do`, `a_read_only_pass_writes_nothing_and_calls_no_model` |

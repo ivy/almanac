@@ -149,7 +149,8 @@ var _ = Describe("almanac-renovate", func() {
 
 		session = configured("", "--format", "json", "frobnicate")
 		exited(session, 1)
-		Expect(decoded(session.Err.Contents())).To(HaveKeyWithValue("help", ContainSubstring("| explain CODE | report | outcomes [WORKFLOW] | views [WORKFLOW]")))
+		Expect(decoded(session.Err.Contents())).To(HaveKeyWithValue("help", ContainSubstring("| explain CODE | report | compare")))
+		Expect(decoded(session.Err.Contents())).To(HaveKeyWithValue("help", HaveSuffix("| outcomes [WORKFLOW] | views [WORKFLOW]")))
 	})
 
 	It("explain prints the long form", func() {
@@ -236,6 +237,23 @@ var _ = Describe("almanac-renovate", func() {
 		session = launch([]string{"ALMANAC_OWNER=owner"}, "--format", "json", "report")
 		exited(session, 1)
 		Expect(decoded(session.Err.Contents())).To(HaveKeyWithValue("code", "almanac::config::env_missing"))
+	})
+
+	It("compares itself with the Rust version", func() {
+		session := configured("", "compare", "--help")
+		exited(session, 0)
+		Expect(session.Out).To(gbytes.Say(`usage: almanac-renovate compare --rust FILE \[--go FILE\]`))
+		Expect(session.Out).To(gbytes.Say(`--rust`))
+
+		session = configured("", "compare-effects", "--help")
+		exited(session, 0)
+		Expect(session.Out).To(gbytes.Say(`usage: almanac-renovate compare-effects \[--since DURATION\]`))
+		Expect(session.Out).To(gbytes.Say(`--since`))
+
+		session = configured("", "--format", "json", "frobnicate")
+		exited(session, 1)
+		Expect(decoded(session.Err.Contents())).To(HaveKeyWithValue("help",
+			ContainSubstring("| report | compare --rust FILE [--go FILE] | compare-effects [--since DURATION] | outcomes")))
 	})
 
 	It("draws each workflow as a page, and refuses a workflow it does not have", func() {

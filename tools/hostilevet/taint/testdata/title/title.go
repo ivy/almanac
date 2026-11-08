@@ -1,4 +1,5 @@
-// Package title holds the values hostile.Titlef accepts and refuses.
+// Package title holds the values hostile.Titlef accepts and refuses: Rust's title_from_string
+// and title_from_untrusted, refused in func refused.
 package title
 
 import "github.com/ivy/almanac/hostile"

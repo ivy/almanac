@@ -1,4 +1,5 @@
-// Package format holds the formatting routes hostilevet refuses for a hostile value.
+// Package format holds the formatting routes hostilevet refuses for a hostile value: Rust's
+// format_into_string, and each other way fmt and log turn a value into text.
 package format
 
 import (

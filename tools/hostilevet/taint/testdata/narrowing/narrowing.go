@@ -1,5 +1,7 @@
 // Package narrowing holds the functions hostile.Map, Narrow and Classify accept and refuse,
-// and what a narrowing function may do with the text it reads.
+// and what a narrowing function may do with the text it reads. The function literal in
+// refusedCallbacks is Rust's capturing_narrow, and accepted holds Rust's ok_narrow_to_bool and
+// hole_narrow_reads_by_index (indexed).
 package narrowing
 
 import (

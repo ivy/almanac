@@ -10,31 +10,49 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// typeErrors type-checks body as the body of a function in a package that dot-imports the DSL,
-// and returns the type errors.
+// typeErrors type-checks body as the body of a function in a package that dot-imports the DSL
+// and imports the packages a workflow or its vocabulary uses, and returns the type errors.
 func typeErrors(body string) []string {
-	dir, err := filepath.Abs("typecheck_probe")
-	Expect(err).NotTo(HaveOccurred())
-	file := filepath.Join(dir, "probe.go")
-	source := `package probe
+	return sourceErrors(`package probe
 
 import (
+	"github.com/ivy/almanac/agent"
+	"github.com/ivy/almanac/cooled"
 	. "github.com/ivy/almanac/dsl"
+	"github.com/ivy/almanac/effect"
 	"github.com/ivy/almanac/hostile"
 	"github.com/ivy/almanac/internal/fixture/renovate"
 	"github.com/ivy/almanac/patch"
+	"github.com/ivy/almanac/vocab"
+	"github.com/ivy/almanac/wire"
+	"github.com/ivy/almanac/workflow"
 )
 
 var (
+	_ = Define
+	_ agent.Pass
+	_ cooled.Cooled
+	_ effect.Kind
 	_ hostile.Slug
 	_ patch.Patch
 	_ = renovate.Vocabulary
+	_ vocab.Kind
+	_ wire.Payload
+	_ workflow.Cx
 )
 
 func probe() {
 ` + body + `
 }
-`
+`)
+}
+
+// sourceErrors type-checks source as a file of a package beside this one, and returns the
+// errors, type errors and import errors alike.
+func sourceErrors(source string) []string {
+	dir, err := filepath.Abs("typecheck_probe")
+	Expect(err).NotTo(HaveOccurred())
+	file := filepath.Join(dir, "probe.go")
 	pkgs, err := packages.Load(&packages.Config{
 		Mode:    packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
 		Dir:     filepath.Dir(dir),

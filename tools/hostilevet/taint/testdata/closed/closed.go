@@ -1,5 +1,6 @@
 // Package closed holds closed types declared as hostile.Closed says, and the ways a value
-// outside the declared set could be made.
+// outside the declared set could be made. Leaky is Rust's manual_clean_impl: a type that calls
+// itself closed while it holds free text.
 package closed
 
 import (

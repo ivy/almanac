@@ -19,8 +19,8 @@
 | `waiting` | CI to finish | Checks are still running. |
 | `waiting` | the update's cooldown to pass | The release is too new for an agent to read. |
 | `waiting` | Renovate to rebase it | It has a merge conflict that Renovate can resolve. |
+| `waiting` | Renovate to rebase it, which drops Almanac's patch | It has a merge conflict. The rebase discards Almanac's repair, and if the build fails again Almanac repairs it again. |
 | `waiting` | GitHub to compute mergeability | GitHub has not worked this out yet. |
-| `needs-person` | a conflict on a branch carrying an Almanac patch | Renovate would drop the patch, so a person decides. |
 | `needs-person` | repairs did not fix the build | Almanac reached its attempt cap of three. |
 | `needs-person` | it failed trust checks | `almanac/trust` is `failure`. See the question on the pull request. |
 | `needs-person` | nothing says when this update was published | Its cooldown can never pass, so no agent will read it. |

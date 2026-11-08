@@ -129,15 +129,24 @@ fn trust_would_hold(c: &RepoConfig) -> bool {
     c.trust_required || c.platform_automerge == Some(false)
 }
 
+/// Without this, Renovate treats a patched branch as edited by someone else: it neither merges
+/// nor rebases it.
+const IGNORE_ALMANAC: &str =
+    "add Almanac's author to gitIgnoredAuthors, or Renovate will not merge a patched branch";
+
 /// The whole policy for where a pull request stands. Earlier rules win.
 pub fn derive(f: &PullFacts) -> Verdict {
     let patched = f.attempts > 0;
     match f.conflict {
         Conflict::Unknown => return verdict(State::Waiting, "GitHub to compute mergeability"),
+        Conflict::Yes if patched && f.config.git_ignored_authors == Some(false) => {
+            return verdict(State::BlockedByConfig, IGNORE_ALMANAC);
+        }
+        // The rebase starts the branch over without the patch, and the next red build is repaired.
         Conflict::Yes if patched => {
             return verdict(
-                State::NeedsPerson,
-                "a conflict on a branch carrying an Almanac patch",
+                State::Waiting,
+                "Renovate to rebase it, which drops Almanac's patch",
             );
         }
         Conflict::Yes => return verdict(State::Waiting, "Renovate to rebase it"),
@@ -176,10 +185,7 @@ pub fn derive(f: &PullFacts) -> Verdict {
         return verdict(State::InProgress, "Almanac is validating it");
     }
     if patched && f.config.git_ignored_authors == Some(false) {
-        return verdict(
-            State::BlockedByConfig,
-            "add Almanac's author to gitIgnoredAuthors, or Renovate will not merge a patched branch",
-        );
+        return verdict(State::BlockedByConfig, IGNORE_ALMANAC);
     }
     let note = if f.checks == Checks::None {
         Some("no checks ran on this pull request".to_string())

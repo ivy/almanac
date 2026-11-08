@@ -53,7 +53,7 @@ fn a_repository_with_no_ci_is_reported_as_having_no_checks() {
 }
 
 #[test]
-fn a_conflict_waits_for_renovate_unless_the_branch_carries_a_patch() {
+fn a_conflict_waits_for_renovate_to_rebase_it_even_over_a_patch() {
     let conflict = PullFacts {
         conflict: Conflict::Yes,
         ..healthy()
@@ -63,7 +63,23 @@ fn a_conflict_waits_for_renovate_unless_the_branch_carries_a_patch() {
         attempts: 1,
         ..conflict
     };
-    assert_eq!(state(patched), State::NeedsPerson);
+    let v = derive(&patched);
+    assert_eq!(v.state, State::Waiting);
+    assert!(v.reason.contains("drops Almanac's patch"), "{}", v.reason);
+}
+
+#[test]
+fn a_patched_conflict_renovate_would_not_rebase_is_blocked_by_config() {
+    let patched = PullFacts {
+        conflict: Conflict::Yes,
+        attempts: 1,
+        config: RepoConfig {
+            git_ignored_authors: Some(false),
+            ..RepoConfig::default()
+        },
+        ..healthy()
+    };
+    assert_eq!(state(patched), State::BlockedByConfig);
 }
 
 #[test]

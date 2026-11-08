@@ -43,12 +43,23 @@ func (f Format) MarshalText() ([]byte, error) { return []byte(f.text), nil }
 // Title fills the format with values, which must be clean as [Titlef]'s are. It panics if one
 // is not.
 func (f Format) Title(values ...any) Title {
+	title, err := f.Fill(values)
+	if err != nil {
+		panic(err.Error())
+	}
+	return title
+}
+
+// Fill is [Format.Title] for an interpreter, such as the engine, whose values have no static
+// type for hostilevet to check: it refuses a value that is not clean with an error instead of
+// a panic.
+func (f Format) Fill(values []any) (Title, error) {
 	for i, value := range values {
 		if !clean(value) {
-			panic(fmt.Sprintf("hostile: title value %d is a %T, and a title holds only literals and clean values", i+1, value))
+			return Title{}, fmt.Errorf("hostile: title value %d is a %T, and a title holds only literals and clean values", i+1, value)
 		}
 	}
-	return Title{text: fmt.Sprintf(f.text, values...)}
+	return Title{text: fmt.Sprintf(f.text, values...)}, nil
 }
 
 // clean reports whether value is a type a title may hold.

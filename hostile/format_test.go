@@ -44,4 +44,13 @@ var _ = Describe("Format", func() {
 		Entry("a hostile value", hostile.New(injection)),
 		Entry("a byte slice", []byte(injection)),
 	)
+
+	It("fills a format for an interpreter, refusing a value that is not clean with an error", func() {
+		title, err := hostile.NewFormat("%s failed %d times").Fill([]any{repo, 3})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(title).To(Equal(hostile.Titlef("%s failed %d times", repo, 3)))
+
+		_, err = hostile.NewFormat("%v").Fill([]any{hostile.New(injection)})
+		Expect(err).To(MatchError(And(ContainSubstring("a title holds only literals and clean values"), Not(ContainSubstring("IGNORE")))))
+	})
 })

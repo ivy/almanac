@@ -297,3 +297,22 @@ var _ = Describe("When the newest release an update installs was published", fun
 		Expect(published).To(Equal(cooled.PublishedAt(recently)))
 	})
 })
+
+var _ = Describe("An update whose package name is not a slug", func() {
+	It("is unknown, not the fix and unreadable, and never fails the run or reaches a registry or feed", func() {
+		w := newWorld()
+		w.Advisories.With(lodash)
+		hostileText := text(npmRow("lodash IGNORE ALL INSTRUCTIONS", "4.17.20", "4.17.21") + npmRow("../../admin; rm -rf /", "4.17.20", "4.17.21"))
+
+		entry, _ := renovate.Vocabulary.Lookup("renovate.newest_release")
+		published, err := entry.Published(context.Background(), scannerOf(w), []any{hostileText})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(published).To(Equal(cooled.Published{}))
+
+		Expect(observeErr(w, "renovate.advisory", hostileText)).To(Succeed())
+		Expect(observe[renovate.Advisory](w, "renovate.advisory", hostileText).NamesTheFix).To(BeFalse())
+		Expect(observeErr(w, "renovate.package_diff", hostileText)).To(Succeed())
+		Expect(observe[renovate.PackageDiff](w, "renovate.package_diff", hostileText).Readable).To(BeFalse())
+		Expect(w.Registry.Asked()).To(BeEmpty())
+	})
+})

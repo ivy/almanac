@@ -52,7 +52,7 @@ var _ = Describe("The vocabulary, for the Rust compile-fail cases", func() {
 		Entry("string_in_observed: an event holding plain text",
 			func(v *vocab.Vocabulary) { vocab.Event[Titled](v, "demo.titled", "a titled thing") },
 			".Title is a string"),
-		Entry("observe_raw_string: an observer reading plain text",
+		Entry("observe_raw_string, and so plain_string_to_worker: an observer reading plain text, which no worker can then be given",
 			func(v *vocab.Vocabulary) { vocab.Observer(v, "demo.plain", "plain text", readPlain) },
 			"string could carry free text"),
 		Entry("patch_is_not_clean: an observer reading a patch as anything but hostile",

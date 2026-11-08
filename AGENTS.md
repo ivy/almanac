@@ -76,6 +76,7 @@ The `go-rewrite` branch rewrites Almanac in Go, with workflows written in a Go D
 - **Queries:** `store/postgres` writes its SQL in `queries.sql` and generates `internal/queries` with `sqlc`. `make go-generate` regenerates it, and `make go-lint` fails while it is stale.
 - **Specs** are Ginkgo and Gomega. `testing` appears only in `*_suite_test.go`. A spec needing PostgreSQL carries the `db` label, one needing Podman or the `claude` CLI the `sandbox` label, the end-to-end suite `e2e`.
 - **Processes:** only `sandbox/podman` and `harness/claude` may import `os/exec`.
+- **Safety rules:** [docs/safety-rules.md](docs/safety-rules.md) says what each compile-fail case in `crates/fails/tests/ui/` became in Go and which spec proves it. A spec fails while a case has no row.
 - **Taint:** `tools/hostilevet` runs in `make go-lint`. Only the packages its `boundaries` list names may import `hostile/reveal`; adding one is a reviewed change.
 - **GitHub's events** are generated from `github/events/projection.toml` by `tools/eventgen`. Run `make go-generate` after changing the projection, and commit `github/events/events.go`: `make go-lint` fails while it is stale.
 - **Workflows** are models (`model/`) of parts registered in a vocabulary (`vocab/`), written with the DSL (`dsl/`) and refused or accepted by `check/`. A workflow's spec runs `check.Check` on it. Its model errors have pages in `docs/errors-go/` until the cutover. `engine.New(vocabulary, model)` runs one as a `workflow.Registered`.

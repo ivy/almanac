@@ -7,7 +7,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-1 Triggers on red CI | `almanacs/renovate/tests/build_failures.rs`: `a_failed_status_works_like_a_failed_check_suite`, `a_red_pull_request_past_its_cooldown_is_patched_and_goes_pending_then_success` |
 | R-2 No agent before cooldown | `a_broken_update_inside_its_cooldown_reaches_no_agent_and_awaits`, `an_update_with_no_publish_time_awaits` |
 | R-3 Cooldown reconsidered | `a_cooldown_await_is_reconsidered_by_a_scan_once_it_passes` |
-| R-4 Fixer gets tainted input, does not push | `the_logs_reach_the_agent_as_tainted_input_and_the_checkout_by_reference`, `crates/claude/tests/real_cli.rs` |
+| R-4 Fixer gets tainted input, does not push | `the_logs_reach_the_agent_as_tainted_input_and_the_checkout_by_reference`, `crates/claude/tests/real_cli.rs`; Go (the harness half): `harness/claude/real_cli_test.go` (label `sandbox`), `harness/claude/harness_test.go` "the checkout is uploaded and never sent to the model" |
 | R-5 Policy before push | `a_rejected_patch_asks_a_person_and_pushes_nothing`, `a_repair_that_takes_back_the_update_is_never_pushed` |
 | R-6 Attempt cap | `a_repair_that_keeps_failing_stops_at_the_cap_and_asks_once`, `crates/definitions/tests/chains.rs` |
 | R-7 Status held during a repair | `a_red_pull_request_past_its_cooldown_is_patched_and_goes_pending_then_success` |
@@ -26,7 +26,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-55 Titles | `crates/fails/tests/ui/fail/title_*`, `file_title_is_a_string`, `crates/almanac/tests/taint.rs`; Go: `hostile/title_test.go`, `hostile/format_test.go`, `tools/hostilevet/taint/testdata/title` |
 | R-21 Push only to its own branch | `crates/github/tests/client.rs`: `pushing_to_another_branch_is_refused`, `pushing_to_a_fork_is_refused`; `effect_has_no_merge`; Go: `effect/effect_test.go` "the closed set", "refuses a push whose patch no policy checked" |
 | R-22 Cooled proof | `crates/fails/tests/ui/fail/cooled_*`, `fixer_needs_cooled`, `crates/almanac/tests/cooled.rs`; Go: `cooled/cooled_test.go`, `agent/agent_test.go` "needs a Cooled proof" |
-| R-23 Sandbox enforces capability | `crates/sandbox/tests/podman.rs`, `crates/claude/tests/real_cli.rs`; Go: `sandbox/podman/podman_test.go` "A Podman sandbox" (label `sandbox`), `sandbox/fetch_test.go` "The dependency fetch step" |
+| R-23 Sandbox enforces capability | `crates/sandbox/tests/podman.rs`, `crates/claude/tests/real_cli.rs`; Go: `sandbox/podman/podman_test.go` "A Podman sandbox" (label `sandbox`), `sandbox/fetch_test.go` "The dependency fetch step", `harness/claude/real_cli_test.go` "The Claude harness, with the real CLI" (label `sandbox`), `harness/claude/harness_test.go`, `harness/claude/mcp_test.go` |
 | R-52 Remote-shaped `Sandbox` | `FakeSandbox` holds nothing on the host; [ADR 1](adrs/0001-agent-sandbox.md) maps every operation; Go: `sandbox/fake` holds nothing on the host, `sandbox/fake/fake_test.go`, `sandbox/sandbox_test.go` |
 | R-24 Dedupe, seen only once persisted | `crates/almanac/tests/store_postgres.rs`: `a_delivery_that_failed_to_persist_is_accepted_when_redelivered`; Go: `store/postgres/postgres_test.go` "accepts a redelivery of a delivery that failed to persist", `store/storetest` "dedupe" |
 | R-25 One run per key | `testing::conformance`, `the_database_itself_refuses_a_second_active_run_for_a_key`; Go: `store/storetest` "one run per key", `store/postgres/postgres_test.go` "is itself refused a second active run for a key" |

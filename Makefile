@@ -99,7 +99,7 @@ check-isolated-demo:
 # podman, sandbox needs podman and the claude CLI, e2e runs the binaries.
 GO_VERSION_PKG := github.com/ivy/almanac/version
 GO_LDFLAGS := -X $(GO_VERSION_PKG).Version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-GINKGO := ginkgo -r -p --randomize-all --fail-on-pending --keep-going --skip-package=target,crates,xtask,spikes,contrib
+GINKGO := ginkgo -r -p --randomize-all --fail-on-pending --keep-going --skip-package=target,crates,xtask,spikes,contrib,testdata
 
 go-build:
 	go build -ldflags "$(GO_LDFLAGS)" ./...

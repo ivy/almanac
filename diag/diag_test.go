@@ -39,6 +39,24 @@ func samples() []*diag.Error {
 		diag.Unreachable("a", "r"),
 		diag.ReadOnly("a"),
 		diag.PushRefused("b", "r"),
+		diag.UnknownName("w", "predicate", "n"),
+		diag.FactBeforeObserved("w", "r"),
+		diag.EffectNotAllowed("w", "asks"),
+		diag.HostileFact("w", "r", "a key"),
+		diag.WrongType("w", "r", "a key", "slug", "string"),
+		diag.TitleNotClean("w", "r", "string"),
+		diag.AgentInputHostile("w", "a", "i"),
+		diag.PromptVars("w", "a", "p"),
+		diag.PushUnchecked("w", "r"),
+		diag.FixerBeforeMeasure("w", "a"),
+		diag.NoEnding("w", "p"),
+		diag.UnreachableStep("w", "p"),
+		diag.DuplicateID("w", "i"),
+		diag.DuplicateFact("w", "f"),
+		diag.Unlabelled("w", "label"),
+		diag.BadDeclaration("w", "p"),
+		diag.DuplicateVocabulary("n"),
+		diag.InvalidVocabulary("n", "p"),
 	}
 }
 
@@ -65,6 +83,9 @@ var _ = Describe("Diagnostics", func() {
 	It("every page on disk is listed", func() {
 		pages, err := fs.Glob(docs.Errors, "errors/*.md")
 		Expect(err).NotTo(HaveOccurred())
+		goOnly, err := fs.Glob(docs.Errors, "errors-go/*.md")
+		Expect(err).NotTo(HaveOccurred())
+		pages = append(pages, goOnly...)
 		var listed []string
 		for _, code := range diag.Codes() {
 			listed = append(listed, diag.PagePath(code))

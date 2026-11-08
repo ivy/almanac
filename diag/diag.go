@@ -14,7 +14,7 @@ import (
 type Code string
 
 // Every code an almanac can report. Each has a page, docs/errors/<code>.md with
-// "::" written as ".".
+// "::" written as ".", or docs/errors-go/<code>.md for a code only the Go almanac has.
 const (
 	ConfigRead       Code = "almanac::config::read"
 	ConfigParse      Code = "almanac::config::parse"
@@ -39,12 +39,12 @@ const (
 
 // Codes lists every code, in the order explain documents them.
 func Codes() []Code {
-	return []Code{
+	return append([]Code{
 		ConfigRead, ConfigParse, ConfigUnknownKey, ConfigSecret, ConfigEnvValue, ConfigEnvMissing,
 		Usage, ProviderMissing, StoreFailed, InputUnreadable, InputInvalidJSON, RuntimeStartup,
 		UnknownCode, ScanFailed, ForgeRateLimited, ForgeRefused, ForgeUnreachable, ForgeReadOnly,
 		ForgePushRefused,
-	}
+	}, modelCodes()...)
 }
 
 // Error is an error an almanac reports. Message says what happened and Help

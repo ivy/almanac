@@ -29,9 +29,14 @@ func Page(code Code) (string, bool) {
 	return string(page), true
 }
 
-// PagePath is where code's page is in [docs.Errors].
+// PagePath is where code's page is in [docs.Errors]: in errors-go/ for a code only the Go
+// almanac has, and in errors/ otherwise.
 func PagePath(code Code) string {
-	return "errors/" + strings.ReplaceAll(string(code), "::", ".") + ".md"
+	name := strings.ReplaceAll(string(code), "::", ".") + ".md"
+	if _, err := fs.Stat(docs.Errors, "errors-go/"+name); err == nil {
+		return "errors-go/" + name
+	}
+	return "errors/" + name
 }
 
 // why is the paragraph under "## Why it matters" on code's page.

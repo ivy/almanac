@@ -8,7 +8,8 @@ package docs
 import "embed"
 
 // Errors holds errors/<code>.md for every error code, with each "::" in the
-// code written as ".".
+// code written as ".". A code only the Go almanac has is in errors-go/ instead,
+// so that the Rust almanac's check of errors/ does not count it.
 //
-//go:embed errors/*.md
+//go:embed errors/*.md errors-go/*.md
 var Errors embed.FS

@@ -2,6 +2,8 @@ package app_test
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -13,6 +15,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/ivy/almanac/agent"
 	"github.com/ivy/almanac/almanactest"
 	"github.com/ivy/almanac/app"
 	"github.com/ivy/almanac/config"
@@ -21,6 +24,8 @@ import (
 	"github.com/ivy/almanac/internal/pgtest"
 	"github.com/ivy/almanac/providers"
 	"github.com/ivy/almanac/runtime"
+	"github.com/ivy/almanac/sandbox"
+	"github.com/ivy/almanac/sandbox/fake"
 	"github.com/ivy/almanac/store/postgres"
 	"github.com/ivy/almanac/workflow"
 )
@@ -41,7 +46,7 @@ func logged(ctx context.Context, log *deliveries.Log, id, kind string, body []by
 
 // liveRuntime is a live runtime for almanac on the database at url, reaching forge and
 // harness. Making one again on the same database is a restart.
-func liveRuntime(ctx context.Context, url, almanac string, forge *almanactest.FakeForge, harness *almanactest.ScriptedHarness, options ...runtime.Option) *runtime.Runtime {
+func liveRuntime(ctx context.Context, url, almanac string, forge *almanactest.FakeForge, harness agent.Harness, options ...runtime.Option) *runtime.Runtime {
 	GinkgoHelper()
 	st, err := postgres.Connect(ctx, url, almanac)
 	Expect(err).NotTo(HaveOccurred())
@@ -52,6 +57,31 @@ func liveRuntime(ctx context.Context, url, almanac string, forge *almanactest.Fa
 	set.UseHarness(harness)
 	options = append([]runtime.Option{runtime.WithStore(st), runtime.InMode(effect.Live), runtime.WithLogger(logger())}, options...)
 	return runtime.New([]workflow.Registered{holding}, set, options...)
+}
+
+// sandboxing is an agent that works in a sandbox until its run ends, then ends the sandbox, as
+// harness/claude does.
+type sandboxing struct {
+	sb      sandbox.Sandbox
+	working atomic.Bool
+}
+
+func (h *sandboxing) Run(ctx context.Context, _ agent.Pass, _ string, _ agent.Grant, _ json.RawMessage) (json.RawMessage, error) {
+	id, err := h.sb.Create(ctx, sandbox.AgentSpec("image"))
+	if err != nil {
+		return nil, err
+	}
+	h.working.Store(true)
+	<-ctx.Done()
+	return nil, errors.Join(ctx.Err(), sandbox.End(ctx, h.sb, id))
+}
+
+// slowToStop is a sandbox that takes a while to destroy, as a container does.
+type slowToStop struct{ *fake.Sandbox }
+
+func (s slowToStop) Destroy(ctx context.Context, id sandbox.ID) error {
+	time.Sleep(500 * time.Millisecond)
+	return s.Sandbox.Destroy(ctx, id)
 }
 
 // running runs d until the returned stop is called, and stop waits for it to return.
@@ -120,6 +150,21 @@ var _ = Describe("The daemon", Label("db"), func() {
 		_, err := second.Deliver(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(forge.Statuses()).To(Equal([]almanactest.Status{{On: held, State: effect.Success}}), "one status per commit and context, and pending was cleared")
+	})
+
+	// The daemon's half of crates/sandbox/tests/podman.rs
+	// a_sandbox_abandoned_by_a_stopping_service_is_gone: a run abandoned at a stop ends its
+	// sandbox before the daemon returns, so the process exiting next does not cut the stop short.
+	It("waits for an abandoned run to end its sandbox before it stops", func() {
+		c := cursor("daemon")
+		logged(ctx, log, "d1", opened, pull(1))
+		sb := slowToStop{fake.New()}
+		h := &sandboxing{sb: sb}
+		rt := liveRuntime(ctx, url, "daemon", &almanactest.FakeForge{}, h)
+		stop := running(&app.Daemon{Runtime: rt, Cursor: c, Logger: logger(), Grace: 100 * time.Millisecond})
+		Eventually(h.working.Load).Should(BeTrue(), "the run reaches its agent")
+		stop()
+		Expect(sb.Alive()).To(BeZero(), "the sandbox was ended before the daemon returned")
 	})
 
 	It("a status left pending by a killed run is cleared after a restart", func() {

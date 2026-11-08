@@ -132,6 +132,27 @@ var _ = Describe("A Podman sandbox", Label("sandbox"), func() {
 		Expect(p.Destroy(ctx, id)).To(Succeed(), "destroying twice is not an error")
 	})
 
+	// crates/sandbox/tests/podman.rs: a_sandbox_abandoned_by_a_stopping_service_is_gone.
+	// systemd kills what is left in a unit's cgroup once its main process exits, so a stop that
+	// outlives the process that abandoned its sandbox never happens. This runs that process in
+	// such a unit.
+	It("is gone once a stopping service abandons it", func(ctx SpecContext) {
+		id, err := p.Create(ctx, sandbox.AgentSpec(image))
+		Expect(err).NotTo(HaveOccurred())
+		self, err := os.Executable()
+		Expect(err).NotTo(HaveOccurred())
+		service := exec.CommandContext(ctx, "systemd-run", "--user", "--wait", "--collect", "--quiet",
+			"--property", "KillMode=control-group",
+			"--setenv="+abandoning+"="+string(id),
+			self)
+		out, err := service.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), "%s", out)
+		if exec.CommandContext(ctx, "podman", "container", "exists", string(id)).Run() == nil {
+			Expect(p.Destroy(ctx, id)).To(Succeed())
+			Fail(string(id) + " outlived the service that abandoned it")
+		}
+	})
+
 	It("refuses to give an agent sandbox egress", func(ctx SpecContext) {
 		spec := sandbox.AgentSpec(image)
 		spec.Egress = sandbox.AllowDomains("example.com")

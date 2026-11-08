@@ -46,15 +46,15 @@ type Verified struct {
 	Tail string `json:"tail"`
 }
 
-// sandboxed runs a session in a new sandbox, which it always destroys.
+// sandboxed runs a session in a new sandbox, which it always ends before it returns, even when
+// the run was abandoned.
 func (h *Harness) sandboxed(ctx context.Context, prompt string, input json.RawMessage) (json.RawMessage, error) {
 	id, err := h.sandbox.Create(ctx, h.spec)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrSandbox, err)
 	}
 	answer, err := h.inSandbox(ctx, id, prompt, input)
-	// Clean up even when ctx was cancelled.
-	if destroyErr := h.sandbox.Destroy(context.WithoutCancel(ctx), id); destroyErr != nil {
+	if destroyErr := sandbox.End(ctx, h.sandbox, id); destroyErr != nil {
 		err = errors.Join(err, fmt.Errorf("%w: %w", ErrSandbox, destroyErr))
 	}
 	if err != nil {

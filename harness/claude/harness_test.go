@@ -210,6 +210,7 @@ var _ = Describe("The Claude harness, with a scripted CLI", func() {
 			Expect(sb.Alive()).To(Equal(0))
 		})
 
+		// crates/claude/tests/harness.rs: a_sandbox_is_ended_when_its_session_is_abandoned
 		It("destroys its sandbox when the run is cancelled", func(ctx SpecContext) {
 			cancelled, cancel := context.WithCancel(ctx)
 			config := fakeCLI(dir, "sleep 30")

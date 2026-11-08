@@ -75,8 +75,7 @@ func FetchDependencies(ctx context.Context, sb Sandbox, spec Spec, tarball []byt
 		return nil, failed("", err)
 	}
 	deps, err := fetchIn(ctx, sb, id, tarball)
-	// Clean up even when ctx was cancelled.
-	if destroyErr := sb.Destroy(context.WithoutCancel(ctx), id); destroyErr != nil {
+	if destroyErr := End(ctx, sb, id); destroyErr != nil {
 		err = errors.Join(err, destroyErr)
 	}
 	if err != nil {

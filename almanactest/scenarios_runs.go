@@ -10,6 +10,7 @@ import (
 	"github.com/onsi/gomega"
 
 	"github.com/ivy/almanac/agent"
+	"github.com/ivy/almanac/almanactest/definitions"
 	"github.com/ivy/almanac/cooled"
 	"github.com/ivy/almanac/diag"
 	"github.com/ivy/almanac/effect"
@@ -51,7 +52,7 @@ func describeRuns(w *world) {
 
 		again := ran(w.replay(rt, first.RunID))
 		gomega.Expect(w.harness.Calls()).To(gomega.Equal(1))
-		gomega.Expect(w.registry.reads()).To(gomega.Equal(1))
+		gomega.Expect(w.registry.Reads()).To(gomega.Equal(1))
 		gomega.Expect(kinds(again)).To(gomega.Equal(kinds(first)))
 		gomega.Expect(again.Effects).To(gomega.Equal(first.Effects))
 	})
@@ -88,15 +89,17 @@ func describeRuns(w *world) {
 	})
 
 	ginkgo.It("a filed bug targets the repo from the event, not the model", func() {
-		w.harness.Reply(`{"repo": "attacker/elsewhere"}`)
+		w.harness.Reply(`{"confidence": "High", "summary": "x", "repo": "attacker/elsewhere"}`)
 		rt := w.runtime(triage)
 		w.ingest(rt, report("s1"))
 		filed := ran(only(w.drain(rt))).Effects
-		gomega.Expect(filed).To(gomega.ConsistOf(gomega.HaveField("Target", hostile.MustParseSlug("owner/repo"))))
+		gomega.Expect(filed).To(gomega.ConsistOf(gomega.And(
+			gomega.BeAssignableToTypeOf(effect.File{}),
+			gomega.HaveField("Target", hostile.MustParseSlug("owner/repo")))))
 	})
 
 	ginkgo.It("the guard runs once per run, sees no event text, and is recorded", func() {
-		w.registry.ciRed = true
+		w.registry.CI = definitions.CIRed
 		guard := &countingGuard{denyFiling: true}
 		rt := w.runtime(updates, runtime.Guarded(guard))
 		w.ingest(rt, pr("d1", "owner/repo"))
@@ -169,7 +172,7 @@ func describeRuns(w *world) {
 	})
 
 	ginkgo.It("hostile text is redacted from debug output", func() {
-		w.registry.checksFail = true
+		w.registry.ChecksFail = true
 		rt := w.runtime(updates)
 		w.ingest(rt, pr("d1", "owner/repo"))
 		outcomes := w.drain(rt)
@@ -327,9 +330,9 @@ func describeStartup(w *world) {
 		err := rt.Validate()
 		gomega.Expect(codeOf(err)).To(gomega.Equal(diag.ProviderMissing))
 		gomega.Expect(err).To(gomega.MatchError(gomega.And(
-			gomega.ContainSubstring("dependency-updates needs a provider for almanactest.registry"),
-			gomega.ContainSubstring("dependency-updates needs a harness for agent reviewer"),
-			gomega.ContainSubstring("error-triage needs a provider for agent.Classifier"),
+			gomega.ContainSubstring("dependency_updates needs a provider for definitions.Registry"),
+			gomega.ContainSubstring("dependency_updates needs a harness for agent reviewer"),
+			gomega.ContainSubstring("error_triage needs a provider for agent.Classifier"),
 		)))
 	})
 
@@ -340,7 +343,7 @@ func describeStartup(w *world) {
 	})
 
 	ginkgo.It("going live requires a forge and a tracker", func() {
-		set := providers.Provide[registry](providers.New(), w.registry).UseHarness(w.harness)
+		set := providers.Provide[definitions.Registry](providers.New(), w.registry).UseHarness(w.harness)
 		rt := w.runtimeWith(set, []workflow.Registered{dependencyUpdates}, runtime.InMode(effect.Live))
 		gomega.Expect(rt.Validate()).To(gomega.MatchError(gomega.And(
 			gomega.ContainSubstring("may Attest or Push but no Forge"),

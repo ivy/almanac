@@ -6,6 +6,7 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 
+	"github.com/ivy/almanac/almanactest/definitions"
 	"github.com/ivy/almanac/effect"
 	"github.com/ivy/almanac/providers"
 	"github.com/ivy/almanac/runtime"
@@ -17,7 +18,7 @@ import (
 func describeOutbox(w *world) {
 	// checked is a runtime whose one run fails trust checks, so it decides Attest and Ask.
 	checked := func(options ...runtime.Option) *runtime.Runtime {
-		w.registry.checksFail = true
+		w.registry.ChecksFail = true
 		return w.runtime([]workflow.Registered{dependencyUpdates}, options...)
 	}
 	calls := func() int { return len(w.forge.Calls()) + len(w.tracker.Calls()) }
@@ -147,7 +148,7 @@ func describeModes(w *world) {
 	})
 
 	ginkgo.It("a dry run leaves a live run everything still to do", func() {
-		w.registry.checksFail = true
+		w.registry.ChecksFail = true
 		dry := w.runtime(updates, runtime.WithStore(w.open(effect.DryRun.Scope(scope))))
 		live := w.runtime(updates, runtime.WithStore(w.open(effect.Live.Scope(scope))), runtime.InMode(effect.Live))
 		for i := range 3 {
@@ -199,12 +200,12 @@ func describeModes(w *world) {
 		held := ran(byWorkflow["holds-then-decides"])
 		gomega.Expect(statuses(w.effectsOf(rt, held.RunID))).To(gomega.Equal([]store.Status{store.WouldApply, store.WouldApply}))
 		gomega.Expect(byWorkflow["reads-with-an-agent"]).To(gomega.HaveField("Reason", gomega.ContainSubstring("ALMANAC_READ_ONLY")))
-		gomega.Expect(byWorkflow["error-triage"]).To(gomega.HaveField("Reason", gomega.ContainSubstring("ALMANAC_READ_ONLY")))
+		gomega.Expect(byWorkflow["error_triage"]).To(gomega.HaveField("Reason", gomega.ContainSubstring("ALMANAC_READ_ONLY")))
 		gomega.Expect(byWorkflow["writes-directly"]).To(gomega.HaveField("Reason", gomega.ContainSubstring("read-only")))
 	})
 
 	ginkgo.It("a read-only runtime needs no harness, and a refused write is a diagnostic", func() {
-		set := providers.Provide[registry](providers.New(), w.registry)
+		set := providers.Provide[definitions.Registry](providers.New(), w.registry)
 		providers.Provide[effect.Forge](set, w.forge)
 		rt := w.runtimeWith(set, []workflow.Registered{dependencyUpdates, writesDirectly}, runtime.ReadOnly())
 		gomega.Expect(rt.Validate()).To(gomega.Succeed(), "every agent has a harness that refuses")

@@ -196,7 +196,7 @@ func describeLimits(w *world) {
 		}
 		outcomes := w.drain(rt)
 		gomega.Expect(w.harness.Calls()).To(gomega.Equal(dependencyUpdates.RunsPerHour()))
-		gomega.Expect(tripped(outcomes)).To(gomega.ConsistOf(runtime.Outcome{Result: runtime.BudgetTripped, Workflow: "dependency-updates", Held: 15}))
+		gomega.Expect(tripped(outcomes)).To(gomega.ConsistOf(runtime.Outcome{Result: runtime.BudgetTripped, Workflow: "dependency_updates", Held: 15}))
 	})
 
 	ginkgo.It("a tripped budget asks once and held work runs after an hour", func() {

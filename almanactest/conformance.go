@@ -11,6 +11,7 @@ import (
 	"github.com/onsi/gomega"
 
 	"github.com/ivy/almanac/agent"
+	"github.com/ivy/almanac/almanactest/definitions"
 	"github.com/ivy/almanac/clock"
 	"github.com/ivy/almanac/diag"
 	"github.com/ivy/almanac/effect"
@@ -30,8 +31,9 @@ import (
 //	})
 //
 // They port the runtime scenarios of the Rust tests in crates/definitions/tests and
-// almanacs/renovate/tests, named as those tests are, with workflows written by hand as
-// workflow.Coded values. A spec needing PostgreSQL carries the db label, so wrap the call for
+// almanacs/renovate/tests, named as those tests are. They run the sample workflows in
+// almanactest/definitions through the engine, as the Rust tests run the Rust samples, and
+// workflows written by hand as workflow.Coded values where a Rust test writes its own. A spec needing PostgreSQL carries the db label, so wrap the call for
 // PostgreSQL in a container labelled db.
 func Conformance(fresh storetest.Fresh) {
 	w := &world{}
@@ -45,7 +47,7 @@ func Conformance(fresh storetest.Fresh) {
 			classifier: Answering(0.9),
 			forge:      &FakeForge{},
 			tracker:    &FakeTracker{},
-			registry:   &fakeRegistry{},
+			registry:   &definitions.FakeRegistry{},
 		}
 	})
 
@@ -70,13 +72,13 @@ type world struct {
 	classifier *FixedClassifier
 	forge      *FakeForge
 	tracker    *FakeTracker
-	registry   *fakeRegistry
+	registry   *definitions.FakeRegistry
 }
 
 // providers is every provider the scenarios use. Almanac acts as me.
 func (w *world) providers() *providers.Set {
 	set := providers.New()
-	providers.Provide[registry](set, w.registry)
+	providers.Provide[definitions.Registry](set, w.registry)
 	providers.Provide[effect.Forge](set, w.forge)
 	providers.Provide[effect.Tracker](set, w.tracker)
 	providers.Provide[agent.Classifier](set, w.classifier)

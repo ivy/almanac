@@ -227,15 +227,20 @@ func (d *Daemon) follow(following, work context.Context) {
 
 // scan runs a scheduled scan whenever one is due, until following ends. What a scan queues
 // runs when the log next wakes, at most the cursor's Poll later.
+//
+// Each scan is logged, with what it found and how long it took, so a quiet daemon can be told
+// from one whose scanning has stopped. docs/operating.md tells the operator to watch for it.
 func (d *Daemon) scan(following, work context.Context) {
 	for {
+		started := time.Now()
 		report, ran, err := d.Runtime.Tick(work)
 		switch {
 		case err != nil:
 			d.Logger.Warn("a scheduled scan failed", "error", err)
 		case ran:
-			d.Logger.Info("scanned", "found", report.Found, "queued", report.Queued,
-				"unchanged", report.Unchanged, "rejected", report.Rejected, "skipped", report.Skipped)
+			d.Logger.Info("scheduled scan finished", "found", report.Found, "queued", report.Queued,
+				"unchanged", report.Unchanged, "rejected", report.Rejected, "skipped", report.Skipped,
+				"seconds", time.Since(started).Seconds())
 		}
 		if !sleep(following, d.Tick) {
 			return

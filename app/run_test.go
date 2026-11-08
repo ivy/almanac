@@ -157,6 +157,16 @@ var _ = Describe("run", func() {
 			Expect(second.stderr.String()).To(ContainSubstring("stopped cleanly"))
 		})
 
+		// crates/almanac/src/daemon.rs logs "scheduled scan finished" with these fields, and
+		// docs/operating.md tells the operator to watch for it.
+		It("logs each scheduled scan with what it found and how long it took", func() {
+			d := start(w.almanac(watching))
+			healthy(address)
+			Eventually(d.stderr.String).Should(MatchRegexp(
+				`"level":"INFO","msg":"scheduled scan finished","found":1,"queued":1,"unchanged":0,"rejected":0,"skipped":false,"seconds":\d`))
+			Expect(d.stop()).To(Equal(0))
+		})
+
 		It("follows the log, and stops cleanly once its run is done", func() {
 			setenv("ALMANAC_MODE", "live")
 			d := start(w.almanac(holding))

@@ -19,13 +19,13 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-13 Verdict statuses | `a_valid_fix_goes_pending_then_success`, `a_target_that_is_not_the_patched_version_fails_and_asks` |
 | R-14 Red security update repaired | By routing: `github.check_suite.completed` goes to `build_failures` for every Renovate branch |
 | R-15, R-16 Authoring | `crates/fails/tests/ui/`, `crates/definitions/tests/workflows.rs` |
-| R-17 Prompts checked | `crates/fails/tests/ui/fail/prompt_*` |
+| R-17 Prompts checked | `crates/fails/tests/ui/fail/prompt_*`; Go: `agent/prompt_test.go` |
 | R-18 Agents discovered | `crates/fails/tests/ui/pass/ok_workflow_macro.rs`, `the_manifest_shows_each_agents_capabilities` |
-| R-19 Profiles | `crates/fails/tests/ui/fail/fixer_*`, `the_manifest_shows_a_fixers_grant` |
-| R-20 Patch policy | `crates/almanac/tests/patch.rs` |
-| R-55 Titles | `crates/fails/tests/ui/fail/title_*`, `file_title_is_a_string`, `crates/almanac/tests/taint.rs` |
-| R-21 Push only to its own branch | `crates/github/tests/client.rs`: `pushing_to_another_branch_is_refused`, `pushing_to_a_fork_is_refused`; `effect_has_no_merge` |
-| R-22 Cooled proof | `crates/fails/tests/ui/fail/cooled_*`, `fixer_needs_cooled`, `crates/almanac/tests/cooled.rs` |
+| R-19 Profiles | `crates/fails/tests/ui/fail/fixer_*`, `the_manifest_shows_a_fixers_grant`; Go: `agent/agent_test.go`, `workflow/cx_test.go` "Agent calls through Cx" |
+| R-20 Patch policy | `crates/almanac/tests/patch.rs`; Go: `patch/patch_test.go` |
+| R-55 Titles | `crates/fails/tests/ui/fail/title_*`, `file_title_is_a_string`, `crates/almanac/tests/taint.rs`; Go: `hostile/title_test.go`, `hostile/format_test.go`, `tools/hostilevet/taint/testdata/title` |
+| R-21 Push only to its own branch | `crates/github/tests/client.rs`: `pushing_to_another_branch_is_refused`, `pushing_to_a_fork_is_refused`; `effect_has_no_merge`; Go: `effect/effect_test.go` "the closed set", "refuses a push whose patch no policy checked" |
+| R-22 Cooled proof | `crates/fails/tests/ui/fail/cooled_*`, `fixer_needs_cooled`, `crates/almanac/tests/cooled.rs`; Go: `cooled/cooled_test.go`, `agent/agent_test.go` "needs a Cooled proof" |
 | R-23 Sandbox enforces capability | `crates/sandbox/tests/podman.rs`, `crates/claude/tests/real_cli.rs`; Go: `sandbox/podman/podman_test.go` "A Podman sandbox" (label `sandbox`), `sandbox/fetch_test.go` "The dependency fetch step" |
 | R-52 Remote-shaped `Sandbox` | `FakeSandbox` holds nothing on the host; [ADR 1](adrs/0001-agent-sandbox.md) maps every operation; Go: `sandbox/fake` holds nothing on the host, `sandbox/fake/fake_test.go`, `sandbox/sandbox_test.go` |
 | R-24 Dedupe, seen only once persisted | `crates/almanac/tests/store_postgres.rs`: `a_delivery_that_failed_to_persist_is_accepted_when_redelivered` |
@@ -42,7 +42,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every Ru
 | R-36 `gather` reads current state | `all_three_origins_produce_identical_decisions_for_the_same_state` |
 | R-37, R-38 Projections | `xtask/tests/generate.rs`, `a_new_enum_value_from_github_does_not_break_ingest` |
 | R-39 Hand-written sources | `crates/fails/tests/ui/fail/payload_field_rejects_string.rs`, `crates/advisory/src/cve_now.rs`; Go: `advisory/cvenow_test.go` |
-| R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing` |
+| R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing`; Go: `workflow/code_test.go` "Validate" |
 | R-41 Tracker | `crates/github/tests/tracker.rs` |
 | R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs`; Go: `diag/diag_test.go`, `config/config_test.go` "Config diagnostics" |
 | R-43 Manifest | `the_manifest_names_the_prompt_file_and_its_variables`, `a_new_almanac_builds_tests_and_describes_itself` |

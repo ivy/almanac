@@ -8,8 +8,8 @@ import (
 
 	"github.com/ivy/almanac/almanacs/renovate"
 	"github.com/ivy/almanac/almanacs/renovate/buildfailures"
+	"github.com/ivy/almanac/almanacs/renovate/securityfixes"
 	"github.com/ivy/almanac/check"
-	"github.com/ivy/almanac/internal/fixture/workflows"
 	"github.com/ivy/almanac/vocab"
 )
 
@@ -54,7 +54,7 @@ var _ = Describe("The Renovate vocabulary", func() {
 	// is written against this vocabulary.
 	It("holds the parts the Renovate workflows are written with, as they are written", func() {
 		Expect(check.Check(renovate.Vocabulary, buildfailures.Model)).To(Succeed())
-		Expect(check.Check(renovate.Vocabulary, workflows.SecurityFixes)).To(Succeed())
+		Expect(check.Check(renovate.Vocabulary, securityfixes.Model)).To(Succeed())
 	})
 
 	It("declares its agents with the prompts the Rust almanac uses", func() {
@@ -66,7 +66,7 @@ var _ = Describe("The Renovate vocabulary", func() {
 		Expect(manifest.Agents[0].PromptVars).To(Equal([]string{"repo"}))
 		Expect(manifest.Agents[0].Grant.Write).To(BeTrue())
 
-		manifest, err = check.Manifest(renovate.Vocabulary, workflows.SecurityFixes)
+		manifest, err = check.Manifest(renovate.Vocabulary, securityfixes.Model)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(manifest.Agents[0].Name).To(Equal("reviewer"))
 		Expect(manifest.Agents[0].Prompt).To(Equal("reviewer.md"))

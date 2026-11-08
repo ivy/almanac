@@ -109,19 +109,40 @@ async fn a_destroyed_sandbox_is_gone() {
     );
 }
 
+const ABANDONING: &str = "ALMANAC_TEST_ABANDON";
+
+/// The process half of the test below: abandons the named sandbox and exits at once.
+#[test]
+fn abandon_then_exit() {
+    let Ok(name) = std::env::var(ABANDONING) else {
+        return;
+    };
+    PodmanSandbox.abandon(&SandboxId(name));
+    std::process::exit(0);
+}
+
+/// systemd kills what is left in a unit's cgroup once its main process exits, so a stop that
+/// outlives `abandon` never happens. This runs the abandoning process in such a unit.
 #[tokio::test]
-async fn an_abandoned_sandbox_is_gone_without_being_awaited() {
+async fn a_sandbox_abandoned_by_a_stopping_service_is_gone() {
     let p = PodmanSandbox;
     let id = started(&p).await;
-    p.abandon(&id);
-    let deadline = std::time::Instant::now() + LIMIT;
-    while p
-        .exec(&id, "true", LIMIT)
-        .await
-        .is_ok_and(|o| o.exit_code == 0)
-    {
-        assert!(std::time::Instant::now() < deadline, "{} still runs", id.0);
-        tokio::time::sleep(Duration::from_millis(200)).await;
+    let service = std::process::Command::new("systemd-run")
+        .args(["--user", "--wait", "--collect", "--quiet"])
+        .args(["--property", "KillMode=control-group"])
+        .arg(format!("--setenv={ABANDONING}={}", id.0))
+        .arg(std::env::current_exe().unwrap())
+        .args(["--exact", "abandon_then_exit", "--quiet"])
+        .output()
+        .unwrap();
+    assert!(service.status.success(), "{service:?}");
+    let left = std::process::Command::new("podman")
+        .args(["container", "exists", &id.0])
+        .status()
+        .unwrap();
+    if left.success() {
+        p.destroy(&id).await.unwrap();
+        panic!("{} outlived the service that abandoned it", id.0);
     }
 }
 

@@ -123,6 +123,7 @@ pub trait Sandbox: Send + Sync {
 
     fn destroy<'a>(&'a self, id: &'a SandboxId) -> BoxFuture<'a, Sandboxed<()>>;
 
-    /// Ends a sandbox without waiting, for an owner being dropped that cannot await `destroy`.
+    /// Ends a sandbox from synchronous code, for an owner being dropped that cannot await
+    /// `destroy`. It may block briefly.
     fn abandon(&self, id: &SandboxId);
 }

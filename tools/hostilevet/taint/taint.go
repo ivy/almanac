@@ -13,6 +13,9 @@
 //   - A closed type has only unexported fields, its values are declared as package-level
 //     variables, and no field of one is assigned.
 //   - hostile.Titlef takes only clean values.
+//   - An event type, an observer's reading, a worker's input or answer, a recorded fact and a
+//     prompt variable have the shape hostile.CheckObserved or hostile.CheckClean requires, so
+//     what start-up or a run would refuse is refused when the package is built.
 //
 // Package hostile, the packages under it, and this analyzer are exempt: they implement the
 // rules.
@@ -53,6 +56,7 @@ func run(pass *analysis.Pass) (any, error) {
 	checkBoundaries(pass, root)
 	checkClosed(pass, root)
 	checkTitles(pass, root)
+	checkShapes(pass, root)
 	return nil, nil
 }
 

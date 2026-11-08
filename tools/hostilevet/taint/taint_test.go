@@ -27,7 +27,12 @@ var _ = Describe("hostilevet", func() {
 		Entry("revealing or reading the tag outside a boundary", "example.com/cases/boundary"),
 		Entry("values of a closed type outside its declared set", "example.com/cases/closed"),
 		Entry("unclean values in a title", "example.com/cases/title"),
+		Entry("events, readings, answers, inputs and prompt variables that could carry free text", "example.com/cases/shapes"),
 	)
+
+	It("accepts the holes docs/safety-rules.md lists, so that closing one shows here", func() {
+		analysistest.Run(GinkgoT(), testdata, taint.Analyzer, "example.com/cases/holes")
+	})
 
 	It("reports nothing in package hostile and the packages under it, which implement the rules", func() {
 		analysistest.Run(GinkgoT(), testdata, taint.Analyzer, "github.com/ivy/almanac/hostile/...")

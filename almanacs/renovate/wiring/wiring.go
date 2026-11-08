@@ -53,7 +53,7 @@ func (env Env) get(name, fallback string) string {
 func Providers(env Env) (*providers.Set, error) {
 	readOnly := runtime.SwitchesFrom(false, env).ReadOnly
 	set := providers.New()
-	providers.Provide[registry.Registry](set, registry.NewHTTP(registryEndpoints(env), nil))
+	providers.Provide(set, Registry(env))
 	providers.Provide[advisory.Advisories](set, advisory.NewCveNow(env.get("ALMANAC_ADVISORIES_URL", defaultAdvisories)))
 	providers.Provide[clock.Clock](set, clock.System{})
 	providers.Provide(set, renovate.Target{
@@ -87,6 +87,21 @@ func Providers(env Env) (*providers.Set, error) {
 	}
 	set.UseHarness(harness)
 	return set, nil
+}
+
+// ReadOnlyClient is a GitHub client that refuses every write, with the credentials in env, or
+// nil when env holds none.
+func ReadOnlyClient(env Env) (*github.Client, error) {
+	auth, err := gitHubAuth(env)
+	if err != nil || auth == nil {
+		return nil, err
+	}
+	return github.New(env.get("GITHUB_API_URL", defaultAPI), auth, github.ReadOnly()), nil
+}
+
+// Registry reads the package registries env points at.
+func Registry(env Env) registry.Registry {
+	return registry.NewHTTP(registryEndpoints(env), nil)
 }
 
 // gitHubAuth is a GitHub App's installation if one is configured, or else a token, or nil.

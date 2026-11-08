@@ -102,6 +102,27 @@ var _ = Describe("The Renovate almanac's providers", func() {
 		Expect(sim.Writes()).To(BeEmpty())
 	})
 
+	It("give a report a client that refuses every write, whatever ALMANAC_READ_ONLY says", func() {
+		client, err := wiring.ReadOnlyClient(environment(map[string]string{
+			"GITHUB_TOKEN":      "token",
+			"GITHUB_API_URL":    sim.URL(),
+			"ALMANAC_READ_ONLY": "0",
+		}))
+		Expect(err).NotTo(HaveOccurred())
+		head := hostile.MustParseSha(sim.Pull("owner/repo", sim.AddPull("owner/repo", simforge.RenovatePull("renovate/x", "Update x"))).HeadSHA)
+		err = github.NewForge(client, github.DefaultAuthor()).Attest(context.Background(), "key", effect.Attest{
+			Context: renovate.TrustContext, State: effect.Pending, Repo: hostile.MustParseSlug("owner/repo"), Sha: head,
+		})
+		var refused *diag.Error
+		Expect(errors.As(err, &refused)).To(BeTrue())
+		Expect(refused.Code).To(Equal(diag.ForgeReadOnly))
+		Expect(sim.Writes()).To(BeEmpty())
+
+		none, err := wiring.ReadOnlyClient(environment(map[string]string{}))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(none).To(BeNil())
+	})
+
 	It("leave out GitHub, and the harness that checks out through it, without GitHub credentials", func() {
 		set, err := wiring.Providers(environment(map[string]string{"ANTHROPIC_API_KEY": "key"}))
 		Expect(err).NotTo(HaveOccurred())

@@ -54,11 +54,13 @@ An almanac adds verbs of its own after these, and `--help` lists them. The Go `a
 
 | Command | What it does |
 |---|---|
-| `report` | Prints the state of every open Renovate pull request. See [Report states](report-states.md). |
+| `report` | Prints the state of every open Renovate pull request, as the Rust binary's `report` does. It always reads through a GitHub client that refuses writes, and needs no database or model credential. See [Report states](report-states.md). |
 | `compare --rust FILE [--go FILE]` | Prints the Rust and Go reports' states side by side, marking every difference. Without `--go`, the Go report is made now. |
 | `compare-effects [--since DURATION]` | Prints what the Go dry run would do to each open Renovate pull request beside what the Rust version did, as GitHub shows it. Reads the dry run's runs from the database `DATABASE_URL` names. |
+| `outcomes [WORKFLOW] [--format text\|json] [--diff OLD.json]` | Lists every way a run of `build_failures` or `security_fixes` can end, with the conditions on the way and the effects. With `--diff`, it lists what changed since the version whose `outcomes --format json` is in `OLD.json`. It reads only the model. |
+| `views [WORKFLOW] [--diff OLD.json]` | Writes one self-contained HTML page for the workflow: its flow, its outcomes and where hostile facts go, with any changes since `OLD.json` marked. |
 
-[Compare the Go and Rust versions](comparing.md) says how to run and read both comparisons.
+`outcomes` takes `--format text` or `--format json` after its name, in place of the binary's own `--format`. [Compare the Go and Rust versions](comparing.md) says how to run and read both comparisons.
 
 Every command starts by checking each workflow model; a binary whose model the checker refuses prints every problem and exits `1`. Every command but `synth` and `explain` then reads config, sets up providers, and refuses to go on if a provider a workflow needs is missing. Effects apply only with `ALMANAC_MODE=live`, `--dry-run` always wins over it, and `ALMANAC_READ_ONLY` makes every command a dry run that writes nothing and calls no model. See [Configuration](configuration.md#the-go-almanac).
 

@@ -44,9 +44,9 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 | R-39 Hand-written sources | `crates/fails/tests/ui/fail/payload_field_rejects_string.rs`, `crates/advisory/src/cve_now.rs` |
 | R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing` |
 | R-41 Tracker | `crates/github/tests/tracker.rs` |
-| R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs` |
+| R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs`, `principle_9_every_failure_says_the_same_to_people_and_agents` |
 | R-43 Manifest | `the_manifest_names_the_prompt_file_and_its_variables`, `a_new_almanac_builds_tests_and_describes_itself` |
-| R-44 Config only tightens | `crates/almanac/tests/limits.rs`: `tighten_takes_the_tighter_of_each_limit`, `a_secret_in_config_points_at_its_line_and_says_where_it_belongs` |
+| R-44 Config only tightens | `crates/almanac/tests/limits.rs`: `tighten_takes_the_tighter_of_each_limit`, `a_secret_in_config_is_never_printed`, `a_secret_in_config_points_at_its_line_and_says_where_it_belongs` |
 | R-45 PostgreSQL state | `crates/almanac/tests/store_postgres.rs`, `workflows_on_postgres.rs` |
 | R-46 Scaffolding | `crates/cli/tests/scaffold.rs` |
 | R-47 Fleet discovery | `discovery_skips_archived_repositories_and_other_owners`, `an_app_finds_every_repository_past_the_first_page` |
@@ -56,7 +56,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 
 ## Principles
 
-Properties in `crates/definitions/tests/principles.rs` state some of the [core principles](core-principles.md) directly, through the runtime's public seams, and draw their inputs from `almanac::testing::generators`.
+Properties, most in `crates/definitions/tests/principles.rs`, state some of the [core principles](core-principles.md) directly, through the runtime's public seams, and draw their inputs from `almanac::testing::generators`.
 
 For principle 4, an approval is an attested success or a push. The properties hold that no model answer or guard verdict reaches an approval a plain all-clear would not, that a veto reaches none, and that nothing is approved unless the deterministic checks passed.
 
@@ -65,9 +65,11 @@ For principle 4, an approval is an attested success or a push. The properties ho
 | 4 A model can veto, never approve | `principle_4_no_answer_approves_more_than_an_all_clear`, `principle_4_a_veto_always_stops_an_approval`, `principle_4_text_beside_a_verdict_changes_nothing`, and in `almanacs/renovate/tests/security_fixes.rs`, `principle_4_a_reviewer_can_only_take_an_approval_away` |
 | 6 One thing, one run | `principle_6_each_delivery_counts_once_and_a_key_runs_once_per_batch`, `principle_6_events_during_runs_never_overlap_a_key_or_get_lost`, `principle_6_chains_budgets_and_effects_stay_within_their_limits` |
 | 7 Record everything a run depends on | `principle_7_a_replay_decides_the_same_and_calls_nothing`, `principle_7_a_replayed_screen_asks_nothing_again` |
+| 9 Errors are an interface | In `crates/almanac/tests/diagnostics.rs`, `principle_9_every_config_error_says_what_to_do_in_both_forms`, `principle_9_explain_answers_any_code`, and `every_code_has_a_page_and_every_page_a_code`; in `almanacs/renovate/tests/cli.rs`, `principle_9_every_failure_says_the_same_to_people_and_agents`, which runs the binary on arguments, config, and environment that need nothing outside |
 
 ## Not met
 
+- **Principle 9** is held as a property only for errors reachable without a forge or a database: config, environment, arguments, input files, and `explain`. The forge, scan, and store errors are checked one example each, in `crates/almanac/src/diag.rs`.
 - **R-14** has no single end-to-end test of a security pull request going red, being repaired, and passing. Each half is tested alone.
 - **R-50** covers the report only. A conflict on a patched branch files no question, so a person sees it only by reading the report.
 - **R-41** files issues through GitHub. A real delivery of one has not been exercised, because no App exists yet.

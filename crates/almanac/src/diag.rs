@@ -234,7 +234,7 @@ pub fn render(error: &dyn Diagnostic, format: Format) -> String {
             let mut out = String::new();
             let handler = JSONReportHandler::new();
             match handler.render_report(&mut out, error) {
-                Ok(()) => out,
+                Ok(()) => escape_controls(&out),
                 Err(_) => serde_json::json!({"message": error.to_string()}).to_string(),
             }
         }
@@ -248,6 +248,17 @@ pub fn render(error: &dyn Diagnostic, format: Format) -> String {
             }
         }
     }
+}
+
+/// miette's JSON handler leaves most control characters raw, and JSON allows none. Every one
+/// it emits is inside a string, because it escapes the whitespace it writes itself.
+fn escape_controls(json: &str) -> String {
+    json.chars()
+        .map(|c| match c {
+            '\u{0}'..='\u{1f}' => format!("\\u{:04x}", c as u32),
+            c => c.to_string(),
+        })
+        .collect()
 }
 
 #[cfg(test)]

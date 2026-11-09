@@ -100,3 +100,56 @@ pub fn source_paths(tc: &TestCase) -> String {
     tc.assume(!denied(&parts[0], DEFAULT_POLICY.denied_at_root));
     parts.join("/")
 }
+
+/// One delivery of an event: its id, which of a few subjects it is about, and the depth its
+/// sender claims. A test's adapter turns it into an `Envelope` for its workflow.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sent {
+    pub delivery_id: String,
+    pub subject: usize,
+    pub depth: u32,
+}
+
+/// What happens next to a runtime under test.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Step {
+    Arrive(Sent),
+    /// Run what is queued.
+    Drain,
+    /// Stop the process and start another on the same store.
+    Restart,
+}
+
+/// Distinct deliveries about `subjects` subjects, with stated depths up to `max_depth`.
+#[hegel::composite]
+pub fn deliveries(tc: &TestCase, subjects: usize, max_depth: u32) -> Vec<Sent> {
+    let count = tc.draw(gs::integers::<usize>().min_value(1).max_value(12));
+    (0..count)
+        .map(|n| Sent {
+            delivery_id: format!("d{n}"),
+            subject: tc.draw(gs::integers::<usize>().max_value(subjects - 1)),
+            depth: tc.draw(mostly(0, (0..=max_depth).collect())),
+        })
+        .collect()
+}
+
+/// Deliveries as an at-least-once transport makes them: each sent one to three times, all in
+/// any order, with runs and restarts falling anywhere between them.
+#[hegel::composite]
+pub fn schedules(tc: &TestCase, subjects: usize, max_depth: u32) -> Vec<Step> {
+    let sent = tc.draw(deliveries(subjects, max_depth));
+    let copies = sent.iter().flat_map(|s| {
+        let times = tc.draw(gs::integers::<usize>().min_value(1).max_value(3));
+        std::iter::repeat_n(s.clone(), times)
+    });
+    let arrivals: Vec<Sent> = copies.collect();
+    let mut steps = vec![];
+    for sent in tc.draw(gs::permutations(arrivals)) {
+        let between = vec![None, Some(Step::Drain), Some(Step::Restart)];
+        if let Some(step) = tc.draw(mostly(None, between)) {
+            steps.push(step);
+        }
+        steps.push(Step::Arrive(sent));
+    }
+    steps
+}

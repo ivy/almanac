@@ -28,11 +28,11 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 | R-22 Cooled proof | `crates/fails/tests/ui/fail/cooled_*`, `fixer_needs_cooled`, `crates/almanac/tests/cooled.rs` |
 | R-23 Sandbox enforces capability | `crates/sandbox/tests/podman.rs`, `crates/claude/tests/real_cli.rs` |
 | R-52 Remote-shaped `Sandbox` | `FakeSandbox` holds nothing on the host; [ADR 1](adrs/0001-agent-sandbox.md) maps every operation |
-| R-24 Dedupe, seen only once persisted | `crates/almanac/tests/store_postgres.rs`: `a_delivery_that_failed_to_persist_is_accepted_when_redelivered` |
-| R-25 One run per key | `testing::conformance`, `the_database_itself_refuses_a_second_active_run_for_a_key` |
-| R-26 Chains contained | `crates/definitions/tests/chains.rs` |
-| R-27 Budgets | `testing::conformance`, `a_tripped_budget_asks_once_and_held_work_runs_after_an_hour` |
-| R-28 Concurrency and lanes | `a_backfill_does_not_starve_a_live_event`, `independent_keys_run_concurrently_but_one_key_never_does` |
+| R-24 Dedupe, seen only once persisted | `crates/definitions/tests/principles.rs`: `principle_6_each_delivery_counts_once_and_a_key_runs_once_per_batch`, `crates/almanac/tests/store_postgres.rs`: `a_delivery_that_failed_to_persist_is_accepted_when_redelivered` |
+| R-25 One run per key | `crates/definitions/tests/principles.rs`: `principle_6_each_delivery_counts_once_and_a_key_runs_once_per_batch`, `principle_6_events_during_runs_never_overlap_a_key_or_get_lost`, `testing::conformance`, `the_database_itself_refuses_a_second_active_run_for_a_key` |
+| R-26 Chains contained | `crates/definitions/tests/principles.rs`: `principle_6_chains_budgets_and_effects_stay_within_their_limits`, `crates/definitions/tests/chains.rs` |
+| R-27 Budgets | `principle_6_chains_budgets_and_effects_stay_within_their_limits`, `testing::conformance`, `a_tripped_budget_asks_once_and_held_work_runs_after_an_hour` |
+| R-28 Concurrency and lanes | `principle_6_events_during_runs_never_overlap_a_key_or_get_lost`, `principle_6_chains_budgets_and_effects_stay_within_their_limits`, `a_backfill_does_not_starve_a_live_event`, `independent_keys_run_concurrently_but_one_key_never_does` |
 | R-29 Broker | `crates/broker/tests/receive.rs` |
 | R-53 Durable cursors | `crates/definitions/tests/broker_flow.rs` |
 | R-54 Daemon | `crates/definitions/tests/daemon.rs`, `almanacs/renovate/tests/daemon.rs`, `tools/verify-units.sh` |

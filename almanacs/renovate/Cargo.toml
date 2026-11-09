@@ -33,8 +33,8 @@ axum = "0.8"
 base64 = "0.22"
 deliveries = { path = "../../crates/deliveries" }
 flate2 = "1"
+hegeltest = { version = "0.52", default-features = false, features = ["static-engine"] }
 insta = { version = "1", features = ["json"] }
-proptest = "1"
 sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio"] }
 tar = "0.4"
 reqwest = { version = "0.13", default-features = false }

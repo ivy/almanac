@@ -18,6 +18,6 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-proptest.workspace = true
+hegeltest.workspace = true
 tokio = { workspace = true, features = ["macros"] }
 wiremock.workspace = true

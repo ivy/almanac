@@ -58,9 +58,9 @@ A person or an agent should be able to act on an error without reading the sourc
 
 ## 10. Reuse before building, generate before hand-writing
 
-Integrations stay cheap. Types come from published specs where they exist, projected down to the fields a workflow uses, and hand-written declarations are the escape hatch. Dependencies favour maturity over novelty.
+Integrations stay cheap. Types come from published specs where they exist, projected down to the fields a workflow uses, and hand-written declarations are the escape hatch. Dependencies favour maturity over novelty. A test-only dependency may be younger when it makes the tests stronger and an ADR records why, because nothing that ships links it.
 
-**Says no to:** hand-writing what a spec defines, generating a whole API surface nobody uses, a young crate where a mature one does the job, and a framework where a function would do.
+**Says no to:** hand-writing what a spec defines, generating a whole API surface nobody uses, a young crate in what ships where a mature one does the job, and a framework where a function would do.
 
 ## 11. Everything testable without the outside world
 

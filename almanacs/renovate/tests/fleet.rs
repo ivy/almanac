@@ -2,7 +2,8 @@ use almanac::prelude::*;
 use almanac_renovate::fleet::*;
 use almanac_renovate::update::{Ages, Update};
 use github::client::{Auth, GithubClient};
-use proptest::prelude::*;
+use hegel::TestCase;
+use hegel::generators as gs;
 
 use simforge::{Pull, RENOVATE, Repo, SimForge, Suite};
 
@@ -145,92 +146,78 @@ fn a_patched_branch_renovate_will_not_merge_names_the_setting() {
     assert!(v.reason.contains("gitIgnoredAuthors"), "{}", v.reason);
 }
 
-fn scenarios() -> impl Strategy<Value = PullFacts> {
-    let conflict = prop_oneof![
-        Just(Conflict::None),
-        Just(Conflict::Yes),
-        Just(Conflict::Unknown)
-    ];
-    let checks = prop_oneof![
-        Just(Checks::None),
-        Just(Checks::Pending),
-        Just(Checks::Green),
-        Just(Checks::Red)
-    ];
-    let trust = prop_oneof![
-        Just(None),
-        Just(Some(Trust::Pending)),
-        Just(Some(Trust::Success)),
-        Just(Some(Trust::Failure))
-    ];
-    let cooldown = prop_oneof![
-        Just(Cooldown::Passed),
-        Just(Cooldown::Young),
-        Just(Cooldown::Unknown)
-    ];
-    let flag = prop::option::of(any::<bool>());
-    let config = (flag.clone(), flag.clone(), flag, any::<bool>()).prop_map(
-        |(automerge, platform_automerge, git_ignored_authors, trust_required)| RepoConfig {
-            automerge,
-            platform_automerge,
-            git_ignored_authors,
-            trust_required,
+#[hegel::composite]
+fn scenarios(tc: &TestCase) -> PullFacts {
+    let flag = || gs::optional(gs::booleans());
+    PullFacts {
+        conflict: tc.draw(gs::sampled_from(vec![
+            Conflict::None,
+            Conflict::Yes,
+            Conflict::Unknown,
+        ])),
+        checks: tc.draw(gs::sampled_from(vec![
+            Checks::None,
+            Checks::Pending,
+            Checks::Green,
+            Checks::Red,
+        ])),
+        trust: tc.draw(gs::sampled_from(vec![
+            None,
+            Some(Trust::Pending),
+            Some(Trust::Success),
+            Some(Trust::Failure),
+        ])),
+        security: tc.draw(gs::booleans()),
+        attempts: tc.draw(gs::integers::<u32>().max_value(5)),
+        cooldown: tc.draw(gs::sampled_from(vec![
+            Cooldown::Passed,
+            Cooldown::Young,
+            Cooldown::Unknown,
+        ])),
+        config: RepoConfig {
+            automerge: tc.draw(flag()),
+            platform_automerge: tc.draw(flag()),
+            git_ignored_authors: tc.draw(flag()),
+            trust_required: tc.draw(gs::booleans()),
         },
-    );
-    (
-        conflict,
-        checks,
-        trust,
-        any::<bool>(),
-        0u32..6,
-        cooldown,
-        config,
-    )
-        .prop_map(
-            |(conflict, checks, trust, security, attempts, cooldown, config)| PullFacts {
-                conflict,
-                checks,
-                trust,
-                security,
-                attempts,
-                cooldown,
-                config,
-            },
-        )
+    }
 }
 
-proptest! {
-    #[test]
-    fn every_scenario_gets_one_state_with_a_reason(facts in scenarios()) {
-        let v = derive(&facts);
-        prop_assert!(!v.reason.is_empty());
-    }
+#[hegel::test]
+fn every_scenario_gets_one_state_with_a_reason(tc: TestCase) {
+    let facts = tc.draw(scenarios());
+    let v = derive(&facts);
+    assert!(!v.reason.is_empty());
+}
 
-    #[test]
-    fn mergeable_holds_only_when_the_definition_does(facts in scenarios()) {
-        if derive(&facts).state == State::Mergeable {
-            prop_assert_eq!(facts.conflict, Conflict::None);
-            prop_assert!(matches!(facts.checks, Checks::Green | Checks::None));
-            prop_assert!(matches!(facts.trust, None | Some(Trust::Success)));
-        }
+#[hegel::test]
+fn mergeable_holds_only_when_the_definition_does(tc: TestCase) {
+    let facts = tc.draw(scenarios());
+    if derive(&facts).state == State::Mergeable {
+        assert_eq!(facts.conflict, Conflict::None);
+        assert!(matches!(facts.checks, Checks::Green | Checks::None));
+        assert!(matches!(facts.trust, None | Some(Trust::Success)));
     }
+}
 
-    #[test]
-    fn blocked_by_config_always_names_a_setting(facts in scenarios()) {
-        let v = derive(&facts);
-        if v.state == State::BlockedByConfig {
-            let named = v.reason.contains("platformAutomerge") || v.reason.contains("gitIgnoredAuthors");
-            prop_assert!(named, "{}", v.reason);
-        }
+#[hegel::test]
+fn blocked_by_config_always_names_a_setting(tc: TestCase) {
+    let facts = tc.draw(scenarios());
+    let v = derive(&facts);
+    if v.state == State::BlockedByConfig {
+        let named =
+            v.reason.contains("platformAutomerge") || v.reason.contains("gitIgnoredAuthors");
+        assert!(named, "{}", v.reason);
     }
+}
 
-    #[test]
-    fn a_young_or_undated_update_is_never_being_repaired(facts in scenarios()) {
-        let unproven = !matches!(facts.cooldown, Cooldown::Passed);
-        let v = derive(&facts);
-        if unproven && v.reason == "a repair is due" {
-            prop_assert!(false, "a repair was due before the cooldown");
-        }
+#[hegel::test]
+fn a_young_or_undated_update_is_never_being_repaired(tc: TestCase) {
+    let facts = tc.draw(scenarios());
+    let unproven = !matches!(facts.cooldown, Cooldown::Passed);
+    let v = derive(&facts);
+    if unproven && v.reason == "a repair is due" {
+        panic!("a repair was due before the cooldown");
     }
 }
 

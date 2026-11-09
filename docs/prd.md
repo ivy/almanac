@@ -114,7 +114,7 @@ Validates a Renovate security pull request and gets its build passing.
 | Event transport | The shared PostgreSQL log, with `LISTEN/NOTIFY` | One operator's volume needs no message broker product |
 | Sandbox | Rootless Podman, behind a provider | Needs no root on a single host; Daytona can replace it |
 | Webhook signatures | `hmac`, `sha2` | RustCrypto, constant-time comparison |
-| Tests | `cargo-nextest`, `insta`, `trybuild`, `proptest`, `testcontainers` on podman | Snapshot, compile-fail, property, and real-database tests |
+| Tests | `cargo-nextest`, `insta`, `trybuild`, `hegeltest` ([ADR 2](adrs/0002-property-tests-on-hegel.md)), `testcontainers` on podman | Snapshot, compile-fail, property, and real-database tests |
 | Code generation | An `xtask` | Matches `ivy/nwscript` |
 | Tooling | `mise`, `hk`, `cargo-deny`, `clippy`, `rustfmt`, a `Makefile` | Pinned tools, local hooks, and one gate |
 

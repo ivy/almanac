@@ -243,8 +243,8 @@ pub fn render(error: &dyn Diagnostic, format: Format) -> String {
                 .with_width(100);
             let mut out = String::new();
             match handler.render_report(&mut out, error) {
-                Ok(()) => out,
-                Err(_) => error.to_string(),
+                Ok(()) => visible_controls(&out),
+                Err(_) => visible_controls(&error.to_string()),
             }
         }
     }
@@ -257,6 +257,20 @@ fn escape_controls(json: &str) -> String {
         .map(|c| match c {
             '\u{0}'..='\u{1f}' => format!("\\u{:04x}", c as u32),
             c => c.to_string(),
+        })
+        .collect()
+}
+
+/// Hostile text can reach an error, and a control character in it would act on the terminal
+/// or log showing it. Each is shown as its one-column control picture instead.
+fn visible_controls(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '\n' => c,
+            '\u{0}'..='\u{1f}' => char::from_u32(0x2400 + c as u32).unwrap_or('\u{fffd}'),
+            '\u{7f}' => '\u{2421}',
+            c if c.is_control() => '\u{fffd}',
+            c => c,
         })
         .collect()
 }

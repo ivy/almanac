@@ -289,12 +289,12 @@ impl Cx {
     ) -> Result<(), Halt> {
         let with = self.get::<dyn Classifier>()?;
         let state = serde_json::to_value(text).map_err(StepError::from)?;
-        let p: f64 = self
-            .record(
-                "screen",
-                with.yes_probability(&Pass::new(), question, state),
-            )
-            .await?;
+        // An answer that is not a probability is a veto, and as a number it can be recorded.
+        let answer = async move {
+            let p = with.yes_probability(&Pass::new(), question, state).await?;
+            Ok(if (0.0..=1.0).contains(&p) { p } else { 0.0 })
+        };
+        let p: f64 = self.record("screen", answer).await?;
         if p > above {
             Ok(())
         } else {

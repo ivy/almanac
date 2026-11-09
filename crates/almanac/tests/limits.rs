@@ -1,4 +1,5 @@
-use almanac::testing::generators::limits;
+use almanac::config::Config;
+use almanac::testing::generators::{config_texts, limits};
 use hegel::TestCase;
 
 fn no_wider(after: Option<u32>, before: Option<u32>) -> bool {
@@ -46,4 +47,18 @@ fn tighten_takes_the_tighter_of_each_limit(tc: TestCase) {
     assert_eq!(t.overall_cap, tighter_cap(a.overall_cap, b.overall_cap));
     assert_eq!(t.concurrency, a.concurrency.min(b.concurrency));
     assert_eq!(t.scan_interval, a.scan_interval.max(b.scan_interval));
+}
+
+/// Principle 9, R-44: any config file that parses gives limits, never a panic, and they are
+/// no wider than the binary's own.
+#[hegel::test]
+fn any_config_that_parses_tightens_without_panicking(tc: TestCase) {
+    let text = tc.draw(config_texts());
+    let Ok(config) = Config::parse("almanac.toml", text) else {
+        return;
+    };
+    let binary = almanac::runtime::Limits::default();
+    let set = binary.tighten(config.limits());
+    assert!(set.max_depth <= binary.max_depth && set.concurrency <= binary.concurrency);
+    assert!(set.scan_interval >= binary.scan_interval);
 }

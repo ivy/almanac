@@ -7,18 +7,30 @@ use hegel::generators::{self as gs, Generator};
 use serde_json::{Value, json};
 use std::time::Duration;
 
-/// Any limits a binary or a config file could set.
+/// Any limits a binary or a config file could set, over each field's whole type, with small
+/// values drawn often so a limit is also reached.
 #[hegel::composite]
 pub fn limits(tc: &TestCase) -> Limits {
-    let cap = || gs::optional(gs::integers::<u32>().max_value(9_999));
+    let cap = || gs::optional(small_or_any::<u32>(12));
     Limits {
-        max_depth: tc.draw(gs::integers::<u32>().max_value(99)),
+        max_depth: tc.draw(small_or_any::<u32>(5)),
         runs_cap: tc.draw(cap()),
         overall_cap: tc.draw(cap()),
-        concurrency: tc.draw(gs::integers::<usize>().min_value(1).max_value(63)),
-        scan_interval: Duration::from_secs(
-            tc.draw(gs::integers::<u64>().min_value(1).max_value(99_999)),
-        ),
+        concurrency: tc.draw(small_or_any::<usize>(6)),
+        scan_interval: Duration::from_secs(tc.draw(small_or_any::<u64>(3_600))),
+    }
+}
+
+/// An integer up to `small` half the time, and otherwise any of its type.
+#[hegel::composite]
+pub fn small_or_any<T>(tc: &TestCase, small: T) -> T
+where
+    T: gs::Integer + Clone + std::fmt::Debug + Send + Sync + 'static,
+{
+    if tc.draw(gs::booleans()) {
+        tc.draw(gs::integers::<T>().max_value(small))
+    } else {
+        tc.draw(gs::integers::<T>())
     }
 }
 
@@ -90,13 +102,19 @@ pub fn safe_file_names() -> gs::RegexGenerator {
     gs::from_regex("[a-z]{1,8}\\.rs")
 }
 
-/// A path the default policy accepts: up to four plain components of any case, dotted or
-/// not, at any depth, naming nothing a rule denies.
+/// A path the default policy accepts: up to four components of any text a filesystem keeps as
+/// written, at any depth, naming nothing a rule denies.
 #[hegel::composite]
 pub fn source_paths(tc: &TestCase) -> String {
-    let part = gs::from_regex("\\.?[A-Za-z0-9_-]([A-Za-z0-9_.-]{0,6}[A-Za-z0-9_-])?");
+    let kept = |c: &char| !c.is_control() && !matches!(c, '/' | '\\' | ':');
+    let part = gs::text()
+        .min_size(1)
+        .max_size(8)
+        .map(move |t| t.chars().filter(kept).collect::<String>());
     let denied = |p: &String, rules: &[&str]| rules.iter().any(|d| d.eq_ignore_ascii_case(p));
     let parts = tc.draw(gs::vecs(part).min_size(1).max_size(4));
+    let altered = |p: &String| p.is_empty() || p.ends_with('.') || p.ends_with(' ');
+    tc.assume(!parts.iter().any(altered));
     tc.assume(!parts.iter().any(|p| denied(p, DEFAULT_POLICY.denied_names)));
     tc.assume(!denied(&parts[0], DEFAULT_POLICY.denied_at_root));
     parts.join("/")
@@ -193,10 +211,10 @@ pub fn model_answers(tc: &TestCase, field: &'static str, values: Vec<&'static st
     }
 }
 
-/// A classifier's probability, including both ends.
+/// A classifier's probability, including both ends, and what a broken one might return.
 #[hegel::composite]
 pub fn probabilities(tc: &TestCase) -> f64 {
-    let ends = gs::sampled_from(vec![0.0, 1.0]);
+    let ends = gs::sampled_from(vec![0.0, -0.0, 1.0, f64::NAN, f64::INFINITY, -1.0]);
     tc.draw(gs::one_of(vec![
         ends.boxed(),
         gs::floats::<f64>().min_value(0.0).max_value(1.0).boxed(),
@@ -224,6 +242,8 @@ pub fn config_texts(tc: &TestCase) -> String {
         "0",
         "-1",
         "99999999999999999999",
+        "18446744073709551615",
+        "9223372036854775807",
         "\"127.0.0.1:8080\"",
         "\"many\"",
         "true",
@@ -236,7 +256,25 @@ pub fn config_texts(tc: &TestCase) -> String {
             .boxed(),
         gs::text().max_size(20).boxed(),
     ]);
-    tc.draw(gs::vecs(line).max_size(5)).join("\n")
+    if tc.draw(gs::booleans()) {
+        return tc.draw(gs::vecs(line).max_size(5)).join("\n");
+    }
+    // A file that parses, with each limit at a boundary of what TOML can hold.
+    let known = [
+        "max_chain_depth",
+        "runs_per_hour_cap",
+        "overall_runs_per_hour_cap",
+        "concurrency",
+        "scan_interval_minutes",
+    ];
+    let numbers = || gs::sampled_from(vec![0, 1, 3, i64::from(u32::MAX), i64::MAX]);
+    let mut lines = vec![];
+    for key in known {
+        if let Some(n) = tc.draw(gs::optional(numbers())) {
+            lines.push(format!("{key} = {n}"));
+        }
+    }
+    lines.join("\n")
 }
 
 /// A code an operator might ask `explain` about: a real one, one slightly wrong, or anything.
@@ -267,16 +305,25 @@ pub fn env_settings(tc: &TestCase) -> Vec<(String, String)> {
         "ALMANAC_CONCURRENCY",
         "ALMANAC_SCAN_INTERVAL_MINUTES",
     ]);
-    let values = gs::sampled_from(vec!["2", "0", "-3", "1.5", "lots", ""]);
+    let values = gs::sampled_from(vec![
+        "2",
+        "0",
+        "-3",
+        "1.5",
+        "lots",
+        "",
+        "18446744073709551615",
+    ]);
     let setting = gs::tuples!(names, values).map(|(n, v)| (n.to_string(), v.to_string()));
     tc.draw(gs::vecs(setting).max_size(3))
 }
 
-/// Arguments an operator might pass to an almanac, using only verbs that finish without the
-/// outside world: `run` starts a daemon and `backfill` reads the forge, so neither is drawn.
+/// Arguments an operator might pass to an almanac, mostly a verb and its operands, using only
+/// verbs that finish without the outside world: `run` starts a daemon and `backfill` reads the
+/// forge, so neither is drawn.
 #[hegel::composite]
 pub fn arguments(tc: &TestCase) -> Vec<String> {
-    let word = gs::sampled_from(vec![
+    let words = vec![
         "synth",
         "check",
         "explain",
@@ -287,14 +334,17 @@ pub fn arguments(tc: &TestCase) -> Vec<String> {
         "owner/repo",
         "github.pull_request.opened",
         "sentry.issue",
-    ]);
-    let mut args: Vec<String> = tc
-        .draw(gs::vecs(word).max_size(4))
-        .into_iter()
-        .map(str::to_string)
-        .collect();
-    if args.first().is_some_and(|a| a == "explain") {
-        args.push(tc.draw(error_codes()));
+    ];
+    let verb = tc.draw(mostly("check", words.clone()));
+    let mut args = vec![verb.to_string()];
+    match verb {
+        "explain" => args.push(tc.draw(error_codes())),
+        "simulate" => args.push(tc.draw(gs::sampled_from(words.clone())).to_string()),
+        _ => {}
+    }
+    let extra = tc.draw(gs::vecs(gs::sampled_from(words)).max_size(2));
+    if tc.draw(gs::weighted_booleans(0.25)) {
+        args.extend(extra.into_iter().map(str::to_string));
     }
     args
 }

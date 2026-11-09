@@ -4,6 +4,7 @@ use advisory::{
 use almanac::prelude::*;
 use almanac::testing::generators::{prereleases, versions};
 use hegel::TestCase;
+use hegel::generators as gs;
 use std::cmp::Ordering;
 use wiremock::matchers::{path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -186,12 +187,24 @@ fn precedence(x: ((u64, u64, u64), &[String]), y: ((u64, u64, u64), &[String])) 
     x.0.cmp(&y.0).then(pre)
 }
 
+/// The ecosystems ordered by semver, spelled as OSV and as people do.
+const SEMVER_ECOSYSTEMS: [&str; 7] = [
+    "npm",
+    "crates.io",
+    "Go",
+    "go",
+    "Packagist",
+    "RubyGems",
+    "NPM",
+];
+
 /// R-10: semver ecosystems order versions by number and pre-release precedence, never as text.
 #[hegel::test]
 fn semver_order_is_numeric_and_not_textual(tc: TestCase) {
     let (x, xp) = (tc.draw(versions()), tc.draw(prereleases()));
     let (y, yp) = (tc.draw(versions()), tc.draw(prereleases()));
-    let found = compare("npm", &with_pre(x, &xp), &with_pre(y, &yp));
+    let ecosystem = tc.draw(gs::sampled_from(SEMVER_ECOSYSTEMS.to_vec()));
+    let found = compare(ecosystem, &with_pre(x, &xp), &with_pre(y, &yp));
     assert_eq!(found, Some(precedence((x, &xp), (y, &yp))));
 }
 
@@ -200,8 +213,9 @@ fn semver_order_is_numeric_and_not_textual(tc: TestCase) {
 fn order_reverses_when_the_versions_swap(tc: TestCase) {
     let x = with_pre(tc.draw(versions()), &tc.draw(prereleases()));
     let y = with_pre(tc.draw(versions()), &tc.draw(prereleases()));
-    let forward = compare("crates.io", &x, &y).unwrap();
-    let backward = compare("crates.io", &y, &x).unwrap();
+    let ecosystem = tc.draw(gs::sampled_from(SEMVER_ECOSYSTEMS.to_vec()));
+    let forward = compare(ecosystem, &x, &y).unwrap();
+    let backward = compare(ecosystem, &y, &x).unwrap();
     assert_eq!(forward, backward.reverse());
 }
 

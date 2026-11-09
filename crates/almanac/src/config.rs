@@ -103,7 +103,10 @@ impl Config {
             concurrency: self.concurrency.unwrap_or(d.concurrency),
             scan_interval: self
                 .scan_interval_minutes
-                .map_or(d.scan_interval, |m| Duration::from_secs(m * 60)),
+                // A longer interval only scans less, so one too long to hold is the longest.
+                .map_or(d.scan_interval, |m| {
+                    Duration::from_secs(m.saturating_mul(60))
+                }),
         }
     }
 }

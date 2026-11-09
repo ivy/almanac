@@ -15,7 +15,7 @@ use almanac::testing::{FakeForge, FakeTracker, FixedClassifier, ScriptedHarness}
 use definitions::dependency_updates::*;
 use definitions::error_triage::ErrorTriage;
 use hegel::TestCase;
-use hegel::generators as gs;
+use hegel::generators::{self as gs, Generator};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::Ordering;
@@ -24,7 +24,6 @@ use std::time::Duration;
 
 const SUBJECTS: usize = 3;
 const RUNS_PER_HOUR: u32 = 10;
-const DEFAULT_CONCURRENCY: usize = 4;
 const HOUR: Duration = Duration::from_secs(3601);
 
 fn block_on<T>(future: impl Future<Output = T>) -> T {
@@ -295,28 +294,69 @@ fn principle_6_each_delivery_counts_once_and_a_key_runs_once_per_batch(tc: TestC
     });
 }
 
-/// Principle 6, R-25, R-28: with events arriving while runs are in flight, a key never has two
-/// runs at once, no event is lost, and the last run on each key sees its latest event.
+/// Principle 6, R-26: events coalesced into one run keep the deepest chain among them, so a
+/// fresh event cannot reset a chain's depth.
 #[hegel::test]
-fn principle_6_events_during_runs_never_overlap_a_key_or_get_lost(tc: TestCase) {
+fn principle_6_a_coalesced_run_keeps_the_deepest_chain(tc: TestCase) {
+    let steps = tc.draw(schedules(SUBJECTS, MAX_CHAIN_DEPTH));
+    let world = World::new();
+    block_on(async {
+        let rt = world.runtime(Mode::DryRun, Limits::default());
+        let mut deepest: BTreeMap<String, u32> = BTreeMap::new();
+        let drain = async |deepest: &mut BTreeMap<String, u32>| {
+            world.clock.advance(HOUR);
+            let outcomes = rt.drain().await.unwrap();
+            let ran: BTreeMap<String, u32> = world
+                .runs(&outcomes)
+                .await
+                .into_iter()
+                .map(|run| (run.key, run.depth))
+                .collect();
+            assert_eq!(&ran, deepest, "a run's depth is its deepest event's");
+            deepest.clear();
+        };
+        for step in &steps {
+            match step {
+                Step::Arrive(sent) => {
+                    if rt.ingest(envelope(sent)).await.unwrap() != Ingest::Duplicate {
+                        let depth = deepest.entry(key(sent.subject)).or_default();
+                        *depth = (*depth).max(sent.depth);
+                    }
+                }
+                Step::Drain => drain(&mut deepest).await,
+                Step::Restart => {}
+            }
+        }
+        drain(&mut deepest).await;
+    });
+}
+
+/// What a dry-run runtime did with a drawn schedule whose arrivals land while runs are in
+/// flight.
+struct Concurrent {
+    /// The most runs one key had in flight at once.
+    most_per_key: usize,
+    /// Each key's deliveries that were not duplicates, in arrival order.
+    fresh: BTreeMap<String, Vec<String>>,
+    runs: Vec<almanac::store::Run>,
+}
+
+fn concurrent_run(tc: &TestCase) -> Concurrent {
     let steps = tc.draw(schedules(SUBJECTS, 0));
     let world = World::new();
     block_on(async {
         let rt = world.runtime(Mode::DryRun, Limits::default());
         let mut fresh: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut outcomes = vec![];
-        let batches = steps.split(|s| *s == Step::Drain);
-        for batch in batches {
+        for batch in steps.split(|s| *s == Step::Drain) {
             world.clock.advance(HOUR);
             let arrive = async {
                 for step in batch {
                     if let Step::Arrive(sent) = step {
                         let got = rt.ingest(envelope(sent)).await.unwrap();
                         if got != Ingest::Duplicate {
-                            fresh
-                                .entry(key(sent.subject))
-                                .or_default()
-                                .push(sent.delivery_id.clone());
+                            let events = fresh.entry(key(sent.subject)).or_default();
+                            events.push(sent.delivery_id.clone());
                         }
                         tokio::task::yield_now().await;
                     }
@@ -325,37 +365,66 @@ fn principle_6_events_during_runs_never_overlap_a_key_or_get_lost(tc: TestCase) 
             let (drained, ()) = tokio::join!(rt.drain(), arrive);
             outcomes.extend(drained.unwrap());
         }
-        loop {
+        // Bounded, so a key that reran forever fails rather than hangs.
+        for _ in 0..12 {
             world.clock.advance(HOUR);
-            let more = rt.drain().await.unwrap();
-            if more.is_empty() {
-                break;
-            }
-            outcomes.extend(more);
+            outcomes.extend(rt.drain().await.unwrap());
         }
-        assert!(*world.reviewer.most_per_key.lock().unwrap() <= 1);
-        let mut last: BTreeMap<String, String> = BTreeMap::new();
-        let mut per_key: BTreeMap<String, usize> = BTreeMap::new();
-        for run in world.runs(&outcomes).await {
-            *per_key.entry(run.key.clone()).or_default() += 1;
-            last.insert(run.key, format!("d{}", run.payload["number"]));
+        let runs = world.runs(&outcomes).await;
+        let most_per_key = *world.reviewer.most_per_key.lock().unwrap();
+        Concurrent {
+            most_per_key,
+            fresh,
+            runs,
         }
-        for (key, events) in &fresh {
-            assert!(
-                per_key.get(key) <= Some(&events.len()),
-                "a run per event on {key}"
-            );
-            assert_eq!(last.get(key), events.last(), "{key} lost an event");
-        }
-        assert_eq!(per_key.len(), fresh.len());
-    });
+    })
 }
 
-/// Principle 6, R-26, R-27, R-28: under any limits config sets, no run is deeper than the chain
-/// limit, no more start in an hour than the budgets allow, no more run at once than
-/// concurrency allows, and every recorded effect is applied exactly once despite failures.
+/// Principle 6, R-25, R-28: with events arriving while runs are in flight, a key never has two
+/// runs at once.
 #[hegel::test]
-fn principle_6_chains_budgets_and_effects_stay_within_their_limits(tc: TestCase) {
+fn principle_6_a_key_never_has_two_runs_at_once(tc: TestCase) {
+    assert!(concurrent_run(&tc).most_per_key <= 1);
+}
+
+/// Principle 6, R-25: with events arriving while runs are in flight, no event is lost: each key
+/// runs at most once per event, and its last run sees its latest event.
+#[hegel::test]
+fn principle_6_an_event_during_a_run_is_never_lost(tc: TestCase) {
+    let c = concurrent_run(&tc);
+    let mut last: BTreeMap<String, String> = BTreeMap::new();
+    let mut per_key: BTreeMap<String, usize> = BTreeMap::new();
+    for run in c.runs {
+        *per_key.entry(run.key.clone()).or_default() += 1;
+        last.insert(run.key, format!("d{}", run.payload["number"]));
+    }
+    for (key, events) in &c.fresh {
+        assert!(
+            per_key.get(key) <= Some(&events.len()),
+            "a run per event on {key}"
+        );
+        assert_eq!(last.get(key), events.last(), "{key} lost an event");
+    }
+    assert_eq!(per_key.len(), c.fresh.len());
+}
+
+/// What a live runtime under drawn limits did with a drawn schedule, with the forge failing
+/// its first few calls.
+struct LiveRun {
+    limits: Limits,
+    /// Each first arrival of a delivery, and what ingesting it said.
+    first: Vec<(Sent, Ingest)>,
+    runs: Vec<almanac::store::Run>,
+    entries: Vec<almanac::store::Entry>,
+    model_calls: usize,
+    most_at_once: usize,
+    forge_calls: Vec<String>,
+    failures: usize,
+    /// Runs and deliveries still to do after the bounded rounds.
+    left: (usize, usize),
+}
+
+fn live_run(tc: &TestCase) -> LiveRun {
     let steps = tc.draw(schedules(SUBJECTS, MAX_CHAIN_DEPTH + 2));
     let limits = tc.draw(limits());
     let failures = tc.draw(gs::integers::<usize>().max_value(3));
@@ -363,15 +432,15 @@ fn principle_6_chains_budgets_and_effects_stay_within_their_limits(tc: TestCase)
     world.forge.fail_next.store(failures, Ordering::SeqCst);
     block_on(async {
         let rt = world.runtime(Mode::Live, limits);
-        let max_depth = rt.limits().max_depth;
         let mut outcomes = vec![];
         let mut seen = BTreeSet::new();
+        let mut first = vec![];
         for step in &steps {
             match step {
                 Step::Arrive(sent) => {
                     let got = rt.ingest(envelope(sent)).await.unwrap();
-                    if seen.insert(sent.delivery_id.clone()) && sent.depth > max_depth {
-                        assert_eq!(got, Ingest::ChainStopped, "{sent:?}");
+                    if seen.insert(sent.delivery_id.clone()) {
+                        first.push((sent.clone(), got));
                     }
                 }
                 Step::Drain => outcomes.extend(rt.drain().await.unwrap()),
@@ -383,56 +452,100 @@ fn principle_6_chains_budgets_and_effects_stay_within_their_limits(tc: TestCase)
             outcomes.extend(rt.drain().await.unwrap());
             rt.deliver().await.unwrap();
         }
-        assert!(
-            rt.drain().await.unwrap().is_empty(),
-            "runs were left queued"
+        let left = (
+            rt.drain().await.unwrap().len(),
+            rt.deliver().await.unwrap().len(),
         );
-        assert_eq!(
-            rt.deliver().await.unwrap(),
-            vec![],
-            "effects were left undelivered"
-        );
-
         let runs = world.runs(&outcomes).await;
-        for run in &runs {
-            assert!(run.depth <= max_depth, "{run:?} is deeper than {max_depth}");
-        }
-        let budget = limits
-            .runs_cap
-            .map_or(RUNS_PER_HOUR, |c| c.min(RUNS_PER_HOUR));
-        let budget = limits.overall_cap.map_or(budget, |c| c.min(budget));
-        assert!(
-            runs.len() <= budget as usize,
-            "{} runs in an hour",
-            runs.len()
-        );
-        assert_eq!(
-            world.reviewer.calls(),
-            runs.len(),
-            "a model call per run, and no more"
-        );
-        let concurrency = limits.concurrency.min(DEFAULT_CONCURRENCY);
-        assert!(*world.reviewer.most_at_once.lock().unwrap() <= concurrency);
-
         let mut entries = vec![];
         for run in &runs {
             entries.extend(rt.effects_of(&run.id).await.unwrap());
         }
-        assert!(entries.iter().all(|e| e.status == EntryStatus::Applied));
-        let calls = world.forge.calls.lock().unwrap().clone();
-        let applied: BTreeSet<_> = calls.iter().collect();
-        let recorded: BTreeSet<_> = entries.iter().map(|e| &e.key).collect();
-        assert_eq!(
-            applied, recorded,
-            "every effect reached the forge, and nothing else"
-        );
-        let failed = if entries.is_empty() { 0 } else { failures };
-        assert_eq!(
-            calls.len(),
-            entries.len() + failed,
-            "only failures were retried"
-        );
-    });
+        LiveRun {
+            limits: rt.limits(),
+            first,
+            runs,
+            entries,
+            model_calls: world.reviewer.calls(),
+            most_at_once: *world.reviewer.most_at_once.lock().unwrap(),
+            forge_calls: world.forge.calls.lock().unwrap().clone(),
+            failures,
+            left,
+        }
+    })
+}
+
+/// Principle 6, R-26: under any limits config sets, a delivery deeper than the chain limit is
+/// stopped, and no run is deeper than it, however deep its key's history makes it.
+#[hegel::test]
+fn principle_6_no_run_is_deeper_than_the_chain_limit(tc: TestCase) {
+    let live = live_run(&tc);
+    let max_depth = live.limits.max_depth;
+    for (sent, got) in &live.first {
+        if sent.depth > max_depth {
+            assert_eq!(*got, Ingest::ChainStopped, "{sent:?}");
+        }
+    }
+    for run in &live.runs {
+        assert!(run.depth <= max_depth, "{run:?} is deeper than {max_depth}");
+    }
+}
+
+/// Principle 6, R-27: within an hour, no more runs start than the workflow's budget, the
+/// config's cap, or the overall cap allow, and each run calls the model once.
+#[hegel::test]
+fn principle_6_no_more_runs_start_than_the_budgets_allow(tc: TestCase) {
+    let live = live_run(&tc);
+    let budget = [live.limits.runs_cap, live.limits.overall_cap]
+        .into_iter()
+        .flatten()
+        .fold(RUNS_PER_HOUR, u32::min);
+    assert!(
+        live.runs.len() <= budget as usize,
+        "{} runs in an hour",
+        live.runs.len()
+    );
+    assert_eq!(
+        live.model_calls,
+        live.runs.len(),
+        "a model call per run, and no more"
+    );
+}
+
+/// Principle 6, R-28: no more runs are in flight at once than concurrency allows.
+#[hegel::test]
+fn principle_6_no_more_runs_at_once_than_concurrency_allows(tc: TestCase) {
+    let live = live_run(&tc);
+    assert!(live.most_at_once <= live.limits.concurrency);
+}
+
+/// Principle 6: every effect a run recorded reaches the forge exactly once, however deliveries
+/// repeat, retried only after a failure, and nothing is left undone.
+#[hegel::test]
+fn principle_6_every_effect_is_applied_exactly_once(tc: TestCase) {
+    let live = live_run(&tc);
+    assert_eq!(live.left, (0, 0), "runs or deliveries were left to do");
+    assert!(
+        live.entries
+            .iter()
+            .all(|e| e.status == EntryStatus::Applied)
+    );
+    let applied: BTreeSet<_> = live.forge_calls.iter().collect();
+    let recorded: BTreeSet<_> = live.entries.iter().map(|e| &e.key).collect();
+    assert_eq!(
+        applied, recorded,
+        "every effect reached the forge, and nothing else"
+    );
+    let failed = if live.entries.is_empty() {
+        0
+    } else {
+        live.failures
+    };
+    assert_eq!(
+        live.forge_calls.len(),
+        live.entries.len() + failed,
+        "only failures were retried"
+    );
 }
 
 /// A guard that answers as drawn and counts its calls.
@@ -671,8 +784,8 @@ fn all_clear() -> Value {
 }
 
 /// Principle 4, R-12: for any deterministic facts, no model answer or guard verdict lets
-/// through anything a plain all-clear would not, and nothing gets through unless the
-/// deterministic checks passed. Answers include malformed ones and injected "looks safe" text.
+/// through anything a plain all-clear would not. Answers include malformed ones and injected
+/// "looks safe" text.
 #[hegel::test]
 fn principle_4_no_answer_approves_more_than_an_all_clear(tc: TestCase) {
     let facts = tc.draw(facts());
@@ -687,11 +800,25 @@ fn principle_4_no_answer_approves_more_than_an_all_clear(tc: TestCase) {
                 "{approval} needed more than an all-clear"
             );
         }
+    });
+}
+
+/// Principle 4, R-12: nothing is approved unless the deterministic checks passed, whatever the
+/// model answers.
+#[hegel::test]
+fn principle_4_only_deterministic_checks_let_an_update_through(tc: TestCase) {
+    let facts = tc.draw(facts());
+    let answer = tc.draw(gs::one_of(vec![
+        gs::just(all_clear()).boxed(),
+        model_answers("verdict", REVIEW_VERDICTS.to_vec()).boxed(),
+    ]));
+    block_on(async {
+        let approved = approvals(&decide(facts, &answer, None).await);
         let checks_pass =
             facts.provenance_verified && !facts.install_script_added && !facts.publisher_changed;
         assert!(
-            drawn.is_empty() || checks_pass,
-            "{drawn:?} without the checks passing"
+            approved.is_empty() || checks_pass,
+            "{approved:?} without the checks passing"
         );
     });
 }

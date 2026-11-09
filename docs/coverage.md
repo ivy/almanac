@@ -15,7 +15,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 | R-9 Pending first | `pending_is_posted_before_any_other_work` |
 | R-10 Advisory validation | `crates/advisory/tests/validate.rs` |
 | R-11 Young fix asks | `a_brand_new_fix_asks_a_person_and_stays_pending` |
-| R-12 Reviewer can only veto | `a_reviewers_concerns_veto_passing_checks`, `a_model_can_never_approve_what_a_check_refused` |
+| R-12 Reviewer can only veto | `a_reviewers_concerns_veto_passing_checks`, `a_model_can_never_approve_what_a_check_refused`, `principle_4_a_reviewer_can_only_take_an_approval_away`, `crates/definitions/tests/principles.rs` |
 | R-13 Verdict statuses | `a_valid_fix_goes_pending_then_success`, `a_target_that_is_not_the_patched_version_fails_and_asks` |
 | R-14 Red security update repaired | By routing: `github.check_suite.completed` goes to `build_failures` for every Renovate branch |
 | R-15, R-16 Authoring | `crates/fails/tests/ui/`, `crates/definitions/tests/workflows.rs` |
@@ -58,8 +58,11 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 
 Properties in `crates/definitions/tests/principles.rs` state some of the [core principles](core-principles.md) directly, through the runtime's public seams, and draw their inputs from `almanac::testing::generators`.
 
+For principle 4, an approval is an attested success or a push. The properties hold that no model answer or guard verdict reaches an approval a plain all-clear would not, that a veto reaches none, and that nothing is approved unless the deterministic checks passed.
+
 | Principle | Proved by |
 |---|---|
+| 4 A model can veto, never approve | `principle_4_no_answer_approves_more_than_an_all_clear`, `principle_4_a_veto_always_stops_an_approval`, `principle_4_text_beside_a_verdict_changes_nothing`, and in `almanacs/renovate/tests/security_fixes.rs`, `principle_4_a_reviewer_can_only_take_an_approval_away` |
 | 6 One thing, one run | `principle_6_each_delivery_counts_once_and_a_key_runs_once_per_batch`, `principle_6_events_during_runs_never_overlap_a_key_or_get_lost`, `principle_6_chains_budgets_and_effects_stay_within_their_limits` |
 | 7 Record everything a run depends on | `principle_7_a_replay_decides_the_same_and_calls_nothing`, `principle_7_a_replayed_screen_asks_nothing_again` |
 

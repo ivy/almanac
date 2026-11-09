@@ -1,6 +1,7 @@
 //! The workflow end to end against the simulated forge, with a scripted reviewer.
 use almanac::prelude::*;
 use almanac::runtime::{Envelope, Ingest, Origin, Runtime};
+use almanac::testing::generators::{hostile_texts, mostly};
 use almanac::testing::{FakeTracker, ScriptedHarness};
 use almanac_renovate::update::{Ages, Update};
 use almanac_renovate::vetting::{UpdateDiff, Vetting};
@@ -8,6 +9,8 @@ use almanac_renovate::workflows::build_failures::ScanTarget;
 use almanac_renovate::workflows::security_fixes::*;
 use github::client::{Auth, GithubClient};
 use github::forge::{CommitAuthor, GithubForge};
+use hegel::TestCase;
+use hegel::generators as gs;
 use serde_json::json;
 use simforge::{Pull, RENOVATE, Repo, SimForge, Suite};
 use std::sync::{Arc, Mutex};
@@ -401,6 +404,89 @@ fn a_model_can_never_approve_what_a_check_refused() {
             }
         }
     }
+}
+
+/// The deterministic facts about a security update, as drawn.
+#[derive(Clone, Debug)]
+struct Drawn {
+    found: bool,
+    names_the_fix: bool,
+    readable: bool,
+    truncated: bool,
+    unshown: String,
+    install_script_added: bool,
+    cooled: bool,
+    tested: bool,
+    untestable: bool,
+    asked: bool,
+}
+
+#[hegel::composite]
+fn drawn_facts(tc: &TestCase) -> Drawn {
+    let flag = || tc.draw(gs::booleans());
+    Drawn {
+        found: flag(),
+        names_the_fix: flag(),
+        readable: flag(),
+        truncated: flag(),
+        install_script_added: flag(),
+        cooled: flag(),
+        tested: flag(),
+        untestable: flag(),
+        asked: flag(),
+        unshown: tc.draw(mostly(String::new(), vec![tc.draw(hostile_texts())])),
+    }
+}
+
+fn with_review(d: &Drawn, review: Option<(Verdict, String)>) -> Facts {
+    Facts {
+        found: d.found,
+        names_the_fix: d.names_the_fix,
+        readable: d.readable,
+        truncated: d.truncated,
+        unshown: Untrusted::new(d.unshown.clone()),
+        install_script_added: d.install_script_added,
+        cooled: d.cooled,
+        tested: d.tested,
+        untestable: d.untestable,
+        asked: d.asked,
+        review: review.map(|(verdict, notes)| Untrusted::new(Review { verdict, notes })),
+        ..facts(false, false, false, None)
+    }
+}
+
+fn approved(f: &Facts) -> bool {
+    policy(f).iter().any(|e| {
+        matches!(
+            e,
+            Effect::Attest {
+                state: AttestState::Success,
+                ..
+            } | Effect::Push { .. }
+        )
+    })
+}
+
+/// Principle 4, R-12: whatever the reviewer answers, or injects beside its verdict, it can only
+/// take an approval away, and only the deterministic checks let a fix through.
+#[hegel::test]
+fn principle_4_a_reviewer_can_only_take_an_approval_away(tc: TestCase) {
+    let d = tc.draw(drawn_facts());
+    let verdicts = vec![Verdict::NoConcerns, Verdict::Concerns];
+    let review = tc.draw(gs::optional(gs::sampled_from(verdicts)));
+    let notes = tc.draw(hostile_texts());
+    let answered = approved(&with_review(&d, review.map(|v| (v, notes))));
+    let all_clear = approved(&with_review(&d, Some((Verdict::NoConcerns, String::new()))));
+    assert!(
+        !answered || all_clear,
+        "an answer approved what an all-clear did not"
+    );
+    let checks = d.found && d.names_the_fix && d.readable && !d.truncated;
+    let checks = checks && !d.install_script_added && d.cooled && d.tested;
+    assert!(
+        !all_clear || checks,
+        "approved without the deterministic checks"
+    );
 }
 
 /// To Renovate a `success` is a passing check, so this would merge an update nothing tested.

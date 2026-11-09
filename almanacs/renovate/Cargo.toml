@@ -29,6 +29,7 @@ name = "e2e"
 path = "tests/e2e/main.rs"
 
 [dev-dependencies]
+almanac = { path = "../../crates/almanac", features = ["hegel"] }
 axum = "0.8"
 base64 = "0.22"
 deliveries = { path = "../../crates/deliveries" }

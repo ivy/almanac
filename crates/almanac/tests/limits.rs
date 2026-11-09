@@ -1,21 +1,5 @@
-use almanac::runtime::Limits;
+use almanac::testing::generators::limits;
 use hegel::TestCase;
-use hegel::generators as gs;
-use std::time::Duration;
-
-#[hegel::composite]
-fn limits(tc: &TestCase) -> Limits {
-    let cap = || gs::optional(gs::integers::<u32>().max_value(9_999));
-    Limits {
-        max_depth: tc.draw(gs::integers::<u32>().max_value(99)),
-        runs_cap: tc.draw(cap()),
-        overall_cap: tc.draw(cap()),
-        concurrency: tc.draw(gs::integers::<usize>().min_value(1).max_value(63)),
-        scan_interval: Duration::from_secs(
-            tc.draw(gs::integers::<u64>().min_value(1).max_value(99_999)),
-        ),
-    }
-}
 
 fn no_wider(after: Option<u32>, before: Option<u32>) -> bool {
     match (after, before) {
@@ -25,6 +9,7 @@ fn no_wider(after: Option<u32>, before: Option<u32>) -> bool {
     }
 }
 
+/// R-44: however often config tightens, no limit gets wider.
 #[hegel::test]
 fn tighten_never_widens_any_limit(tc: TestCase) {
     let base = tc.draw(limits());
@@ -43,4 +28,22 @@ fn tighten_never_widens_any_limit(tc: TestCase) {
     assert!(no_wider(twice.runs_cap, once.runs_cap));
     assert!(no_wider(twice.overall_cap, once.overall_cap));
     assert!(twice.scan_interval >= once.scan_interval);
+}
+
+/// R-44: each limit becomes the tighter of the two, and a cap is unlimited only when both are.
+#[hegel::test]
+fn tighten_takes_the_tighter_of_each_limit(tc: TestCase) {
+    let a = tc.draw(limits());
+    let b = tc.draw(limits());
+    let tighter_cap = |x: Option<u32>, y: Option<u32>| match (x, y) {
+        (Some(x), Some(y)) => Some(x.min(y)),
+        (Some(x), None) | (None, Some(x)) => Some(x),
+        (None, None) => None,
+    };
+    let t = a.tighten(b);
+    assert_eq!(t.max_depth, a.max_depth.min(b.max_depth));
+    assert_eq!(t.runs_cap, tighter_cap(a.runs_cap, b.runs_cap));
+    assert_eq!(t.overall_cap, tighter_cap(a.overall_cap, b.overall_cap));
+    assert_eq!(t.concurrency, a.concurrency.min(b.concurrency));
+    assert_eq!(t.scan_interval, a.scan_interval.max(b.scan_interval));
 }

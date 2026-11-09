@@ -1,7 +1,8 @@
 use almanac::prelude::*;
+use almanac::testing::generators::{denied_path_spellings, safe_file_names, source_paths};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use hegel::TestCase;
-use hegel::generators as gs;
+use hegel::generators::{self as gs, Generator};
 
 fn sha() -> Sha {
     "a".repeat(40).parse().unwrap()
@@ -136,80 +137,67 @@ fn a_checked_patch_remembers_its_base() {
     assert_eq!(checked.patch().changes.len(), 1);
 }
 
-/// Ways of spelling a path so it reaches a denied file while looking like something else.
-#[hegel::composite]
-fn evasion(tc: &TestCase) -> String {
-    let path = tc.draw(gs::sampled_from(vec![
-        ".github/workflows/ci.yml",
-        ".git/hooks/pre-commit",
-        "renovate.json",
-        "mise.toml",
-        ".gitmodules",
-    ]));
-    let disguise = tc.draw(gs::sampled_from(vec![
-        "{}",
-        "./{}",
-        "src/../{}",
-        "a/b/../../{}",
-        "../{}",
-        "/{}",
-        "//{}",
-        "src//{}",
-        "{}/",
-        "{}.",
-        "{} ",
-        "src\\..\\{}",
-        "{}\0",
-        "\n{}",
-        "C:{}",
-        "C:/{}",
-    ]));
-    let spelled = if tc.draw(gs::booleans()) {
-        path.to_uppercase()
-    } else {
-        path.to_string()
-    };
-    disguise.replace("{}", &spelled)
-}
-
-fn safe_name() -> gs::RegexGenerator {
-    gs::from_regex("[a-z]{1,8}\\.rs")
-}
-
+/// R-20: no spelling of a denied path gets past the policy.
 #[hegel::test]
 fn no_spelling_of_a_denied_path_is_accepted(tc: TestCase) {
-    let path = tc.draw(evasion());
+    let path = tc.draw(denied_path_spellings());
     assert!(
         verdict(vec![write(&path)]).is_err(),
         "{path:?} was accepted"
     );
 }
 
+/// R-20: a rename is checked on both of its paths.
 #[hegel::test]
 fn a_rename_cannot_hide_either_of_its_paths(tc: TestCase) {
-    let path = tc.draw(evasion());
-    let safe = tc.draw(safe_name());
+    let path = tc.draw(denied_path_spellings());
+    let safe = tc.draw(safe_file_names());
     let out = vec![delete(&path), write(&format!("src/{safe}"))];
     let back = vec![delete(&format!("src/{safe}")), write(&path)];
     assert!(verdict(out).is_err());
     assert!(verdict(back).is_err());
 }
 
+/// R-20: one denied path refuses the whole patch, wherever it sits.
 #[hegel::test]
 fn a_denied_path_hidden_among_safe_ones_is_found(tc: TestCase) {
-    let path = tc.draw(evasion());
-    let safe = tc.draw(gs::vecs(safe_name()).max_size(9));
+    let path = tc.draw(denied_path_spellings());
+    let safe = tc.draw(gs::vecs(safe_file_names()).max_size(9));
     let at = tc.draw(gs::integers::<usize>().max_value(9));
     let mut changes: Vec<Change> = safe.iter().map(|s| write(&format!("src/{s}"))).collect();
     changes.insert(at.min(changes.len()), write(&path));
     assert!(verdict(changes).is_err());
 }
 
+/// R-20: the policy refuses only what a rule names, so any other path is accepted.
 #[hegel::test]
 fn plain_source_paths_are_accepted(tc: TestCase) {
-    let dir = tc.draw(gs::from_regex("[a-z]{1,8}"));
-    let name = tc.draw(gs::from_regex("[a-z]{1,8}\\.(rs|go|ts|py)"));
-    assert_eq!(verdict(vec![write(&format!("{dir}/{name}"))]), Ok(()));
+    let path = tc.draw(source_paths());
+    assert_eq!(verdict(vec![write(&path)]), Ok(()));
+}
+
+/// R-20: a patch of text files at accepted paths, within the limits, is accepted.
+#[hegel::test]
+fn a_repair_of_text_at_accepted_paths_is_accepted(tc: TestCase) {
+    let text = gs::text().max_size(64).map(|t| t.replace('\0', ""));
+    let change = gs::tuples!(source_paths(), gs::optional(text), gs::booleans());
+    let drawn = tc.draw(
+        gs::vecs(change)
+            .min_size(1)
+            .max_size(DEFAULT_POLICY.max_files),
+    );
+    let changes = drawn
+        .into_iter()
+        .map(|(path, content, executable)| match content {
+            Some(text) => Change::Write {
+                path,
+                content: STANDARD.encode(text),
+                executable,
+            },
+            None => delete(&path),
+        })
+        .collect();
+    assert_eq!(verdict(changes), Ok(()));
 }
 
 #[test]

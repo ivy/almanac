@@ -52,6 +52,7 @@ dependencies = [
  "base64 0.22.1",
  "deliveries",
  "futures",
+ "hegeltest",
  "miette",
  "sd-notify",
  "serde",

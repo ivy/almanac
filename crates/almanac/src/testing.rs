@@ -9,6 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
 
+#[cfg(feature = "hegel")]
+pub mod generators;
+
 #[derive(Clone, Default)]
 pub struct ScriptedHarness {
     pub reply: Arc<Mutex<Value>>,

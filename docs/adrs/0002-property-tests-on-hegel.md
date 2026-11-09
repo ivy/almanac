@@ -12,7 +12,9 @@ Principle 10 says dependencies favour maturity over novelty. `proptest` is matur
 
 ## Decision
 
-Property tests use `hegeltest`, imported as `hegel`, as a dev-dependency only, built with `default-features = false, features = ["static-engine"]`. A `hegel.toml` at the repository root keeps proptest's 256 cases a property, and `HEGEL_TEST_CASES` overrides it. Principle 10 now says when a younger test-only crate is acceptable.
+Property tests use `hegeltest`, imported as `hegel`, built with `default-features = false, features = ["static-engine"]`. A `hegel.toml` at the repository root keeps proptest's 256 cases a property, and `HEGEL_TEST_CASES` overrides it. Principle 10 now says when a younger test-only crate is acceptable.
+
+The generators for domain inputs live in one place, `almanac::testing::generators`, so every crate's properties draw the same deliveries, limits, and paths. That module is behind `almanac`'s `hegel` feature, which makes `hegeltest` an optional dependency of `almanac`. No default build enables it, and only dev-dependencies turn it on, so with resolver 3 it is never unified into a build of what ships. A crate of its own would have put `hegeltest` among a workspace member's normal dependencies instead.
 
 ## Why Hegel
 
@@ -33,10 +35,10 @@ The cost is the one hegeltest's documentation names: the engine's dependencies j
 
 A breaking release can change the API under the property suites. That is contained as follows.
 
-- It is a dev-dependency only. Nothing that ships links it, so a defect in it can fail a test but cannot reach an operator, and `cargo tree -e normal` shows no change.
+- Only tests enable it: it is a dev-dependency, or the `hegel` feature that dev-dependencies turn on. Nothing that ships links it, so a defect in it can fail a test but cannot reach an operator, and `cargo tree -e normal` shows no change.
 - The version requirement is `0.52`. Cargo treats 0.52.x releases as compatible and `Cargo.lock` pins 0.52.0, so even a patch release arrives only through a lockfile change that passes the gate.
-- Each suite's generators are a few functions in its own test file, and its properties draw from them and use the standard assertions. Moving to another library means rewriting those functions and the draws, not the assertions.
-- Its license, and those of its new dependencies, are MIT, Apache-2.0, or Zlib, all already allowed by `deny.toml`. The gate's `cargo deny` sets `exclude-dev = true` and so never checks them, but a run with dev-dependencies included passes in both workspaces. An upgrade must repeat that run.
+- The generators are a few functions in `crates/almanac/src/testing/generators.rs`, and properties draw from them and use the standard assertions. Moving to another library means rewriting those functions and the draws, not the assertions. The fleet scenarios are the exception: their types belong to `almanacs/renovate`, which the root workspace cannot depend on, so `almanacs/renovate/tests/fleet.rs` keeps them as a thin adapter.
+- Its license, and those of its new dependencies, are MIT, Apache-2.0, or Zlib, all already allowed by `deny.toml`. The gate's `cargo deny` sets `all-features = true`, so it checks them through the `hegel` feature. A run with dev-dependencies included also passes in both workspaces. An upgrade must repeat that run.
 
 ## Evidence
 

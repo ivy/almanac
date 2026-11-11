@@ -83,3 +83,22 @@ fn an_agent_can_read_which_provider_is_missing() {
     assert!(message.contains("needs a provider for"), "{message}");
     assert!(message.contains("String"), "{message}");
 }
+
+#[test]
+fn human_output_shows_control_characters_as_pictures() {
+    let errors = [
+        parse("listen = \"\u{1b}[31m\"\nfoo = 1\n"),
+        parse("x\u{7}y = 1\r\n"),
+        almanac::diag::explain("a\u{1}b\u{7f}\u{9b}").unwrap_err(),
+    ];
+    for error in errors {
+        let human = render(&error, Format::Human);
+        let control = human.chars().find(|c| c.is_control() && *c != '\n');
+        assert_eq!(control, None, "{human:?}");
+    }
+    let human = render(
+        &almanac::diag::explain("a\u{1b}b").unwrap_err(),
+        Format::Human,
+    );
+    assert!(human.contains("a\u{241b}b"), "{human:?}");
+}

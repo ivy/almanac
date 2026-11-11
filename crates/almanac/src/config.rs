@@ -75,11 +75,11 @@ impl Config {
         if let Some(key) = key.as_ref().filter(|key| looks_secret(key)) {
             return Err(Error::SecretInConfig {
                 key: key.clone(),
-                source_code: NamedSource::new(name, redacted(&text, key)),
+                source_code: NamedSource::new(name, redacted(&masked(&text), key)),
                 span,
             });
         }
-        let source_code = NamedSource::new(name, text);
+        let source_code = NamedSource::new(name, masked(&text));
         Err(match key {
             Some(key) => Error::UnknownKey {
                 key,
@@ -119,6 +119,22 @@ fn redacted(text: &str, key: &str) -> String {
         None => line.to_string(),
     };
     text.lines().map(hide).collect::<Vec<_>>().join("\n")
+}
+
+/// The file with every value of a key that looks secret masked byte for byte, so an error about
+/// another line cannot print a secret and its span still points where it did.
+fn masked(text: &str) -> String {
+    let hide = |c: char| match c {
+        '\r' | '\n' => c.to_string(),
+        c => "*".repeat(c.len_utf8()),
+    };
+    let mask = |line: &str| match line.split_once('=') {
+        Some((key, value)) if looks_secret(key.trim()) => {
+            format!("{key}={}", value.chars().map(hide).collect::<String>())
+        }
+        _ => line.to_string(),
+    };
+    text.split_inclusive('\n').map(mask).collect()
 }
 
 fn looks_secret(key: &str) -> bool {

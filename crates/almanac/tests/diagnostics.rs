@@ -25,6 +25,21 @@ fn a_secret_is_never_printed_by_the_error_about_it() {
 }
 
 #[test]
+fn an_error_about_another_line_never_prints_a_secret() {
+    for text in [
+        "listen = \"x\" junk\napi_key = \"hunter2\"\n",
+        "concurrency = \"many\"\napi_key = \"hunter2\"\n",
+        "max_runs = 3\r\napi_key = \"hunter2\"\r\n",
+    ] {
+        let error = parse(text);
+        for format in [Format::Human, Format::Json] {
+            let rendered = render(&error, format);
+            assert!(!rendered.contains("hunter2"), "{rendered}");
+        }
+    }
+}
+
+#[test]
 fn an_unknown_key_is_named_and_lists_what_is_accepted() {
     let error = parse("listen = \"127.0.0.1:1\"\nmax_runs = 3\n");
     assert!(matches!(error, Error::UnknownKey { .. }), "{error:?}");

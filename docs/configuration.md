@@ -1,6 +1,6 @@
 # Configuration and limits
 
-Settings come from `almanac.toml`, then `ALMANAC_*` variables, which win. Configuration can only tighten what the binary declares, and secrets come from the environment only: a secret in the file is refused.
+Settings come from `almanac.toml`, then `ALMANAC_*` variables, which win. Configuration can only tighten what the binary declares, and secrets come from the environment only: a secret in the file is refused, and no error about the file prints one.
 
 ## `almanac.toml`
 

@@ -1,5 +1,5 @@
 use almanac::config::Config;
-use almanac::diag::{Error, Format, render};
+use almanac::diag::{Error, Format, explain, render};
 use almanac::prelude::*;
 use almanac::runtime::Runtime;
 use serde_json::Value;
@@ -48,6 +48,20 @@ fn json_output_carries_code_message_help_and_spans() {
     let span = &json["labels"][0]["span"];
     assert_eq!(span["offset"], 0);
     assert_eq!(span["length"], 12);
+}
+
+#[test]
+fn json_output_parses_whatever_control_characters_the_input_held() {
+    let error = explain("a\u{1}b\u{1b}[31m").unwrap_err();
+    let rendered = render(&error, Format::Json);
+    let json: Value = serde_json::from_str(&rendered).expect(&rendered);
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("a\u{1}b\u{1b}[31m"),
+        "{json}"
+    );
 }
 
 #[workflow(on = NoEvent, key = "{id}", intent = "x", may = [Await], runs_per_hour = 1, decide = nothing)]

@@ -28,6 +28,7 @@ On an async function taking `&Cx` and the event, returning `Result<Facts, Halt>`
 | `File` | Files an issue. Its title is a `Title`, and its body stays `Untrusted`. |
 | `Ask` | Asks a person. With `pull: Some(n)` it comments on that pull request, mentioning and assigning them. Without one it files an issue that does the same. |
 | `Push` | Commits a checked patch to a pull request's own branch. Only `DEFAULT_POLICY.check` produces what it takes. |
+| `Resolve` | Closes tracker work with its evidence attached. `item` is `Item::Named` for the tracker's own name for an entry, or `Item::Filed { key }` for whatever this workflow filed under one of its keys. `evidence` is a `Title`, so only checked values reach it. The GitHub tracker closes only issues labelled `almanac`. |
 
 ## `Cx`
 

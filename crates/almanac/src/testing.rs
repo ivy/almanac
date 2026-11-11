@@ -1,7 +1,7 @@
 //! Fakes, so a workflow's logic is testable with no model, service, or network.
 use crate::agent::{Classifier, Grant, Harness, Pass};
 use crate::cx::StepError;
-use crate::effect::{AttestState, Forge, Push, Tracker};
+use crate::effect::{AttestState, Forge, Push, Resolving, Tracker};
 use crate::taint::{Sha, Slug, Untrusted};
 use futures::future::BoxFuture;
 use serde_json::Value;
@@ -142,6 +142,16 @@ pub struct FakeTracker {
     pub calls: Arc<Mutex<Vec<String>>>,
     /// `(key, target, title or question)`, with bodies left out because they stay tainted.
     pub filed: Arc<Mutex<Vec<(String, String, String)>>>,
+    pub resolved: Arc<Mutex<Vec<Resolved>>>,
+}
+
+/// One `Resolve` a `FakeTracker` received.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Resolved {
+    pub key: String,
+    pub target: String,
+    pub item: Resolving,
+    pub evidence: String,
 }
 
 impl FakeTracker {
@@ -178,6 +188,28 @@ impl Tracker for FakeTracker {
     ) -> BoxFuture<'a, Result<(), StepError>> {
         Box::pin(async move {
             self.record(key, target, question);
+            Ok(())
+        })
+    }
+
+    fn resolve<'a>(
+        &'a self,
+        key: &'a str,
+        target: &'a Slug,
+        item: &'a Resolving,
+        evidence: &'a str,
+    ) -> BoxFuture<'a, Result<(), StepError>> {
+        Box::pin(async move {
+            self.calls.lock().unwrap().push(key.to_string());
+            let mut resolved = self.resolved.lock().unwrap();
+            if !resolved.iter().any(|r| r.key == key) {
+                resolved.push(Resolved {
+                    key: key.into(),
+                    target: target.to_string(),
+                    item: item.clone(),
+                    evidence: evidence.into(),
+                });
+            }
             Ok(())
         })
     }
@@ -286,6 +318,7 @@ pub mod conformance {
         effects_wait_in_order_until_delivered(&open("outbox"), &open("outbox")).await;
         dry_run_effects_are_never_delivered(&open("dry")).await;
         repeated_failures_stop_being_retried(&open("failing")).await;
+        filed_work_is_found_by_its_workflows_key(&open("filed")).await;
     }
 
     async fn duplicates_survive_a_restart(before: &Arc<dyn Store>, after: &Arc<dyn Store>) {
@@ -564,6 +597,42 @@ pub mod conformance {
         let recorded = after.outbox(&run.id).await.unwrap();
         assert_eq!(recorded[0].status, EntryStatus::Applied);
         assert_eq!(recorded[1].status, EntryStatus::Pending);
+    }
+
+    async fn filed_work_is_found_by_its_workflows_key(s: &Arc<dyn Store>) {
+        let file =
+            json!({"File": {"title": "t", "target": "owner/repo", "body": {"$untrusted": ""}}});
+        let ask =
+            json!({"Ask": {"question": "q", "target": "owner/repo", "body": {"$untrusted": ""}}});
+        let mut applied = vec![];
+        for (delivery, key) in [("d1", "k"), ("d2", "other"), ("d3", "k")] {
+            admit(s, delivery, key, json!(1)).await;
+            let run = started(s).await;
+            let effects = vec![file.clone(), ask.clone()];
+            s.release(&run.id, &[], effects, EntryStatus::Pending)
+                .await
+                .unwrap();
+            for entry in s.outbox(&run.id).await.unwrap() {
+                s.delivered(&entry.key).await.unwrap();
+            }
+            applied.push((key, format!("{}:0", run.id)));
+        }
+        admit(s, "d4", "k", json!(1)).await;
+        let unapplied = started(s).await;
+        s.release(&unapplied.id, &[], vec![file], EntryStatus::Pending)
+            .await
+            .unwrap();
+        let of_k: Vec<_> = applied
+            .iter()
+            .filter(|(k, _)| *k == "k")
+            .map(|(_, e)| e.clone())
+            .collect();
+        assert_eq!(
+            s.filed(W, "k").await.unwrap(),
+            of_k,
+            "applied File effects only, oldest first"
+        );
+        assert_eq!(s.filed(OTHER, "k").await.unwrap(), Vec::<String>::new());
     }
 
     async fn dry_run_effects_are_never_delivered(s: &Arc<dyn Store>) {

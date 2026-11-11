@@ -2,7 +2,7 @@
 use crate::clock::{Clock, SystemClock};
 use crate::cx::{Cx, Declared, Halt, StepError, World};
 use crate::effect::{
-    ActionSummary, Effect, EffectKind, Forge, Mode, Planned, Push, Sweep, Tracker,
+    ActionSummary, Effect, EffectKind, Forge, Item, Mode, Planned, Push, Resolving, Sweep, Tracker,
 };
 use crate::providers::Providers;
 use crate::store::{
@@ -356,10 +356,11 @@ impl Runtime {
                 w.name()
             ));
         }
-        let tracked = may.contains(&EffectKind::File) || may.contains(&EffectKind::Ask);
+        let tracked = [EffectKind::File, EffectKind::Ask, EffectKind::Resolve];
+        let tracked = tracked.iter().any(|kind| may.contains(kind));
         if tracked && self.providers.get::<dyn Tracker>().is_none() {
             missing.push(format!(
-                "{} may File or Ask but no Tracker is provided",
+                "{} may File, Ask or Resolve but no Tracker is provided",
                 w.name()
             ));
         }
@@ -707,7 +708,39 @@ impl Runtime {
                     .ask(key, target, *pull, question, body)
                     .await
             }
+            Planned::Resolve {
+                target,
+                item,
+                evidence,
+            } => {
+                let resolving = match item {
+                    Item::Named(name) => Resolving::Named(name.clone()),
+                    Item::Filed { key: filed } => Resolving::Filed(self.filed(entry, filed).await?),
+                };
+                self.provider::<dyn Tracker>("Tracker")?
+                    .resolve(key, target, &resolving, evidence)
+                    .await
+            }
         }
+    }
+
+    /// What the workflow behind `entry` filed under `key`, so it can only close its own work.
+    async fn filed(&self, entry: &Entry, key: &str) -> Result<Vec<String>, StepError> {
+        let unreadable = |e: StoreError| StepError(format!("{}: {e}", entry.key));
+        let run = match &entry.run_id {
+            Some(run_id) => self.store.run(run_id).await.map_err(unreadable)?,
+            None => None,
+        };
+        let Some(run) = run else {
+            return Err(StepError(format!(
+                "{}: a Resolve of filed work names no run, so there is no workflow to close it for; this is a bug in almanac",
+                entry.key
+            )));
+        };
+        self.store
+            .filed(&run.workflow, key)
+            .await
+            .map_err(unreadable)
     }
 
     fn provider<T: ?Sized + Send + Sync + 'static>(&self, name: &str) -> Result<Arc<T>, StepError> {

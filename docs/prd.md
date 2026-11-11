@@ -90,7 +90,7 @@ Validates a Renovate security pull request and gets its build passing.
 - **R-38** Generated enums tolerate unknown values.
 - **R-39** A source with no spec uses a hand-written `observed!` type and `Payload`, which cannot produce a bare `String`.
 - **R-40** Providers are traits, supplied once in `providers.rs` and checked at startup. Harnesses and classifiers are swappable.
-- **R-41** A `Tracker` provider receives `File` and `Ask` effects. v0 ships a GitHub tracker and a local fake. An `Ask` about a pull request comments on it, mentioning and assigning the person named by `ALMANAC_ASK`, or the owner. An `Ask` about no pull request files an issue that does the same.
+- **R-41** A `Tracker` provider receives `File`, `Ask`, and `Resolve` effects. A `Resolve` closes an entry the tracker names, or what its workflow filed under a key, and attaches its evidence. v0 ships a GitHub tracker and a local fake. An `Ask` about a pull request comments on it, mentioning and assigning the person named by `ALMANAC_ASK`, or the owner. An `Ask` about no pull request files an issue that does the same.
 
 ### Operating
 

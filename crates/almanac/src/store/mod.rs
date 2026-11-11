@@ -189,6 +189,9 @@ pub trait Store: Send + Sync {
     /// A run's recorded effects, in order.
     fn outbox<'a>(&'a self, run_id: &'a str) -> BoxFuture<'a, Stored<Vec<Entry>>>;
 
+    /// The keys `File` effects were applied under for a workflow's key, oldest first.
+    fn filed<'a>(&'a self, workflow: &'a str, key: &'a str) -> BoxFuture<'a, Stored<Vec<String>>>;
+
     fn delivered<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Stored<()>>;
 
     /// Counts a failed attempt. At `give_up` attempts the entry stops being retried.

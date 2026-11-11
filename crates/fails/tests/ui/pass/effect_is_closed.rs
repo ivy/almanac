@@ -8,6 +8,7 @@ fn describe(effect: &Effect) -> &'static str {
         Effect::File { .. } => "work",
         Effect::Ask { .. } => "question",
         Effect::Push { .. } => "commit",
+        Effect::Resolve { .. } => "close",
     }
 }
 

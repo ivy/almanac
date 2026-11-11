@@ -869,7 +869,7 @@ async fn going_live_requires_a_forge_and_a_tracker() {
         "{problem}"
     );
     assert!(
-        problem.contains("may File or Ask but no Tracker"),
+        problem.contains("may File, Ask or Resolve but no Tracker"),
         "{problem}"
     );
 }
@@ -1096,4 +1096,81 @@ async fn a_backfill_does_not_starve_a_live_event() {
     rt.drain().await.unwrap();
     let inputs = h.inputs.lock().unwrap();
     assert!(inputs[0].to_string().contains("ivy/live"), "{}", inputs[0]);
+}
+
+clean! {
+    pub struct Finding { pub open: bool, pub repo: Slug }
+}
+
+/// Files work while a pull request is a draft, and closes that same work once it is not.
+#[workflow(on = PullRequestOpened, key = "{repo}", intent = "x", may = [File, Resolve], runs_per_hour = 9, decide = file_or_resolve)]
+async fn files_then_resolves(_cx: &Cx, pr: &PullRequestOpened) -> Result<Finding, Halt> {
+    Ok(Finding {
+        open: pr.draft,
+        repo: pr.repo.clone(),
+    })
+}
+
+fn file_or_resolve(finding: &Finding) -> Vec<Effect> {
+    if finding.open {
+        vec![Effect::File {
+            title: title!("A draft is open"),
+            target: finding.repo.clone(),
+            body: Untrusted::new(String::new()),
+        }]
+    } else {
+        vec![Effect::Resolve {
+            target: finding.repo.clone(),
+            item: Item::Filed {
+                key: finding.repo.to_string(),
+            },
+            evidence: title!("{} is no longer a draft", finding.repo),
+        }]
+    }
+}
+
+fn draft(delivery: &str, repo: &str, is_draft: bool) -> Envelope {
+    let mut envelope = pr(delivery, repo, 0);
+    envelope.payload["pull_request"]["draft"] = json!(is_draft);
+    envelope
+}
+
+#[tokio::test]
+async fn a_resolve_closes_only_what_its_workflow_filed_under_that_key() {
+    let tracker = FakeTracker::default();
+    let provided: Arc<dyn Tracker> = Arc::new(tracker.clone());
+    let providers = Providers::new().provide::<dyn Tracker>(provided);
+    let rt = Runtime::new(vec![Box::new(FilesThenResolves)], providers)
+        .in_mode(Mode::Live)
+        .with_store(store());
+    for envelope in [
+        draft("d1", "ivy/thicket", true),
+        draft("d2", "ivy/other", true),
+        draft("d3", "ivy/thicket", false),
+    ] {
+        rt.ingest(envelope).await.unwrap();
+        rt.drain().await.unwrap();
+        rt.deliver().await.unwrap();
+    }
+    let filed = tracker.filed.lock().unwrap().clone();
+    let thicket: Vec<String> = filed
+        .iter()
+        .filter(|(_, target, _)| target == "ivy/thicket")
+        .map(|(key, ..)| key.clone())
+        .collect();
+    let resolved = tracker.resolved.lock().unwrap().clone();
+    assert_eq!(resolved.len(), 1, "{resolved:?}");
+    assert_eq!(resolved[0].target, "ivy/thicket");
+    assert_eq!(resolved[0].item, Resolving::Filed(thicket));
+    assert_eq!(resolved[0].evidence, "ivy/thicket is no longer a draft");
+}
+
+#[tokio::test]
+async fn going_live_with_resolve_requires_a_tracker() {
+    let rt = Runtime::new(vec![Box::new(FilesThenResolves)], Providers::new()).in_mode(Mode::Live);
+    let error = rt.validate().unwrap_err().to_string();
+    assert!(
+        error.contains("File, Ask or Resolve but no Tracker"),
+        "{error}"
+    );
 }

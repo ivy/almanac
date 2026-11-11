@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT o.key FROM outbox o JOIN runs r ON r.id = o.run_id\n                 WHERE o.almanac = $1 AND r.workflow = $2 AND r.key = $3\n                   AND o.status = 'applied' AND o.effect -> 'File' IS NOT NULL\n                 ORDER BY o.created_at, o.run_id, o.seq",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "outbox",
+            "name": "key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2a79335e5ee3cbdd20dfba9a9e3e5f5e159319a615b43ebe908d309377f155ba"
+}

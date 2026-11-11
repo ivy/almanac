@@ -22,7 +22,7 @@ help: the following other types implement trait `Finite`
  ::: $WORKSPACE/crates/almanac/src/effect.rs
   |
   | / crate::clean! {
-  | |     pub enum EffectKind { Attest, Await, File, Ask, Push }
+  | |     pub enum EffectKind { Attest, Await, File, Ask, Push, Resolve }
   | | }
   | |_- in this macro invocation
   |

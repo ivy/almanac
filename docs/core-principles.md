@@ -46,9 +46,9 @@ Outside reads, model answers, and guard verdicts are recorded. A replay reuses t
 
 ## 8. Almanac reports; the repository decides
 
-Effects are a small closed set, and merging is not one of them. Almanac publishes statuses, proposes changes, and pushes checked patches to a pull request's own branch. Repository rules and Renovate perform the merge.
+Effects are a small closed set, and merging is not one of them. Almanac publishes statuses, proposes changes, pushes checked patches to a pull request's own branch, and closes tracker work on evidence code checked. Repository rules and Renovate perform the merge. A tracker is the operator's planning record, so closing an entry in it reports that the work is done, the way `Attest` reports that a check passed ([ADR 2](adrs/0002-resolve-effect.md)).
 
-**Says no to:** a merge effect, bypassing branch protection, and an effect added because one workflow found it convenient without a principle covering it.
+**Says no to:** a merge effect, closing a pull request, bypassing branch protection, and an effect added because one workflow found it convenient without a principle covering it.
 
 ## 9. Errors are an interface
 

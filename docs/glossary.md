@@ -10,7 +10,7 @@
 
 **broker.** The one service GitHub's webhooks reach. It verifies each delivery and appends it to a log that almanacs read.
 
-**closed set of effects.** The only things a workflow can ask for: `Attest`, `Await`, `File`, `Ask`, and `Push`. Nothing else exists, and a merge is deliberately not one.
+**closed set of effects.** The only things a workflow can ask for: `Attest`, `Await`, `File`, `Ask`, `Push`, and `Resolve`. Nothing else exists, and a merge is deliberately not one.
 
 **cooled.** Old enough to read. An update has cooled once its release is past the workflow's minimum age, which gives a malicious release time to be found first.
 

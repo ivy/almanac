@@ -276,6 +276,7 @@ pub mod conformance {
         a_key_waits_for_its_last_runs_effects(&open("waits")).await;
         a_ledger_keeps_what_was_done_to_a_key(&open("ledger"), &open("ledger")).await;
         depth_survives_a_restart(&open("depth")).await;
+        a_coalesced_event_keeps_the_deepest_chain(&open("deepest")).await;
         oldest_work_runs_first(&open("order")).await;
         workflows_not_in_this_binary_are_left_alone(&open("unknown")).await;
         queued_work_and_the_log_survive_a_restart(&open("restart"), &open("restart")).await;
@@ -445,6 +446,27 @@ pub mod conformance {
         assert_eq!(started(s).await.depth, 2);
         s.recover().await.unwrap();
         assert_eq!(started(s).await.depth, 2);
+    }
+
+    async fn a_coalesced_event_keeps_the_deepest_chain(s: &Arc<dyn Store>) {
+        let at = |depth| {
+            Admission::Queue(Pending {
+                workflow: W.to_string(),
+                key: "k".to_string(),
+                payload: json!(depth),
+                subjects: vec![],
+                origin: Origin::Webhook,
+                depth,
+            })
+        };
+        s.admit("t", "d1", at(2)).await.unwrap();
+        s.admit("t", "d2", at(0)).await.unwrap();
+        let run = started(s).await;
+        assert_eq!(
+            (run.payload, run.depth),
+            (json!(0), 2),
+            "a fresh event must not reset the chain it joins"
+        );
     }
 
     async fn a_key_waits_for_its_last_runs_effects(s: &Arc<dyn Store>) {

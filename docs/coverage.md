@@ -30,7 +30,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 | R-52 Remote-shaped `Sandbox` | `FakeSandbox` holds nothing on the host; [ADR 1](adrs/0001-agent-sandbox.md) maps every operation |
 | R-24 Dedupe, seen only once persisted | `crates/almanac/tests/store_postgres.rs`: `a_delivery_that_failed_to_persist_is_accepted_when_redelivered` |
 | R-25 One run per key | `testing::conformance`, `the_database_itself_refuses_a_second_active_run_for_a_key` |
-| R-26 Chains contained | `crates/definitions/tests/chains.rs` |
+| R-26 Chains contained | `crates/definitions/tests/chains.rs`, `testing::conformance` |
 | R-27 Budgets | `testing::conformance`, `a_tripped_budget_asks_once_and_held_work_runs_after_an_hour` |
 | R-28 Concurrency and lanes | `a_backfill_does_not_starve_a_live_event`, `independent_keys_run_concurrently_but_one_key_never_does` |
 | R-29 Broker | `crates/broker/tests/receive.rs` |

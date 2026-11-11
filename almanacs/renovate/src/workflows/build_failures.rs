@@ -204,7 +204,8 @@ fn is_lockfile(path: &str) -> bool {
 
 /// Whether a patch takes back what the update changed. Green checks prove nothing then, because
 /// the pull request no longer updates anything.
-fn undoes_the_update((patch, updated): &(Patch, Vec<(String, String)>)) -> bool {
+/// `updated` is the lines the pull request added, by path, as `pull_added_lines` reads them.
+pub fn undoes_the_update(patch: &Patch, updated: &[(String, String)]) -> bool {
     let declared = updated.iter().filter(|(path, _)| !is_lockfile(path));
     declared
         .into_iter()
@@ -359,7 +360,7 @@ pub async fn build_failures(cx: &Cx, event: &BuildChanged) -> Result<Facts, Halt
 }
 
 /// What an agent said when it finished, for whoever is asked to take over.
-fn closing_words(patch: &Patch) -> String {
+pub fn closing_words(patch: &Patch) -> String {
     match patch.answer.get("summary").unwrap_or(&patch.answer) {
         Value::String(text) => text.clone(),
         other => other.to_string(),
@@ -431,13 +432,19 @@ pub fn policy(facts: &Facts) -> Vec<Effect> {
             patch,
             updated,
         } => match DEFAULT_POLICY.check(patch, head) {
-            Ok(_) if patch.zip(updated).narrow(undoes_the_update) => stop_and_ask(
-                repo,
-                *number,
-                head,
-                title!("A repair took back the update"),
-                patch.map(|p| p.diff.clone()),
-            ),
+            Ok(_)
+                if patch
+                    .zip(updated)
+                    .narrow(|(patch, updated)| undoes_the_update(patch, updated)) =>
+            {
+                stop_and_ask(
+                    repo,
+                    *number,
+                    head,
+                    title!("A repair took back the update"),
+                    patch.map(|p| p.diff.clone()),
+                )
+            }
             Ok(patch) => vec![Effect::Push {
                 repo: repo.clone(),
                 pull: *number,

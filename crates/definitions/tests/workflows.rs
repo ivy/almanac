@@ -757,6 +757,21 @@ async fn replay_after_a_restart_reuses_the_recorded_model_call() {
     assert_eq!(h.calls(), 1, "a replay must not call the model again");
 }
 
+#[tokio::test]
+async fn replay_of_an_answer_that_did_not_parse_does_not_call_the_model_again() {
+    let h = ScriptedHarness::replying(json!({"verdict": "Maybe", "notes": INJECTION}));
+    let rt = runtime(FakeRegistry::default(), h.clone());
+    rt.ingest(pr("d1", "ivy/thicket", 0)).await.unwrap();
+    let first = rt.drain().await.unwrap();
+    let Outcome::Failed { run_id, .. } = &first[0] else {
+        panic!("{first:?}")
+    };
+    *h.reply.lock().unwrap() = no_concerns();
+    let again = rt.replay(run_id).await.unwrap();
+    assert!(matches!(again, Outcome::Failed { .. }), "{again:?}");
+    assert_eq!(h.calls(), 1, "the answer is recorded before it is parsed");
+}
+
 struct Applying {
     forge: FakeForge,
     tracker: FakeTracker,

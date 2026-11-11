@@ -316,6 +316,26 @@ async fn replay_of_a_stopped_run_does_not_ask_the_classifier_again() {
     assert_eq!((classifier.calls(), h.calls()), (1, 0));
 }
 
+#[tokio::test]
+async fn a_screen_answer_that_is_not_a_probability_is_a_veto_that_replays() {
+    for answer in [f64::NAN, f64::INFINITY, -1.0, 2.0] {
+        let h = ScriptedHarness::default();
+        let classifier = FixedClassifier::answering(answer);
+        let rt = triage_runtime(classifier.clone(), h.clone());
+        rt.ingest(issue("s1")).await.unwrap();
+        let first = rt.drain().await.unwrap();
+        let Outcome::Stopped { run_id, .. } = &first[0] else {
+            panic!("{answer}: {first:?}")
+        };
+        let again = rt.replay(run_id).await.unwrap();
+        assert!(
+            matches!(again, Outcome::Stopped { .. }),
+            "{answer}: {again:?}"
+        );
+        assert_eq!((classifier.calls(), h.calls()), (1, 0), "{answer}");
+    }
+}
+
 struct CountingGuard {
     calls: Arc<Mutex<Vec<String>>>,
     deny_filing: bool,

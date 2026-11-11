@@ -41,7 +41,7 @@ On an async function taking `&Cx` and the event, returning `Result<Facts, Halt>`
 | `cx.age(age, read)` | As `cooled`, also telling a young release from one nothing can date. |
 | `cx.attempts()` | How many patches this key has had, and whether a person was asked. |
 | `cx.hold(context, repo, sha)` | Posts `pending` straight away, before an agent starts. |
-| `cx.screen(...)` | Runs a classifier that can stop the run before any agent starts. |
+| `cx.screen(...)` | Runs a classifier that can stop the run before any agent starts. An answer that is not a probability stops it. |
 
 `Halt::Stop(reason)` ends a run on purpose. `?` on a failed read gives `Halt::Failed`, and the run can be retried.
 

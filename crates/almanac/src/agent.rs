@@ -166,11 +166,10 @@ impl<P: Profile, T: Template> Bound<'_, P, T> {
         let harness = self.cx.harness_of(name)?;
         let prompt = prompt.render();
         let input = serde_json::to_value(input).map_err(StepError::from)?;
-        let call = async move {
-            let value = harness.run(&Pass::new(), &prompt, P::GRANT, input).await?;
-            Ok(serde_json::from_value(value)?)
-        };
-        Ok(self.cx.record(name, call).await?)
+        let call = async move { harness.run(&Pass::new(), &prompt, P::GRANT, input).await };
+        // The answer is recorded before it is read, so one that does not parse replays too.
+        let answer: serde_json::Value = self.cx.record(name, call).await?;
+        Ok(serde_json::from_value(answer).map_err(StepError::from)?)
     }
 }
 

@@ -85,7 +85,10 @@ var (
 	ageType     = reflect.TypeFor[cooled.Age]()
 	triesType   = reflect.TypeFor[vocab.Attempts]()
 	outcomeType = reflect.TypeFor[vocab.PatchOutcome]()
-	workflowID  = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	// workflowName may have hyphens: stores and budgets keep it in a column of its own, never
+	// joined into a key, so a hyphen cannot collide with anything.
+	workflowName = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	factName     = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 )
 
 // reserved are the facts the engine produces itself, which no observer or agent may name.
@@ -95,9 +98,9 @@ func (c *checker) declarations() {
 	c.beforeRun = true
 	defer func() { c.beforeRun = false }()
 	w, at := c.w, c.w.Name
-	if !workflowID.MatchString(w.Name) {
+	if !workflowName.MatchString(w.Name) {
 		at = cmp.Or(w.Name, "(unnamed workflow)")
-		c.refuse(diag.BadDeclaration(at, "a workflow's name is lowercase letters, digits and underscores, starting with a letter"))
+		c.refuse(diag.BadDeclaration(at, "a workflow's name is lowercase letters, digits, underscores and hyphens, starting with a letter"))
 	}
 	if strings.TrimSpace(w.Intent) == "" {
 		c.refuse(diag.BadDeclaration(at, "it has no intent, and review reads what a workflow is for from it"))
@@ -577,7 +580,7 @@ func (c *checker) unknown(name string) {
 
 // produceNamed records that a step produces the fact name, which an observer or agent chose.
 func (c *checker) produceNamed(at, name string, t reflect.Type) {
-	if !workflowID.MatchString(name) || slices.Contains(reserved, name) {
+	if !factName.MatchString(name) || slices.Contains(reserved, name) {
 		c.refuse(diag.BadDeclaration(at, fmt.Sprintf("%q cannot name a fact: a fact's name is a lowercase word, and %v are built in", name, reserved)))
 		return
 	}

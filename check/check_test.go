@@ -326,6 +326,29 @@ var _ = Describe("The checker", func() {
 			Expect(message).To(ContainSubstring("declares no attempts limit"))
 		})
 
+		It("naming a workflow with anything but a lowercase letter, then letters, digits, underscores or hyphens", func() {
+			for _, name := range []string{"dependency_updates", "dependency-updates", "host-state2"} {
+				w := whole()
+				w.Name = name
+				Expect(check.Check(renovate.Vocabulary, w)).To(Succeed(), name)
+			}
+			for _, name := range []string{"", "Dependency-updates", "-updates", "2-updates", "dependency updates", "dependency.updates"} {
+				w := whole()
+				w.Name = name
+				codes, message := refused(w)
+				Expect(codes).To(ContainElement(diag.ModelDeclaration), name)
+				Expect(message).To(ContainSubstring("a workflow's name is"), name)
+			}
+		})
+
+		It("naming a fact with a hyphen, which a workflow's name may have", func() {
+			w := whole()
+			step(w, "pull").Observe.Fact = "the-pull"
+			codes, message := refused(w)
+			Expect(codes).To(ContainElement(diag.ModelDeclaration))
+			Expect(message).To(ContainSubstring(`"the-pull" cannot name a fact`))
+		})
+
 		It("naming a fact as a built-in one", func() {
 			codes, _ := refused(factNamedAge())
 			Expect(codes).To(ContainElement(diag.ModelDeclaration))

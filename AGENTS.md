@@ -33,7 +33,9 @@ tools/                the publication check
 xtask/                code generation: projections checked against pinned specs
 docs/                 user docs, plus vision, principles, requirements, roadmap
 site.yaml             the front page of almanac.stead.ing, and how its docs are arranged
-.github/workflows/    site.yml, which builds that site from site.yaml, README.md, and docs/
+.github/workflows/    site.yml, which builds that site from site.yaml, README.md, and docs/; actions.lock,
+                      which pins each action's commit; and actions-lock.yml, which verifies it
+renovate.json5        Renovate config: updates the workflows' actions and actions.lock
 ```
 
 ## How to work here

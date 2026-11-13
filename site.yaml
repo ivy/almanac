@@ -1,0 +1,188 @@
+# What almanac.stead.ing says on its front page, and how its docs are arranged.
+# The pages under /docs/ are README.md and every Markdown file in docs/.
+# The fields are documented at https://github.com/steading-ai/stead.ing
+project: almanac
+headline: Repairs the dependency updates that break your build.
+summary: >-
+  When a Renovate pull request breaks the build, almanac reads the failure, has an agent repair it
+  in a sandbox with no network, checks the patch with plain code, and pushes the fix to the pull
+  request. The repairs so far have cost tens of cents each. The merge stays with Renovate and the
+  repository's own rules. When almanac cannot help, it says why and asks a person on the pull
+  request. It is early: it runs on its author's repositories, there are no releases, and it is
+  built from a clone.
+fit: >-
+  Almanac suits one person or a small team with a lot of repositories on GitHub, where Renovate
+  opens the dependency updates. It repairs Renovate pull requests only. Seeing what it would do
+  takes a GitHub token and changes nothing. Running it takes a host with systemd, PostgreSQL,
+  rootless Podman, and the Claude Code CLI, plus a GitHub App, a public HTTPS address for its
+  webhooks, and an Anthropic key or token. It serves one operator on a host they run, and is not a
+  hosted service. It works with GitHub and Claude today, and with nothing else.
+facts:
+  - Open source
+  - ISC
+  - Built in Rust
+
+video:
+  caption: One Renovate pull request with a failing build, from the red check to ready to merge, with nobody watching.
+
+offers:
+  title: What almanac does
+  items:
+    - title: Build repairs
+      body: >-
+        When CI fails on a Renovate pull request, an agent gets the failure logs, and works on a
+        checkout in a Podman sandbox that has no network and no credentials. It hands back a
+        patch, and it cannot push. An `almanac/trust` status holds the merge until CI passes on
+        the repaired commit.
+    - title: Patch checks
+      body: >-
+        Plain code checks every patch before almanac pushes it. A patch can't touch CI
+        configuration, Renovate configuration, or tool versions, can't hold a binary file, has to
+        stay small, and can't take back what the update changed.
+    - title: A cooldown
+      body: >-
+        No agent reads an update until its release is 72 hours old, by the registry's own publish
+        time. That gives a malicious release time to be found first.
+    - title: Security updates
+      body: >-
+        For a Renovate pull request labeled `security`, code checks that an advisory exists, that
+        the current version is affected, and that the target is the patched version. A model with
+        no tools reads the package's diff. It can veto the update, and it can never approve it.
+    - title: A report
+      body: >-
+        One state for every open Renovate pull request in an account: `mergeable`, `in-progress`,
+        `waiting`, `needs-person`, or `blocked-by-config`, each with its reason. A read-only pass
+        prints it with a GitHub token, writes nothing, and calls no model.
+    - title: Limits on spending
+      body: >-
+        One run at a time for a pull request, however many webhooks arrive. 20 runs an hour for
+        each workflow, three repair attempts for each pull request, and $6 for each agent session.
+        The repairs on thicket's repository cost between $0.11 and $0.31 each.
+    - title: Questions for a person
+      body: >-
+        When a repair is out of reach, almanac stops, comments on the pull request, and mentions
+        and assigns a person, with what it found.
+    - title: Workflows of your own
+      body: >-
+        The Renovate repairs are built on a Rust library. A workflow gathers facts, and a plain
+        function decides from them, so the decision is tested with no network and no model.
+        `almanac new` scaffolds one. The library isn't published to crates.io, so a workflow
+        depends on a clone by path.
+
+thinking:
+  title: How almanac thinks about maintenance
+  items:
+    - title: Code first, a model last
+      body: >-
+        Code does everything code can do: deduplicating events, waiting out the cooldown, checking
+        the patch. A model is called only where judgment or repair is needed, so a burst of
+        webhooks about one pull request starts one run and not a burst of spending.
+      href: /docs/how-it-works/
+    - title: Assume the agent gets fooled
+      body: >-
+        A build log is text a stranger wrote. Text from outside is a type of its own, and code
+        that formats it into a prompt does not compile. Whatever reads it holds no secrets, has no
+        general network access, and can only call into a sandbox. A model's answer can stop a
+        change, and only deterministic evidence lets one through.
+      href: /docs/keeping-agents-safe/
+    - title: Checks decide, and almanac never merges
+      body: >-
+        If a repository's checks pass, the change is good enough to merge. Almanac gets a pull
+        request to that point and reports what it found. The merge belongs to Renovate and the
+        repository's rules, and a person is asked only for a judgment no check can make.
+      href: /docs/responsibilities/
+
+quickstart:
+  title: See what it would do to your pull requests
+  steps:
+    - title: Check the fit
+      body: >-
+        Paste this into your agent. It reads what almanac does and what it needs, and helps you
+        work out whether that matches your repositories.
+      prompt: true
+    - title: Build it
+      body: >-
+        From a clone, because there are no releases yet. `mise install` brings the Rust toolchain.
+      code: |-
+        git clone https://github.com/steading-ai/almanac
+        cd almanac
+        mise install
+        cd almanacs/renovate
+        cargo build --release
+    - title: Point it at your account
+      body: >-
+        A GitHub token is all this needs: no database, no GitHub App, no model credential.
+        `ALMANAC_READ_ONLY=1` makes the GitHub client refuse every write, and stops before any
+        model is called. `ALMANAC_RENOVATE_AUTHOR` is the login that opens your Renovate pull
+        requests.
+      code: |-
+        export ALMANAC_READ_ONLY=1
+        export GITHUB_TOKEN="$(gh auth token)"
+        export ALMANAC_OWNER=your-account
+        export ALMANAC_RENOVATE_AUTHOR='renovate[bot]'
+    - title: See where each pull request stands
+      body: >-
+        One line for every open Renovate pull request, with its state and the reason.
+        [Report states](/docs/report-states/) says what each state means and who acts on it.
+      code: |-
+        target/release/almanac-renovate report
+    - title: See what it would act on
+      body: >-
+        This takes each pull request that needs attention through the real workflow. A run that
+        would repair something stops at `read-only: an agent would run here`, which is the point
+        where it would spend money.
+      code: |-
+        target/release/almanac-renovate backfill --dry-run
+    - title: Let it act
+      body: >-
+        Going live takes a host and a GitHub App.
+        [Run Almanac on your repositories](/docs/deploying/) lists what it needs and starts with
+        one repository. Every stage has a step to verify it and a way to stop.
+
+not:
+  - title: Not a merge bot.
+    body: It gets a pull request to a mergeable state and reports what it found. Renovate and the repository's rules do the merge.
+  - title: Not a backlog.
+    body: It holds what it has seen and decided, never a queue of planned work.
+    use: skift
+  - title: Not a runner for planned work.
+    body: It repairs what an update broke. It doesn't take a task from a plan and deliver it.
+    use: mill
+  - title: Not a chat tool.
+    body: It asks a person on the pull request, and it doesn't read replies.
+    use: thicket
+  - title: Not a general workflow engine.
+    body: It handles events about software projects, for one operator.
+  - title: Not a hosted service.
+    body: It runs on a host you own and serves one operator. It is not multi-tenant.
+instead: >-
+  Built to keep one operator's repositories *maintained*. It repairs what an update breaks, asks a
+  person when it can't, and leaves the merge to Renovate and the repository's own rules.
+
+# No `pairs`: almanac sends nothing to another Steading project. Filing what it finds into a
+# tracker is milestone M4 in docs/roadmap.md.
+
+docs:
+  order:
+    - one-repair
+    - try-it-read-only
+    - first-workflow
+    - deploying
+    - writing-workflows
+    - operating
+    - commands
+    - configuration
+    - report-states
+    - authoring-reference
+    - glossary
+    - how-it-works
+    - keeping-agents-safe
+    - responsibilities
+    - vision
+    - core-principles
+    - roadmap
+    - prd
+    - coverage
+  groups:
+    adrs: Decisions
+    errors: Errors

@@ -32,6 +32,8 @@ spikes/               throwaway proofs behind decisions in docs/adrs
 tools/                the publication check
 xtask/                code generation: projections checked against pinned specs
 docs/                 user docs, plus vision, principles, requirements, roadmap
+site.yaml             the front page of almanac.stead.ing, and how its docs are arranged
+.github/workflows/    site.yml, which builds that site from site.yaml, README.md, and docs/
 ```
 
 ## How to work here

@@ -540,6 +540,23 @@ impl Store for PostgresStore {
         })
     }
 
+    fn filed<'a>(&'a self, workflow: &'a str, key: &'a str) -> BoxFuture<'a, Stored<Vec<String>>> {
+        Box::pin(async move {
+            let keys = sqlx::query_scalar!(
+                "SELECT o.key FROM outbox o JOIN runs r ON r.id = o.run_id
+                 WHERE o.almanac = $1 AND r.workflow = $2 AND r.key = $3
+                   AND o.status = 'applied' AND o.effect -> 'File' IS NOT NULL
+                 ORDER BY o.created_at, o.run_id, o.seq",
+                self.almanac,
+                workflow,
+                key,
+            )
+            .fetch_all(&self.pool)
+            .await?;
+            Ok(keys)
+        })
+    }
+
     fn delivered<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Stored<()>> {
         Box::pin(async move {
             sqlx::query!(

@@ -43,7 +43,7 @@ Where each requirement in [prd.md](prd.md) is proved. `make check` runs every te
 | R-37, R-38 Projections | `xtask/tests/generate.rs`, `a_new_enum_value_from_github_does_not_break_ingest` |
 | R-39 Hand-written sources | `crates/fails/tests/ui/fail/payload_field_rejects_string.rs`, `crates/advisory/src/cve_now.rs` |
 | R-40 Providers checked at startup | `startup_fails_with_a_diagnostic_when_a_provider_is_missing` |
-| R-41 Tracker | `crates/github/tests/tracker.rs` |
+| R-41 Tracker | `crates/github/tests/tracker.rs`, `a_resolve_closes_only_what_its_workflow_filed_under_that_key` |
 | R-42 Diagnostics | `crates/almanac/tests/diagnostics.rs`, `crates/almanac/src/diag.rs` |
 | R-43 Manifest | `the_manifest_names_the_prompt_file_and_its_variables`, `a_new_almanac_builds_tests_and_describes_itself` |
 | R-44 Config only tightens | `crates/almanac/tests/limits.rs`, `a_secret_in_config_points_at_its_line_and_says_where_it_belongs` |

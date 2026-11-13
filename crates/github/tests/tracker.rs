@@ -212,3 +212,123 @@ async fn a_directory_exists_though_it_has_no_content() {
     assert!(found.unwrap());
     assert!(!client.exists("owner/repo", "missing").await.unwrap());
 }
+
+async fn resolvable(issues: Value, comments: Value) -> MockServer {
+    let server = forge(issues).await;
+    Mock::given(method("GET"))
+        .and(path("/repos/owner/repo/issues/7"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "number": 7, "state": "open", "labels": [{"name": "not-almanac"}]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/owner/repo/issues/3/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(comments))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/repos/owner/repo/issues/3/comments"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({})))
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/repos/owner/repo/issues/3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .mount(&server)
+        .await;
+    server
+}
+
+fn filed_issue(state: &str) -> Value {
+    json!([
+        {"number": 3, "state": state, "body": "text\n\n<!-- almanac:run-1:0 -->\n"},
+        {"number": 4, "state": "open", "body": "text\n\n<!-- almanac:run-9:0 -->\n"}
+    ])
+}
+
+async fn writes(server: &MockServer) -> Vec<(String, String, Value)> {
+    let requests = server.received_requests().await.unwrap();
+    requests
+        .iter()
+        .filter(|r| r.method.as_str() != "GET")
+        .map(|r| {
+            (
+                r.method.to_string(),
+                r.url.path().to_string(),
+                r.body_json().unwrap(),
+            )
+        })
+        .collect()
+}
+
+fn filed() -> Resolving {
+    Resolving::Filed(vec!["run-1:0".to_string()])
+}
+
+#[tokio::test]
+async fn resolving_filed_work_comments_the_evidence_and_closes_only_that_issue() {
+    let server = resolvable(filed_issue("open"), json!([])).await;
+    let issues = GithubIssues::new(server.uri(), "token");
+    issues
+        .resolve("run-2:0", &target(), &filed(), "the check is ok")
+        .await
+        .unwrap();
+    let writes = writes(&server).await;
+    assert_eq!(writes.len(), 2, "one comment and one close: {writes:?}");
+    let (_, comment_path, comment) = &writes[0];
+    assert_eq!(comment_path, "/repos/owner/repo/issues/3/comments");
+    let text = comment["body"].as_str().unwrap();
+    assert!(text.contains("the check is ok") && text.contains("<!-- almanac:run-2:0 -->"));
+    assert_eq!(writes[1].0, "PATCH");
+    assert_eq!(writes[1].1, "/repos/owner/repo/issues/3");
+    assert_eq!(writes[1].2["state"], "closed");
+}
+
+#[tokio::test]
+async fn a_retry_closes_without_commenting_twice() {
+    let comments = json!([{"body": "Closing\n\n<!-- almanac:run-2:0 -->\n"}]);
+    let server = resolvable(filed_issue("open"), comments).await;
+    let issues = GithubIssues::new(server.uri(), "token");
+    issues
+        .resolve("run-2:0", &target(), &filed(), "the check is ok")
+        .await
+        .unwrap();
+    let methods: Vec<_> = writes(&server).await.into_iter().map(|w| w.0).collect();
+    assert_eq!(methods, ["PATCH"]);
+}
+
+#[tokio::test]
+async fn an_issue_already_closed_is_left_alone() {
+    let server = resolvable(filed_issue("closed"), json!([])).await;
+    let issues = GithubIssues::new(server.uri(), "token");
+    issues
+        .resolve("run-2:0", &target(), &filed(), "the check is ok")
+        .await
+        .unwrap();
+    assert_eq!(writes(&server).await, vec![]);
+}
+
+#[tokio::test]
+async fn nothing_filed_closes_nothing_and_reads_nothing() {
+    let server = resolvable(filed_issue("open"), json!([])).await;
+    let issues = GithubIssues::new(server.uri(), "token");
+    issues
+        .resolve("run-2:0", &target(), &Resolving::Filed(vec![]), "ok")
+        .await
+        .unwrap();
+    assert_eq!(server.received_requests().await.unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn a_named_issue_almanac_did_not_file_is_refused() {
+    let server = resolvable(filed_issue("open"), json!([])).await;
+    let issues = GithubIssues::new(server.uri(), "token");
+    let named = Resolving::Named("7".parse().unwrap());
+    let error = issues
+        .resolve("run-2:0", &target(), &named, "merged")
+        .await
+        .unwrap_err();
+    assert!(error.0.contains("no `almanac` label"), "{}", error.0);
+    assert_eq!(writes(&server).await, vec![]);
+}

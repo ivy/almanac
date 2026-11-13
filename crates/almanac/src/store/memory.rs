@@ -327,6 +327,22 @@ impl Store for MemoryStore {
         })
     }
 
+    fn filed<'a>(&'a self, workflow: &'a str, key: &'a str) -> BoxFuture<'a, Stored<Vec<String>>> {
+        Box::pin(async move {
+            let s = self.state.lock().unwrap();
+            let of_key = |run_id: &String| {
+                let run = s.runs.get(run_id);
+                run.is_some_and(|r| r.workflow == workflow && r.key == key)
+            };
+            let filed = s.outbox.iter().filter(|e| {
+                e.status == EntryStatus::Applied
+                    && e.effect.get("File").is_some()
+                    && e.run_id.as_ref().is_some_and(of_key)
+            });
+            Ok(filed.map(|e| e.key.clone()).collect())
+        })
+    }
+
     fn delivered<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Stored<()>> {
         Box::pin(async move {
             let mut s = self.state.lock().unwrap();

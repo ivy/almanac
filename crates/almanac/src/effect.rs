@@ -1,5 +1,6 @@
 //! The closed set of ways a workflow touches the world. A patch can be pushed to a pull
-//! request's own branch. Nothing here merges or closes: the repository's rules do that.
+//! request's own branch, and tracker work can be closed on evidence code checked. Nothing here
+//! merges or closes a pull request: the repository's rules do that.
 use crate::cx::StepError;
 use crate::patch::{Checked, Patch};
 use crate::taint::{Sha, Slug, Title, Untrusted};
@@ -7,7 +8,7 @@ use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
 crate::clean! {
-    pub enum EffectKind { Attest, Await, File, Ask, Push }
+    pub enum EffectKind { Attest, Await, File, Ask, Push, Resolve }
 }
 
 crate::clean! {
@@ -52,6 +53,31 @@ pub enum Effect {
         hold: Option<&'static str>,
         patch: Checked,
     },
+    /// Close tracker work. `evidence` is a `Title`, so it holds only what code checked: a model
+    /// can stop a close by failing a check, and cannot cause one.
+    Resolve {
+        target: Slug,
+        item: Item,
+        evidence: Title,
+    },
+}
+
+/// Which tracker entry a `Resolve` closes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Item {
+    /// The tracker's own name for it, such as an issue number or a task's UUID.
+    Named(Slug),
+    /// What this workflow filed under one of its own keys, in any earlier run.
+    Filed { key: String },
+}
+
+/// An `Item` as a tracker receives it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Resolving {
+    Named(Slug),
+    /// The keys `File` was applied under, which a tracker already stores to stay idempotent.
+    /// Empty when nothing was filed, which leaves nothing to close.
+    Filed(Vec<String>),
 }
 
 crate::clean! {
@@ -67,6 +93,7 @@ impl Effect {
             Self::File { .. } => EffectKind::File,
             Self::Ask { .. } => EffectKind::Ask,
             Self::Push { .. } => EffectKind::Push,
+            Self::Resolve { .. } => EffectKind::Resolve,
         }
     }
 
@@ -115,6 +142,11 @@ pub enum Planned {
         hold: Option<String>,
         base: Sha,
         patch: Untrusted<Patch>,
+    },
+    Resolve {
+        target: Slug,
+        item: Item,
+        evidence: String,
     },
 }
 
@@ -170,6 +202,15 @@ impl From<&Effect> for Planned {
                 hold: hold.map(str::to_string),
                 base: patch.base().clone(),
                 patch: Untrusted::new(patch.patch().clone()),
+            },
+            Effect::Resolve {
+                target,
+                item,
+                evidence,
+            } => Self::Resolve {
+                target,
+                item,
+                evidence: evidence.to_string(),
             },
         }
     }
@@ -248,5 +289,15 @@ pub trait Tracker: Send + Sync {
         pull: Option<u64>,
         question: &'a str,
         body: &'a Untrusted<String>,
+    ) -> BoxFuture<'a, Result<(), StepError>>;
+
+    /// Closes `item` with `evidence` attached. An entry already closed is not an error, so a repeat
+    /// changes nothing.
+    fn resolve<'a>(
+        &'a self,
+        key: &'a str,
+        target: &'a Slug,
+        item: &'a Resolving,
+        evidence: &'a str,
     ) -> BoxFuture<'a, Result<(), StepError>>;
 }

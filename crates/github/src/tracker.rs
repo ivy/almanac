@@ -1,5 +1,6 @@
 //! `File` as a GitHub issue. `Ask` reaches a person on the pull request it is about, with a comment
-//! and an assignment, or as an issue when it is about no pull request.
+//! and an assignment, or as an issue when it is about no pull request. `Resolve` closes an issue
+//! almanac filed, with a comment holding the evidence.
 use crate::client::{Auth, GithubClient};
 use almanac::prelude::*;
 use serde_json::json;
@@ -111,6 +112,84 @@ impl GithubIssues {
         let assignees: Vec<&str> = self.person.iter().map(String::as_str).collect();
         self.open(key, target, question, text, &assignees).await
     }
+
+    /// The issues `item` names. Almanac closes only issues it filed, so a named issue without the
+    /// label is refused rather than closed.
+    async fn resolving(
+        &self,
+        target: &Slug,
+        item: &Resolving,
+    ) -> Result<Vec<serde_json::Value>, StepError> {
+        match item {
+            Resolving::Named(name) => {
+                let Ok(number) = name.to_string().parse::<u64>() else {
+                    return Err(StepError(format!(
+                        "`{name}` is not an issue number, so there is no issue in {target} to close; name a GitHub issue by its number"
+                    )));
+                };
+                let issue = self
+                    .client
+                    .get(&format!("/repos/{target}/issues/{number}"))
+                    .await?;
+                let labelled = issue["labels"]
+                    .as_array()
+                    .is_some_and(|labels| labels.iter().any(|l| l["name"].as_str() == Some(LABEL)));
+                if !labelled {
+                    return Err(StepError(format!(
+                        "{target}#{number} has no `{LABEL}` label, so almanac did not file it and will not close it; close it by hand if it is done"
+                    )));
+                }
+                Ok(vec![issue])
+            }
+            Resolving::Filed(keys) if keys.is_empty() => Ok(vec![]),
+            Resolving::Filed(keys) => {
+                let path = format!("/repos/{target}/issues?state=all&labels={LABEL}");
+                let issues = self.client.get_all(&path).await?;
+                let markers: Vec<String> = keys
+                    .iter()
+                    .map(|k| format!("<!-- almanac:{k} -->"))
+                    .collect();
+                let carries = |issue: &serde_json::Value| {
+                    let body = issue["body"].as_str().unwrap_or_default();
+                    markers.iter().any(|m| body.contains(m.as_str()))
+                };
+                Ok(issues.into_iter().filter(carries).collect())
+            }
+        }
+    }
+
+    /// Comments before closing, and the marker keeps it to one comment, so a retry after a crash
+    /// between the two still closes.
+    async fn close(
+        &self,
+        key: &str,
+        target: &Slug,
+        issue: &serde_json::Value,
+        evidence: &str,
+    ) -> Result<(), StepError> {
+        if issue["state"].as_str() == Some("closed") {
+            return Ok(());
+        }
+        let Some(number) = issue["number"].as_u64() else {
+            return Err(StepError(format!(
+                "an issue in {target} came back with no number, so it cannot be closed; this is a bug in almanac or a change in GitHub's API"
+            )));
+        };
+        let thread = format!("/repos/{target}/issues/{number}");
+        let path = format!("{thread}/comments");
+        let marker = format!("<!-- almanac:{key} -->");
+        let comments = self.client.get_all(&path).await?;
+        let carries =
+            |c: &serde_json::Value| c["body"].as_str().is_some_and(|b| b.contains(&marker));
+        if !comments.iter().any(carries) {
+            let shown = quoted(&Untrusted::new(evidence.to_string()))?;
+            let text = format!("Closing on this evidence:\n\n{shown}\n\n{marker}\n");
+            self.client.post(&path, &json!({"body": text})).await?;
+        }
+        let closed = json!({"state": "closed", "state_reason": "completed"});
+        self.client.patch(&thread, &closed).await?;
+        Ok(())
+    }
 }
 
 /// Shows tainted text as inert code. The fence outruns any backticks in the text, so the text
@@ -154,6 +233,21 @@ impl Tracker for GithubIssues {
                 Some(pull) => self.ask_on_pull(key, target, pull, question, body).await,
                 None => self.ask_by_issue(key, target, question, body).await,
             }
+        })
+    }
+
+    fn resolve<'a>(
+        &'a self,
+        key: &'a str,
+        target: &'a Slug,
+        item: &'a Resolving,
+        evidence: &'a str,
+    ) -> BoxFuture<'a, Result<(), StepError>> {
+        Box::pin(async move {
+            for issue in self.resolving(target, item).await? {
+                self.close(key, target, &issue, evidence).await?;
+            }
+            Ok(())
         })
     }
 }
